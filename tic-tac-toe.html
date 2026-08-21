@@ -59,6 +59,16 @@
     text-align: center;
   }
 
+  .back-link {
+    align-self: flex-start;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 0;
+  }
+  .back-link:hover { color: var(--text); }
+
   .subtitle {
     color: var(--muted);
     font-size: 0.85rem;
@@ -247,10 +257,12 @@
     font-size: 0.72rem;
     text-align: center;
   }
+  footer a { color: var(--muted); }
 </style>
 </head>
 <body>
   <div class="app">
+    <a class="back-link" href="index.html">&larr; All games</a>
     <h1>Tic-Tac-Toe</h1>
     <div class="subtitle">Play a friend, or challenge the computer</div>
 
@@ -278,7 +290,7 @@
       <button class="btn secondary" id="resetScoreBtn">Reset Scores</button>
     </div>
 
-    <footer>Open this file directly in any browser &mdash; no install needed.</footer>
+    <footer>Open this file directly in any browser &mdash; no install needed. &middot; <a href="index.html">More games</a></footer>
   </div>
 
 <script>

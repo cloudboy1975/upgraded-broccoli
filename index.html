@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Simple Games</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --card: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #22c55e;
+    --x-color: #38bdf8;
+    --o-color: #f472b6;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: max(24px, env(safe-area-inset-top)) 16px 24px;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  h1 {
+    font-size: clamp(1.5rem, 6vw, 2.1rem);
+    margin: 6px 0 0;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: -8px 0 4px;
+    text-align: center;
+  }
+
+  .game-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .game-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--card);
+    border-radius: 18px;
+    padding: 16px;
+    text-decoration: none;
+    color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    transition: transform 0.12s, filter 0.15s;
+  }
+
+  .game-card:active { transform: scale(0.98); }
+  .game-card:hover { filter: brightness(1.08); }
+
+  .icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    flex-shrink: 0;
+  }
+
+  .icon.ttt { background: rgba(56, 189, 248, 0.18); }
+  .icon.ctd { background: rgba(244, 114, 182, 0.18); }
+
+  .game-info { flex: 1; }
+
+  .game-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-bottom: 2px;
+  }
+
+  .game-desc {
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+  .chevron { color: var(--muted); font-size: 1.2rem; }
+
+  footer {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <h1>Simple Games</h1>
+    <div class="subtitle">Single-file, mobile-friendly browser games &mdash; no install needed</div>
+
+    <div class="game-list">
+      <a class="game-card" href="tic-tac-toe.html">
+        <div class="icon ttt">&#10060;</div>
+        <div class="game-info">
+          <div class="game-title">Tic-Tac-Toe</div>
+          <div class="game-desc">Classic 3&times;3 &middot; Vs Computer or Vs Friend</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+
+      <a class="game-card" href="connect-the-dots.html">
+        <div class="icon ctd">&#128204;</div>
+        <div class="game-info">
+          <div class="game-title">Connect the Dots</div>
+          <div class="game-desc">Dots and Boxes &middot; resizable grid, default 5&times;5</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+    </div>
+
+    <footer>Open any game file directly in a browser to play.</footer>
+  </div>
+</body>
+</html>
