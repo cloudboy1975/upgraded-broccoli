@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Asteroids</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --cell: #0f172a;
+    --line: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #22c55e;
+    --danger: #ef4444;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .back-link {
+    align-self: flex-start;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 0;
+  }
+  .back-link:hover { color: var(--text); }
+
+  h1 {
+    font-size: clamp(1.4rem, 6vw, 2rem);
+    margin: 0;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: -6px 0 4px;
+    text-align: center;
+  }
+
+  .status-bar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-2);
+    border-radius: 16px;
+    padding: 12px 16px;
+    gap: 10px;
+  }
+
+  .status-text {
+    font-size: clamp(0.9rem, 3.8vw, 1.05rem);
+    font-weight: 600;
+    min-height: 1.4em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .turn-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .turn-dot.playing { background: var(--accent); }
+  .turn-dot.gameover { background: var(--danger); }
+
+  .scoreboard { display: flex; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+
+  .score-pill {
+    background: var(--cell);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    min-width: 44px;
+  }
+  .score-pill b { display: block; font-size: 1rem; color: var(--text); }
+
+  .canvas-wrap {
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 3 / 4;
+    position: relative;
+    background: var(--board);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    touch-action: none;
+  }
+
+  #gameCanvas { display: block; width: 100%; height: 100%; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.85);
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay.visible { display: flex; }
+  .overlay-title { font-size: 1.4rem; font-weight: 800; }
+  .overlay-score, .overlay-best { color: var(--muted); font-size: 0.95rem; }
+  .overlay-score b, .overlay-best b { color: var(--text); }
+  .overlay-btn { margin-top: 10px; min-width: 140px; flex: none; }
+
+  .control-bar {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+    touch-action: none;
+  }
+
+  .zone {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: var(--bg-2);
+    color: var(--text);
+    border-radius: 16px;
+    height: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    transition: background 0.1s, transform 0.08s;
+  }
+  .zone:active, .zone.active { background: #263449; transform: scale(0.97); }
+  .zone-mid { gap: 2px; }
+  .zone-icon { font-size: 1.6rem; line-height: 1; }
+  .zone-caption { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+
+  .controls { display: flex; gap: 10px; width: 100%; }
+
+  .btn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 13px 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--accent); color: #052e16; }
+  .btn.secondary { background: var(--bg-2); color: var(--text); }
+  .btn:hover { filter: brightness(1.1); }
+
+  footer {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="app">
+    <a class="back-link" href="index.html">&larr; All games</a>
+    <h1>Asteroids</h1>
+    <div class="subtitle">You stay centered &mdash; thrust moves the field, not the ship</div>
+
+    <div class="status-bar">
+      <div class="status-text">
+        <span class="turn-dot playing" id="phaseDot"></span>
+        <span id="statusLabel">Playing</span>
+      </div>
+      <div class="scoreboard">
+        <div class="score-pill">Score<b id="scoreVal">0</b></div>
+        <div class="score-pill">Lives<b id="livesVal">3</b></div>
+        <div class="score-pill">Best<b id="bestVal">0</b></div>
+      </div>
+    </div>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="gameCanvas"></canvas>
+      <div class="overlay" id="gameOverOverlay">
+        <div class="overlay-title">Game Over</div>
+        <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
+        <div class="overlay-best">Best: <b id="overlayBest">0</b></div>
+        <button type="button" class="btn primary overlay-btn" id="overlayRestartBtn">Restart</button>
+      </div>
+    </div>
+
+    <div class="control-bar" id="controlBar">
+      <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left">&#9664;</button>
+      <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire or hold to thrust">
+        <span class="zone-icon">&#128293;</span>
+        <span class="zone-caption">tap fire &middot; hold thrust</span>
+      </button>
+      <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right">&#9654;</button>
+    </div>
+
+    <div class="controls">
+      <button class="btn primary" id="restartBtn">Restart</button>
+      <button class="btn secondary" id="resetBestBtn">Reset Best</button>
+    </div>
+
+    <footer>Open this file directly in any browser &mdash; no install needed. &middot; <a href="index.html">More games</a></footer>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Constants ----------------------------------------------------
+  var HIGH_SCORE_KEY = 'ast-highscore-v1';
+
+  var SHIP_RADIUS = 12;
+  var BULLET_RADIUS = 3;
+  var THRUST_ACCEL = 220;
+  var MAX_SPEED = 260;
+  var DAMPING_PER_SECOND = 0.5;
+  var TURN_RATE = 3.2; // radians/sec
+  var BULLET_SPEED = 480;
+  var BULLET_LIFETIME = 0.9; // seconds
+  var RESPAWN_INVULN_MS = 2000;
+  var MAX_DT = 0.05;
+  var SPAWN_CHECK_INTERVAL = 0.5; // seconds
+  var HOLD_THRESHOLD_MS = 190;
+  var TAP_MAX_MOVE = 12; // px
+
+  var ROCK_SIZES = {
+    large:  { radius: 46, speedRange: [30, 70],   score: 20,  child: 'medium' },
+    medium: { radius: 27, speedRange: [50, 100],  score: 50,  child: 'small' },
+    small:  { radius: 15, speedRange: [80, 140],  score: 100, child: null }
+  };
+
+  var COLOR_SHIP = '#e2e8f0';
+  var COLOR_BULLET = '#22c55e';
+  var COLOR_ROCK_STROKE = '#334155';
+  var COLOR_ROCK_FILL = 'rgba(148, 163, 184, 0.18)';
+  var COLOR_FLAME = '#f97316';
+  var COLOR_STAR = 'rgba(148, 163, 184, 0.5)';
+
+  // ---- DOM ------------------------------------------------------------
+  var canvasWrap = document.getElementById('canvasWrap');
+  var canvas = document.getElementById('gameCanvas');
+  var ctx = canvas.getContext('2d');
+  var overlayEl = document.getElementById('gameOverOverlay');
+  var overlayScoreEl = document.getElementById('overlayScore');
+  var overlayBestEl = document.getElementById('overlayBest');
+  var overlayRestartBtn = document.getElementById('overlayRestartBtn');
+  var restartBtn = document.getElementById('restartBtn');
+  var resetBestBtn = document.getElementById('resetBestBtn');
+  var controlBar = document.getElementById('controlBar');
+  var zoneLeft = document.getElementById('zoneLeft');
+  var zoneMid = document.getElementById('zoneMid');
+  var zoneRight = document.getElementById('zoneRight');
+  var phaseDotEl = document.getElementById('phaseDot');
+  var statusLabelEl = document.getElementById('statusLabel');
+  var scoreValEl = document.getElementById('scoreVal');
+  var livesValEl = document.getElementById('livesVal');
+  var bestValEl = document.getElementById('bestVal');
+
+  // ---- State ------------------------------------------------------------
+  var state = {
+    phase: 'playing', // 'playing' | 'gameover'
+    ship: {
+      x: 0, y: 0, vx: 0, vy: 0,
+      heading: -Math.PI / 2,
+      thrusting: false,
+      invulnerableUntil: 0,
+      radius: SHIP_RADIUS
+    },
+    rocks: [],
+    bullets: [],
+    lives: 3,
+    score: 0,
+    highScore: 0,
+    input: { left: false, right: false, thrust: false },
+    timing: { lastFrameTime: 0 },
+    spawn: { timer: 0 },
+    difficulty: { elapsed: 0 },
+    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+    nextRockId: 1
+  };
+
+  // Read-only debug hook for smoke-testing (harmless at runtime).
+  window.__astDebugState = state;
+
+  var stars = [];
+  var rafId = null;
+
+  // ---- Persistence ------------------------------------------------------
+  function loadHighScore() {
+    try {
+      var raw = localStorage.getItem(HIGH_SCORE_KEY);
+      var n = parseInt(raw, 10);
+      state.highScore = (isFinite(n) && n > 0) ? n : 0;
+    } catch (e) { /* ignore storage errors */ }
+  }
+
+  function saveHighScore() {
+    try { localStorage.setItem(HIGH_SCORE_KEY, String(state.highScore)); } catch (e) {}
+  }
+
+  // ---- Canvas sizing ------------------------------------------------------
+  function resizeCanvas() {
+    var rect = canvasWrap.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.round(rect.width);
+    var h = Math.round(rect.height);
+    if (w === state.canvasCssW && h === state.canvasCssH && dpr === state.canvasDpr) return;
+    state.canvasCssW = w;
+    state.canvasCssH = h;
+    state.canvasDpr = dpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    generateStars();
+  }
+
+  function generateStars() {
+    stars = [];
+    var count = Math.round((state.canvasCssW * state.canvasCssH) / 4000);
+    for (var i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * state.canvasCssW,
+        y: Math.random() * state.canvasCssH,
+        r: Math.random() * 1.2 + 0.3
+      });
+    }
+  }
+
+  var resizeTimer = null;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resizeCanvas, 150);
+  }
+
+  // ---- Math helpers ------------------------------------------------------
+  function randRange(range) { return range[0] + Math.random() * (range[1] - range[0]); }
+
+  function visibleRadius() {
+    return Math.sqrt(state.canvasCssW * state.canvasCssW + state.canvasCssH * state.canvasCssH) / 2;
+  }
+  function spawnRingRadius() { return visibleRadius() + 80; }
+  function despawnRadius() { return visibleRadius() * 2.5; }
+  function targetRockCount() { return Math.min(6 + Math.floor(state.difficulty.elapsed / 30), 14); }
+  function speedMultiplier() { return 1 + Math.min(state.difficulty.elapsed / 60, 1) * 0.5; }
+
+  function worldToScreen(wx, wy) {
+    return {
+      x: wx - state.ship.x + state.canvasCssW / 2,
+      y: wy - state.ship.y + state.canvasCssH / 2
+    };
+  }
+
+  function makeRockShape() {
+    var points = [];
+    var n = 10 + Math.floor(Math.random() * 4);
+    for (var i = 0; i < n; i++) {
+      points.push({
+        angle: (i / n) * Math.PI * 2,
+        r: 0.75 + Math.random() * 0.5
+      });
+    }
+    return points;
+  }
+
+  function createRock(size, x, y, vx, vy) {
+    return {
+      id: state.nextRockId++,
+      x: x, y: y, vx: vx, vy: vy,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 1.6,
+      size: size,
+      radius: ROCK_SIZES[size].radius,
+      shapePoints: makeRockShape()
+    };
+  }
+
+  // ---- Rock spawn / despawn ------------------------------------------------------
+  function seedRocks() {
+    var minDist = visibleRadius() * 0.6;
+    var maxDist = despawnRadius() * 0.5;
+    for (var i = 0; i < 6; i++) {
+      var angle = Math.random() * Math.PI * 2;
+      var dist = minDist + Math.random() * (maxDist - minDist);
+      var x = state.ship.x + Math.cos(angle) * dist;
+      var y = state.ship.y + Math.sin(angle) * dist;
+      var dirAngle = Math.random() * Math.PI * 2;
+      var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
+      state.rocks.push(createRock('large', x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
+    }
+  }
+
+  function trySpawnRocks(dt) {
+    state.spawn.timer -= dt;
+    if (state.spawn.timer > 0) return;
+    state.spawn.timer = SPAWN_CHECK_INTERVAL;
+    if (state.rocks.length >= targetRockCount()) return;
+
+    var angle = Math.random() * Math.PI * 2;
+    var dist = spawnRingRadius();
+    var x = state.ship.x + Math.cos(angle) * dist;
+    var y = state.ship.y + Math.sin(angle) * dist;
+    var inward = angle + Math.PI + (Math.random() - 0.5) * 1.0;
+    var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
+    state.rocks.push(createRock('large', x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
+  }
+
+  function despawnFarRocks() {
+    var dr = despawnRadius();
+    for (var i = state.rocks.length - 1; i >= 0; i--) {
+      var rk = state.rocks[i];
+      var dx = rk.x - state.ship.x, dy = rk.y - state.ship.y;
+      if (dx * dx + dy * dy > dr * dr) state.rocks.splice(i, 1);
+    }
+  }
+
+  // ---- Physics update ------------------------------------------------------
+  function updateShip(dt) {
+    var ship = state.ship;
+    if (state.input.left) ship.heading -= TURN_RATE * dt;
+    if (state.input.right) ship.heading += TURN_RATE * dt;
+    ship.thrusting = state.input.thrust;
+    if (ship.thrusting) {
+      ship.vx += Math.cos(ship.heading) * THRUST_ACCEL * dt;
+      ship.vy += Math.sin(ship.heading) * THRUST_ACCEL * dt;
+    }
+    var damp = Math.pow(1 - DAMPING_PER_SECOND, dt);
+    ship.vx *= damp;
+    ship.vy *= damp;
+    var speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+    if (speed > MAX_SPEED) {
+      var scale = MAX_SPEED / speed;
+      ship.vx *= scale;
+      ship.vy *= scale;
+    }
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
+  }
+
+  function updateRocks(dt) {
+    for (var i = 0; i < state.rocks.length; i++) {
+      var rk = state.rocks[i];
+      rk.x += rk.vx * dt;
+      rk.y += rk.vy * dt;
+      rk.rotation += rk.rotationSpeed * dt;
+    }
+  }
+
+  function updateBullets(dt) {
+    for (var i = state.bullets.length - 1; i >= 0; i--) {
+      var b = state.bullets[i];
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.ttl -= dt;
+      if (b.ttl <= 0) state.bullets.splice(i, 1);
+    }
+  }
+
+  function isInvulnerable() { return performance.now() < state.ship.invulnerableUntil; }
+
+  function handleCollisions() {
+    for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
+      var b = state.bullets[bi];
+      for (var ri = state.rocks.length - 1; ri >= 0; ri--) {
+        var rk = state.rocks[ri];
+        var dx = b.x - rk.x, dy = b.y - rk.y;
+        var rr = rk.radius + BULLET_RADIUS;
+        if (dx * dx + dy * dy <= rr * rr) {
+          state.bullets.splice(bi, 1);
+          splitRock(ri);
+          break;
+        }
+      }
+    }
+
+    if (!isInvulnerable()) {
+      for (var i = 0; i < state.rocks.length; i++) {
+        var rock = state.rocks[i];
+        var sx = state.ship.x - rock.x, sy = state.ship.y - rock.y;
+        var sr = state.ship.radius + rock.radius;
+        if (sx * sx + sy * sy <= sr * sr) {
+          shipHit();
+          break;
+        }
+      }
+    }
+  }
+
+  function splitRock(index) {
+    var rock = state.rocks[index];
+    state.rocks.splice(index, 1);
+    var info = ROCK_SIZES[rock.size];
+    addScore(info.score);
+    if (!info.child) return;
+    var baseAngle = (rock.vx || rock.vy) ? Math.atan2(rock.vy, rock.vx) : Math.random() * Math.PI * 2;
+    var childInfo = ROCK_SIZES[info.child];
+    for (var k = 0; k < 2; k++) {
+      var spread = 0.5 + Math.random() * 0.3;
+      var ang = baseAngle + (k === 0 ? spread : -spread);
+      var speed = randRange(childInfo.speedRange) * speedMultiplier();
+      state.rocks.push(createRock(info.child, rock.x, rock.y, Math.cos(ang) * speed, Math.sin(ang) * speed));
+    }
+  }
+
+  function addScore(n) {
+    state.score += n;
+    if (state.score > state.highScore) {
+      state.highScore = state.score;
+      saveHighScore();
+    }
+    renderHud();
+  }
+
+  function shipHit() {
+    state.lives--;
+    if (state.lives <= 0) {
+      state.lives = 0;
+      endGame();
+    } else {
+      respawnShip();
+    }
+    renderHud();
+  }
+
+  function respawnShip() {
+    state.ship.vx = 0;
+    state.ship.vy = 0;
+    state.ship.heading = -Math.PI / 2;
+    state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+  }
+
+  function endGame() {
+    state.phase = 'gameover';
+    overlayScoreEl.textContent = state.score;
+    overlayBestEl.textContent = state.highScore;
+    overlayEl.classList.add('visible');
+  }
+
+  function fireBullet() {
+    if (state.phase !== 'playing') return;
+    var heading = state.ship.heading;
+    state.bullets.push({
+      x: state.ship.x + Math.cos(heading) * state.ship.radius,
+      y: state.ship.y + Math.sin(heading) * state.ship.radius,
+      vx: Math.cos(heading) * BULLET_SPEED,
+      vy: Math.sin(heading) * BULLET_SPEED,
+      ttl: BULLET_LIFETIME
+    });
+  }
+
+  // ---- Rendering ------------------------------------------------------
+  function drawBackground() {
+    ctx.fillStyle = COLOR_STAR;
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawRock(rock) {
+    var p = worldToScreen(rock.x, rock.y);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(rock.rotation);
+    ctx.beginPath();
+    for (var i = 0; i < rock.shapePoints.length; i++) {
+      var pt = rock.shapePoints[i];
+      var rad = rock.radius * pt.r;
+      var px = Math.cos(pt.angle) * rad;
+      var py = Math.sin(pt.angle) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = COLOR_ROCK_FILL;
+    ctx.fill();
+    ctx.strokeStyle = COLOR_ROCK_STROKE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBullet(b) {
+    var p = worldToScreen(b.x, b.y);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = COLOR_BULLET;
+    ctx.fill();
+  }
+
+  function drawShip() {
+    if (isInvulnerable() && Math.floor(performance.now() / 100) % 2 === 0) return;
+    var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
+    var r = state.ship.radius;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(state.ship.heading);
+
+    if (state.ship.thrusting) {
+      var flameLen = r * (0.8 + Math.random() * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.35, r * 0.4);
+      ctx.lineTo(-r * 0.35 - flameLen, 0);
+      ctx.lineTo(-r * 0.35, -r * 0.4);
+      ctx.closePath();
+      ctx.fillStyle = COLOR_FLAME;
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r * 0.7, r * 0.7);
+    ctx.lineTo(-r * 0.35, 0);
+    ctx.lineTo(-r * 0.7, -r * 0.7);
+    ctx.closePath();
+    ctx.strokeStyle = COLOR_SHIP;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
+    drawBackground();
+    for (var i = 0; i < state.rocks.length; i++) drawRock(state.rocks[i]);
+    for (var j = 0; j < state.bullets.length; j++) drawBullet(state.bullets[j]);
+    drawShip();
+  }
+
+  // ---- HUD ------------------------------------------------------
+  function renderHud() {
+    scoreValEl.textContent = state.score;
+    livesValEl.textContent = state.lives;
+    bestValEl.textContent = state.highScore;
+    phaseDotEl.className = 'turn-dot ' + (state.phase === 'playing' ? 'playing' : 'gameover');
+    statusLabelEl.textContent = state.phase === 'playing' ? 'Playing' : 'Game Over';
+  }
+
+  // ---- Game loop ------------------------------------------------------
+  function update(dt) {
+    updateShip(dt);
+    updateRocks(dt);
+    updateBullets(dt);
+    trySpawnRocks(dt);
+    despawnFarRocks();
+    handleCollisions();
+    state.difficulty.elapsed += dt;
+  }
+
+  function frame(ts) {
+    rafId = requestAnimationFrame(frame);
+    if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
+    var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
+    state.timing.lastFrameTime = ts;
+    if (state.phase === 'playing') update(dt);
+    render();
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    } else {
+      state.timing.lastFrameTime = 0;
+      if (!rafId) rafId = requestAnimationFrame(frame);
+    }
+  });
+
+  // ---- Reset / restart ------------------------------------------------------
+  function resetGame() {
+    state.phase = 'playing';
+    state.ship.x = 0; state.ship.y = 0;
+    state.ship.vx = 0; state.ship.vy = 0;
+    state.ship.heading = -Math.PI / 2;
+    state.ship.thrusting = false;
+    state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+    state.rocks = [];
+    state.bullets = [];
+    state.lives = 3;
+    state.score = 0;
+    state.spawn.timer = 0;
+    state.difficulty.elapsed = 0;
+    state.nextRockId = 1;
+    state.timing.lastFrameTime = 0;
+    seedRocks();
+    overlayEl.classList.remove('visible');
+    renderHud();
+  }
+
+  function resetBest() {
+    state.highScore = 0;
+    saveHighScore();
+    renderHud();
+  }
+
+  // ---- Input: composition ------------------------------------------------------
+  var touchLeft = false, touchRight = false, touchThrust = false;
+  var kbLeft = false, kbRight = false, kbThrust = false;
+
+  function composeInput() {
+    state.input.left = touchLeft || kbLeft;
+    state.input.right = touchRight || kbRight;
+    state.input.thrust = touchThrust || kbThrust;
+  }
+
+  // ---- Input: touch/pointer (three-zone bar) ------------------------------------------------------
+  function bindHoldZone(el, setFlag) {
+    var activeId = null;
+    el.addEventListener('pointerdown', function (e) {
+      if (activeId !== null) return;
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      setFlag(true);
+      composeInput();
+    });
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      activeId = null;
+      el.classList.remove('active');
+      setFlag(false);
+      composeInput();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+  }
+
+  bindHoldZone(zoneLeft, function (v) { touchLeft = v; });
+  bindHoldZone(zoneRight, function (v) { touchRight = v; });
+
+  (function bindMidZone() {
+    var activeId = null;
+    var downX = 0, downY = 0;
+    var holdTimer = null;
+    var holdEngaged = false;
+
+    zoneMid.addEventListener('pointerdown', function (e) {
+      if (activeId !== null) return;
+      activeId = e.pointerId;
+      try { zoneMid.setPointerCapture(activeId); } catch (err) {}
+      downX = e.clientX; downY = e.clientY;
+      holdEngaged = false;
+      zoneMid.classList.add('active');
+      holdTimer = setTimeout(function () {
+        holdEngaged = true;
+        touchThrust = true;
+        composeInput();
+      }, HOLD_THRESHOLD_MS);
+    });
+
+    function endPress(e, allowFire) {
+      if (e.pointerId !== activeId) return;
+      activeId = null;
+      zoneMid.classList.remove('active');
+      clearTimeout(holdTimer);
+      if (holdEngaged) {
+        touchThrust = false;
+        composeInput();
+      } else if (allowFire) {
+        var dx = e.clientX - downX, dy = e.clientY - downY;
+        if (Math.sqrt(dx * dx + dy * dy) < TAP_MAX_MOVE) fireBullet();
+      }
+      holdEngaged = false;
+    }
+
+    zoneMid.addEventListener('pointerup', function (e) { endPress(e, true); });
+    zoneMid.addEventListener('pointercancel', function (e) { endPress(e, false); });
+    zoneMid.addEventListener('lostpointercapture', function (e) { endPress(e, false); });
+  })();
+
+  // ---- Input: keyboard fallback ------------------------------------------------------
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isThrustKey(code) { return code === 'Space' || code === 'ArrowUp' || code === 'KeyW'; }
+
+  var kbHoldTimer = null;
+  var kbHoldEngaged = false;
+
+  document.addEventListener('keydown', function (e) {
+    if (isThrustKey(e.code)) e.preventDefault();
+    if (e.repeat) return;
+    if (isLeftKey(e.code)) { kbLeft = true; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = true; composeInput(); }
+    else if (isThrustKey(e.code)) {
+      kbHoldEngaged = false;
+      kbHoldTimer = setTimeout(function () {
+        kbHoldEngaged = true;
+        kbThrust = true;
+        composeInput();
+      }, HOLD_THRESHOLD_MS);
+    }
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (isLeftKey(e.code)) { kbLeft = false; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = false; composeInput(); }
+    else if (isThrustKey(e.code)) {
+      clearTimeout(kbHoldTimer);
+      if (kbHoldEngaged) {
+        kbThrust = false;
+        composeInput();
+      } else {
+        fireBullet();
+      }
+      kbHoldEngaged = false;
+    }
+  });
+
+  // ---- Wire up controls ------------------------------------------------------
+  // Belt-and-suspenders against long-press text selection / callout menus
+  // some mobile browsers still show on custom buttons despite the CSS above.
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
+  restartBtn.addEventListener('click', resetGame);
+  overlayRestartBtn.addEventListener('click', resetGame);
+  resetBestBtn.addEventListener('click', resetBest);
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+
+  // ---- Init ------------------------------------------------------
+  resizeCanvas();
+  loadHighScore();
+  resetGame();
+  rafId = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
