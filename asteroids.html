@@ -153,10 +153,11 @@
   .zone {
     flex: 1;
     border: none;
+    outline: none;
     background: var(--bg-2);
     color: var(--text);
     border-radius: 16px;
-    height: 74px;
+    height: 92px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -164,7 +165,13 @@
     font-size: 1.5rem;
     font-weight: 700;
     cursor: pointer;
+    touch-action: none;
     -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
     transition: background 0.1s, transform 0.08s;
   }
   .zone:active, .zone.active { background: #263449; transform: scale(0.97); }
@@ -287,6 +294,7 @@
   var overlayRestartBtn = document.getElementById('overlayRestartBtn');
   var restartBtn = document.getElementById('restartBtn');
   var resetBestBtn = document.getElementById('resetBestBtn');
+  var controlBar = document.getElementById('controlBar');
   var zoneLeft = document.getElementById('zoneLeft');
   var zoneMid = document.getElementById('zoneMid');
   var zoneRight = document.getElementById('zoneRight');
@@ -849,6 +857,10 @@
   });
 
   // ---- Wire up controls ------------------------------------------------------
+  // Belt-and-suspenders against long-press text selection / callout menus
+  // some mobile browsers still show on custom buttons despite the CSS above.
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
   restartBtn.addEventListener('click', resetGame);
   overlayRestartBtn.addEventListener('click', resetGame);
   resetBestBtn.addEventListener('click', resetBest);
