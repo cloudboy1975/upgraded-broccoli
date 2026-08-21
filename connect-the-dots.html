@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Connect the Dots</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --cell: #0f172a;
+    --line: #334155;
+    --line-hint: #64748b;
+    --x-color: #38bdf8;
+    --o-color: #f472b6;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #22c55e;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .back-link {
+    align-self: flex-start;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 0;
+  }
+  .back-link:hover { color: var(--text); }
+
+  h1 {
+    font-size: clamp(1.4rem, 6vw, 2rem);
+    margin: 0;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: -6px 0 4px;
+    text-align: center;
+  }
+
+  .mode-select {
+    display: flex;
+    background: var(--bg-2);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 4px;
+    width: 100%;
+    max-width: 360px;
+  }
+
+  .mode-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    padding: 10px 8px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .mode-btn.active { background: var(--accent); color: #052e16; }
+
+  .size-control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 360px;
+    background: var(--bg-2);
+    border-radius: 999px;
+    padding: 6px 6px 6px 16px;
+    gap: 10px;
+  }
+
+  .size-label { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+
+  .stepper { display: flex; align-items: center; gap: 4px; }
+
+  .stepper-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: var(--cell);
+    color: var(--text);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter 0.15s, opacity 0.15s;
+  }
+
+  .stepper-btn:disabled { opacity: 0.35; cursor: default; }
+  .stepper-btn:not(:disabled):active { transform: scale(0.92); }
+
+  .stepper-value {
+    min-width: 58px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .status-bar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-2);
+    border-radius: 16px;
+    padding: 12px 16px;
+    gap: 10px;
+  }
+
+  .status-text {
+    font-size: clamp(0.9rem, 3.8vw, 1.05rem);
+    font-weight: 600;
+    min-height: 1.4em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .turn-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .turn-dot.p1 { background: var(--x-color); }
+  .turn-dot.p2 { background: var(--o-color); }
+
+  .scoreboard { display: flex; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+
+  .score-pill {
+    background: var(--cell);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    min-width: 44px;
+  }
+
+  .score-pill b { display: block; font-size: 1rem; color: var(--text); }
+
+  .tally {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .tally-chip {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--bg-2);
+    border-radius: 10px;
+    padding: 8px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .tally-chip .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+  }
+
+  .tally-chip.p1 .dot { background: var(--x-color); }
+  .tally-chip.p2 .dot { background: var(--o-color); }
+  .tally-chip b { color: var(--text); }
+
+  .board-wrap {
+    width: 100%;
+    max-width: 420px;
+    background: var(--board);
+    border-radius: 20px;
+    padding: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+
+  .board-wrap svg {
+    width: 100%;
+    height: auto;
+    display: block;
+    touch-action: manipulation;
+  }
+
+  .dot { fill: var(--text); }
+
+  .box { fill: transparent; transition: fill 0.25s ease; }
+  .box.claimed.p1 { fill: rgba(56, 189, 248, 0.28); }
+  .box.claimed.p2 { fill: rgba(244, 114, 182, 0.28); }
+
+  .edge-vis {
+    stroke: var(--line);
+    stroke-width: 4;
+    stroke-linecap: round;
+    transition: stroke 0.15s ease, stroke-width 0.15s ease;
+  }
+  .edge-vis.hint { stroke: var(--line-hint); }
+  .edge-vis.drawn.p1 { stroke: var(--x-color); stroke-width: 7; }
+  .edge-vis.drawn.p2 { stroke: var(--o-color); stroke-width: 7; }
+
+  .edge-hit {
+    stroke: transparent;
+    stroke-width: 22;
+    cursor: pointer;
+  }
+  .edge-hit.used { cursor: default; pointer-events: none; }
+
+  .controls { display: flex; gap: 10px; width: 100%; }
+
+  .btn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 13px 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+  }
+
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--accent); color: #052e16; }
+  .btn.secondary { background: var(--bg-2); color: var(--text); }
+  .btn:hover { filter: brightness(1.1); }
+
+  footer {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="app">
+    <a class="back-link" href="index.html">&larr; All games</a>
+    <h1>Connect the Dots</h1>
+    <div class="subtitle">Classic "Dots and Boxes" &mdash; draw a line, complete a box, claim it</div>
+
+    <div class="mode-select" role="group" aria-label="Game mode">
+      <button class="mode-btn active" data-mode="cpu" id="modeCpuBtn">Vs Computer</button>
+      <button class="mode-btn" data-mode="pvp" id="modePvpBtn">Vs Friend</button>
+    </div>
+
+    <div class="size-control">
+      <span class="size-label">Grid size</span>
+      <div class="stepper">
+        <button class="stepper-btn" id="sizeMinus" aria-label="Smaller grid">&minus;</button>
+        <span class="stepper-value" id="sizeValue">5 &times; 5</span>
+        <button class="stepper-btn" id="sizePlus" aria-label="Larger grid">+</button>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-text">
+        <span class="turn-dot p1" id="turnDot"></span>
+        <span id="statusLabel">Your turn</span>
+      </div>
+      <div class="scoreboard">
+        <div class="score-pill"><span id="labelP1">You</span><b id="scoreP1">0</b></div>
+        <div class="score-pill">Tie<b id="scoreDraw">0</b></div>
+        <div class="score-pill"><span id="labelP2">CPU</span><b id="scoreP2">0</b></div>
+      </div>
+    </div>
+
+    <div class="tally">
+      <div class="tally-chip p1"><span class="dot"></span><span id="tallyLabelP1">You</span>:&nbsp;<b id="tallyP1">0</b></div>
+      <div class="tally-chip p2"><span class="dot"></span><span id="tallyLabelP2">Computer</span>:&nbsp;<b id="tallyP2">0</b></div>
+    </div>
+
+    <div class="board-wrap">
+      <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+
+    <div class="controls">
+      <button class="btn primary" id="newRoundBtn">New Round</button>
+      <button class="btn secondary" id="resetScoreBtn">Reset Scores</button>
+    </div>
+
+    <footer>Open this file directly in any browser &mdash; no install needed. &middot; <a href="index.html">More games</a></footer>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var MIN_SIZE = 3;
+  var MAX_SIZE = 8;
+  var DEFAULT_SIZE = 5;
+  var CELL = 60;
+  var MARGIN = 28;
+  var DOT_R = 7;
+
+  var svg = document.getElementById('board');
+  var statusLabel = document.getElementById('statusLabel');
+  var turnDot = document.getElementById('turnDot');
+  var scoreP1El = document.getElementById('scoreP1');
+  var scoreP2El = document.getElementById('scoreP2');
+  var scoreDrawEl = document.getElementById('scoreDraw');
+  var labelP1El = document.getElementById('labelP1');
+  var labelP2El = document.getElementById('labelP2');
+  var tallyP1El = document.getElementById('tallyP1');
+  var tallyP2El = document.getElementById('tallyP2');
+  var tallyLabelP1El = document.getElementById('tallyLabelP1');
+  var tallyLabelP2El = document.getElementById('tallyLabelP2');
+  var newRoundBtn = document.getElementById('newRoundBtn');
+  var resetScoreBtn = document.getElementById('resetScoreBtn');
+  var modeCpuBtn = document.getElementById('modeCpuBtn');
+  var modePvpBtn = document.getElementById('modePvpBtn');
+  var sizeMinus = document.getElementById('sizeMinus');
+  var sizePlus = document.getElementById('sizePlus');
+  var sizeValue = document.getElementById('sizeValue');
+
+  var SCORES_KEY = 'ctd-scores-v1';
+  var SIZE_KEY = 'ctd-size-v1';
+  var MODE_KEY = 'ctd-mode-v1';
+
+  var state = {
+    size: DEFAULT_SIZE,
+    hEdges: [],
+    vEdges: [],
+    boxOwner: [],
+    current: 'P1',
+    mode: 'cpu',
+    gameOver: false,
+    cpuThinking: false,
+    scores: { P1: 0, Draw: 0, P2: 0 },
+    roundScores: { P1: 0, P2: 0 },
+    totalBoxes: 0
+  };
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS(SVG_NS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function loadPersisted() {
+    try {
+      var rawScores = localStorage.getItem(SCORES_KEY);
+      if (rawScores) {
+        var s = JSON.parse(rawScores);
+        if (s && typeof s.P1 === 'number') state.scores = s;
+      }
+      var rawSize = localStorage.getItem(SIZE_KEY);
+      if (rawSize) {
+        var n = parseInt(rawSize, 10);
+        if (n >= MIN_SIZE && n <= MAX_SIZE) state.size = n;
+      }
+      var rawMode = localStorage.getItem(MODE_KEY);
+      if (rawMode === 'cpu' || rawMode === 'pvp') state.mode = rawMode;
+    } catch (e) { /* ignore storage errors */ }
+  }
+
+  function saveScores() {
+    try { localStorage.setItem(SCORES_KEY, JSON.stringify(state.scores)); } catch (e) {}
+  }
+  function saveSize() {
+    try { localStorage.setItem(SIZE_KEY, String(state.size)); } catch (e) {}
+  }
+  function saveMode() {
+    try { localStorage.setItem(MODE_KEY, state.mode); } catch (e) {}
+  }
+
+  function initArrays() {
+    var size = state.size;
+    state.hEdges = [];
+    for (var r = 0; r < size; r++) {
+      var row = [];
+      for (var c = 0; c < size - 1; c++) row.push(false);
+      state.hEdges.push(row);
+    }
+    state.vEdges = [];
+    for (var r2 = 0; r2 < size - 1; r2++) {
+      var row2 = [];
+      for (var c2 = 0; c2 < size; c2++) row2.push(false);
+      state.vEdges.push(row2);
+    }
+    state.boxOwner = [];
+    for (var r3 = 0; r3 < size - 1; r3++) {
+      var row3 = [];
+      for (var c3 = 0; c3 < size - 1; c3++) row3.push(null);
+      state.boxOwner.push(row3);
+    }
+    state.totalBoxes = (size - 1) * (size - 1);
+  }
+
+  function buildBoard() {
+    var size = state.size;
+    var vb = MARGIN * 2 + (size - 1) * CELL;
+    svg.setAttribute('viewBox', '0 0 ' + vb + ' ' + vb);
+    svg.innerHTML = '';
+
+    var boxesGroup = svgEl('g', {});
+    for (var r = 0; r < size - 1; r++) {
+      for (var c = 0; c < size - 1; c++) {
+        var box = svgEl('rect', {
+          id: 'box-' + r + '-' + c,
+          class: 'box',
+          x: MARGIN + c * CELL,
+          y: MARGIN + r * CELL,
+          width: CELL,
+          height: CELL,
+          rx: 8
+        });
+        boxesGroup.appendChild(box);
+      }
+    }
+    svg.appendChild(boxesGroup);
+
+    var edgesGroup = svgEl('g', {});
+
+    // horizontal edges
+    for (var hr = 0; hr < size; hr++) {
+      for (var hc = 0; hc < size - 1; hc++) {
+        var x1 = MARGIN + hc * CELL, y1 = MARGIN + hr * CELL;
+        var x2 = MARGIN + (hc + 1) * CELL, y2 = y1;
+        var vis = svgEl('line', { id: 'vis-h-' + hr + '-' + hc, class: 'edge-vis', x1: x1, y1: y1, x2: x2, y2: y2 });
+        var hit = svgEl('line', {
+          id: 'hit-h-' + hr + '-' + hc, class: 'edge-hit', x1: x1, y1: y1, x2: x2, y2: y2,
+          'data-type': 'h', 'data-r': hr, 'data-c': hc
+        });
+        edgesGroup.appendChild(vis);
+        edgesGroup.appendChild(hit);
+      }
+    }
+
+    // vertical edges
+    for (var vr = 0; vr < size - 1; vr++) {
+      for (var vc = 0; vc < size; vc++) {
+        var vx1 = MARGIN + vc * CELL, vy1 = MARGIN + vr * CELL;
+        var vx2 = vx1, vy2 = MARGIN + (vr + 1) * CELL;
+        var visV = svgEl('line', { id: 'vis-v-' + vr + '-' + vc, class: 'edge-vis', x1: vx1, y1: vy1, x2: vx2, y2: vy2 });
+        var hitV = svgEl('line', {
+          id: 'hit-v-' + vr + '-' + vc, class: 'edge-hit', x1: vx1, y1: vy1, x2: vx2, y2: vy2,
+          'data-type': 'v', 'data-r': vr, 'data-c': vc
+        });
+        edgesGroup.appendChild(visV);
+        edgesGroup.appendChild(hitV);
+      }
+    }
+    svg.appendChild(edgesGroup);
+
+    // hit listeners + hover hints
+    var hits = edgesGroup.querySelectorAll('.edge-hit');
+    hits.forEach(function (hitLine) {
+      hitLine.addEventListener('click', function () {
+        var type = this.getAttribute('data-type');
+        var r = parseInt(this.getAttribute('data-r'), 10);
+        var c = parseInt(this.getAttribute('data-c'), 10);
+        onEdgeClick(type, r, c);
+      });
+      hitLine.addEventListener('pointerenter', function () {
+        if (this.classList.contains('used')) return;
+        var visId = 'vis-' + this.getAttribute('data-type') + '-' + this.getAttribute('data-r') + '-' + this.getAttribute('data-c');
+        var v = document.getElementById(visId);
+        if (v) v.classList.add('hint');
+      });
+      hitLine.addEventListener('pointerleave', function () {
+        var visId = 'vis-' + this.getAttribute('data-type') + '-' + this.getAttribute('data-r') + '-' + this.getAttribute('data-c');
+        var v = document.getElementById(visId);
+        if (v) v.classList.remove('hint');
+      });
+    });
+
+    var dotsGroup = svgEl('g', {});
+    for (var dr = 0; dr < size; dr++) {
+      for (var dc = 0; dc < size; dc++) {
+        dotsGroup.appendChild(svgEl('circle', {
+          class: 'dot', cx: MARGIN + dc * CELL, cy: MARGIN + dr * CELL, r: DOT_R
+        }));
+      }
+    }
+    svg.appendChild(dotsGroup);
+  }
+
+  function sidesCount(r, c) {
+    var n = 0;
+    if (state.hEdges[r][c]) n++;
+    if (state.hEdges[r + 1][c]) n++;
+    if (state.vEdges[r][c]) n++;
+    if (state.vEdges[r][c + 1]) n++;
+    return n;
+  }
+
+  function adjacentBoxes(type, r, c) {
+    var size = state.size;
+    var boxes = [];
+    if (type === 'h') {
+      if (r <= size - 2) boxes.push({ r: r, c: c });
+      if (r >= 1) boxes.push({ r: r - 1, c: c });
+    } else {
+      if (c <= size - 2) boxes.push({ r: r, c: c });
+      if (c >= 1) boxes.push({ r: r, c: c - 1 });
+    }
+    return boxes;
+  }
+
+  function edgeDrawn(type, r, c) {
+    return type === 'h' ? state.hEdges[r][c] : state.vEdges[r][c];
+  }
+
+  function drawEdgeState(type, r, c) {
+    if (type === 'h') state.hEdges[r][c] = true; else state.vEdges[r][c] = true;
+  }
+
+  function updateEdgeVisual(type, r, c, player) {
+    var vis = document.getElementById('vis-' + type + '-' + r + '-' + c);
+    var hit = document.getElementById('hit-' + type + '-' + r + '-' + c);
+    vis.classList.remove('hint');
+    vis.classList.add('drawn', player === 'P1' ? 'p1' : 'p2');
+    hit.classList.add('used');
+  }
+
+  function updateBoxVisual(r, c) {
+    var owner = state.boxOwner[r][c];
+    var box = document.getElementById('box-' + r + '-' + c);
+    box.classList.add('claimed', owner === 'P1' ? 'p1' : 'p2');
+  }
+
+  function onEdgeClick(type, r, c) {
+    if (state.gameOver || state.cpuThinking) return;
+    if (edgeDrawn(type, r, c)) return;
+    if (state.mode === 'cpu' && state.current === 'P2') return;
+    makeMove(type, r, c);
+  }
+
+  function makeMove(type, r, c) {
+    var player = state.current;
+    drawEdgeState(type, r, c);
+    updateEdgeVisual(type, r, c, player);
+
+    var boxes = adjacentBoxes(type, r, c);
+    var completed = [];
+    boxes.forEach(function (b) {
+      if (!state.boxOwner[b.r][b.c] && sidesCount(b.r, b.c) === 4) {
+        state.boxOwner[b.r][b.c] = player;
+        completed.push(b);
+      }
+    });
+    completed.forEach(function (b) { updateBoxVisual(b.r, b.c); });
+
+    if (completed.length) {
+      state.roundScores[player] += completed.length;
+      renderTally();
+      var claimedTotal = state.roundScores.P1 + state.roundScores.P2;
+      if (claimedTotal === state.totalBoxes) {
+        finishRound();
+        return;
+      }
+      updateStatus();
+      maybeTriggerCpu();
+    } else {
+      state.current = player === 'P1' ? 'P2' : 'P1';
+      updateStatus();
+      maybeTriggerCpu();
+    }
+  }
+
+  function maybeTriggerCpu() {
+    if (state.gameOver) return;
+    if (state.mode === 'cpu' && state.current === 'P2') {
+      state.cpuThinking = true;
+      updateStatus();
+      setTimeout(cpuTurn, 480);
+    }
+  }
+
+  function allEdges() {
+    var size = state.size;
+    var edges = [];
+    for (var hr = 0; hr < size; hr++) {
+      for (var hc = 0; hc < size - 1; hc++) {
+        if (!state.hEdges[hr][hc]) edges.push({ type: 'h', r: hr, c: hc });
+      }
+    }
+    for (var vr = 0; vr < size - 1; vr++) {
+      for (var vc = 0; vc < size; vc++) {
+        if (!state.vEdges[vr][vc]) edges.push({ type: 'v', r: vr, c: vc });
+      }
+    }
+    return edges;
+  }
+
+  function boxesCompletedBy(edge) {
+    var boxes = adjacentBoxes(edge.type, edge.r, edge.c);
+    var count = 0;
+    boxes.forEach(function (b) {
+      if (!state.boxOwner[b.r][b.c] && sidesCount(b.r, b.c) === 3) count++;
+    });
+    return count;
+  }
+
+  function boxesEndangeredBy(edge) {
+    // number of currently-unclaimed boxes that would reach 3 sides (become
+    // takeable by the opponent) without this edge itself completing them
+    var boxes = adjacentBoxes(edge.type, edge.r, edge.c);
+    var count = 0;
+    boxes.forEach(function (b) {
+      if (!state.boxOwner[b.r][b.c] && sidesCount(b.r, b.c) === 2) count++;
+    });
+    return count;
+  }
+
+  function chooseCpuMove() {
+    var edges = allEdges();
+    if (!edges.length) return null;
+
+    var best = null, bestScore = -1;
+    edges.forEach(function (e) {
+      var score = boxesCompletedBy(e);
+      if (score > bestScore) { bestScore = score; best = [e]; }
+      else if (score === bestScore) best.push(e);
+    });
+    if (bestScore > 0) return best[Math.floor(Math.random() * best.length)];
+
+    var safe = edges.filter(function (e) { return boxesEndangeredBy(e) === 0; });
+    if (safe.length) return safe[Math.floor(Math.random() * safe.length)];
+
+    var minRisk = Infinity, riskiest = [];
+    edges.forEach(function (e) {
+      var risk = boxesEndangeredBy(e);
+      if (risk < minRisk) { minRisk = risk; riskiest = [e]; }
+      else if (risk === minRisk) riskiest.push(e);
+    });
+    return riskiest[Math.floor(Math.random() * riskiest.length)];
+  }
+
+  function cpuTurn() {
+    if (state.gameOver) return;
+    var move = chooseCpuMove();
+    state.cpuThinking = false;
+    if (move) makeMove(move.type, move.r, move.c);
+  }
+
+  function currentP1Name() { return state.mode === 'cpu' ? 'You' : 'Player 1'; }
+  function currentP2Name() { return state.mode === 'cpu' ? 'Computer' : 'Player 2'; }
+
+  function finishRound() {
+    state.gameOver = true;
+    var p1 = state.roundScores.P1, p2 = state.roundScores.P2;
+    var msg;
+    if (p1 === p2) {
+      msg = 'Tie game — ' + p1 + ' to ' + p2 + '!';
+      state.scores.Draw++;
+    } else if (p1 > p2) {
+      msg = currentP1Name() + (state.mode === 'cpu' ? ' win' : ' wins') + '! ' + p1 + '–' + p2;
+      state.scores.P1++;
+    } else {
+      msg = currentP2Name() + ' wins! ' + p2 + '–' + p1;
+      state.scores.P2++;
+    }
+    saveScores();
+    renderScores();
+    statusLabel.textContent = msg;
+    turnDot.style.visibility = 'hidden';
+  }
+
+  function updateStatus() {
+    turnDot.style.visibility = 'visible';
+    turnDot.className = 'turn-dot ' + (state.current === 'P1' ? 'p1' : 'p2');
+    if (state.current === 'P1') {
+      statusLabel.textContent = state.mode === 'cpu' ? 'Your turn' : "Player 1's turn";
+    } else if (state.mode === 'cpu') {
+      statusLabel.textContent = state.cpuThinking ? 'Computer thinking…' : "Computer's turn";
+    } else {
+      statusLabel.textContent = "Player 2's turn";
+    }
+  }
+
+  function renderScores() {
+    scoreP1El.textContent = state.scores.P1;
+    scoreP2El.textContent = state.scores.P2;
+    scoreDrawEl.textContent = state.scores.Draw;
+  }
+
+  function renderTally() {
+    tallyP1El.textContent = state.roundScores.P1;
+    tallyP2El.textContent = state.roundScores.P2;
+  }
+
+  function updateLabels() {
+    labelP1El.textContent = state.mode === 'cpu' ? 'You' : 'P1';
+    labelP2El.textContent = state.mode === 'cpu' ? 'CPU' : 'P2';
+    tallyLabelP1El.textContent = currentP1Name();
+    tallyLabelP2El.textContent = currentP2Name();
+  }
+
+  function updateSizeUI() {
+    sizeValue.textContent = state.size + ' × ' + state.size;
+    sizeMinus.disabled = state.size <= MIN_SIZE;
+    sizePlus.disabled = state.size >= MAX_SIZE;
+  }
+
+  function newRound() {
+    initArrays();
+    state.current = 'P1';
+    state.gameOver = false;
+    state.cpuThinking = false;
+    state.roundScores = { P1: 0, P2: 0 };
+    buildBoard();
+    renderTally();
+    updateStatus();
+  }
+
+  function resetScores() {
+    state.scores = { P1: 0, Draw: 0, P2: 0 };
+    saveScores();
+    renderScores();
+  }
+
+  function setMode(mode) {
+    if (state.mode === mode) return;
+    state.mode = mode;
+    saveMode();
+    modeCpuBtn.classList.toggle('active', mode === 'cpu');
+    modePvpBtn.classList.toggle('active', mode === 'pvp');
+    updateLabels();
+    newRound();
+  }
+
+  function changeSize(delta) {
+    var next = state.size + delta;
+    if (next < MIN_SIZE || next > MAX_SIZE) return;
+    state.size = next;
+    saveSize();
+    updateSizeUI();
+    newRound();
+  }
+
+  newRoundBtn.addEventListener('click', newRound);
+  resetScoreBtn.addEventListener('click', resetScores);
+  modeCpuBtn.addEventListener('click', function () { setMode('cpu'); });
+  modePvpBtn.addEventListener('click', function () { setMode('pvp'); });
+  sizeMinus.addEventListener('click', function () { changeSize(-1); });
+  sizePlus.addEventListener('click', function () { changeSize(1); });
+
+  // Init
+  loadPersisted();
+  modeCpuBtn.classList.toggle('active', state.mode === 'cpu');
+  modePvpBtn.classList.toggle('active', state.mode === 'pvp');
+  updateLabels();
+  updateSizeUI();
+  renderScores();
+  newRound();
+})();
+</script>
+</body>
+</html>
