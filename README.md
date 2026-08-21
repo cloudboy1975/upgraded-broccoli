@@ -35,5 +35,20 @@ again). Most boxes when the grid is full wins.
 - Live box tally per round, round-win score tracking (saved locally), and a
   "New Round" reset
 
-Both games follow the same look and feel, and every screen has a link back
-to the games hub.
+### Asteroids
+
+[`asteroids.html`](asteroids.html) — a variation on the classic arcade game
+(v1 experiment, no alien ships or hyperspace). The twist: your ship always
+stays centered on screen. Turning just spins the ship in place; thrusting
+doesn't move it — instead the asteroid field drifts past you.
+
+- [Open the game](https://cloudboy1975.github.io/upgraded-broccoli/asteroids.html)
+- **Bottom control bar, split into thirds** — left/right zones turn the
+  ship while held; the middle zone is dual-purpose: a quick tap fires,
+  holding it thrusts. Keyboard fallback included (arrows/WASD + space)
+- Rocks split into smaller pieces when shot, classic-style, with points
+  scaling up as they get smaller
+- 3 lives, live score, and a persisted high score (saved locally)
+
+All three games follow the same look and feel, and every screen has a link
+back to the games hub.
