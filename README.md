@@ -42,6 +42,8 @@ again). Most boxes when the grid is full wins.
 stays centered on screen. Turning just spins the ship in place; thrusting
 doesn't move it — instead the asteroid field drifts past you.
 
+> 🔧 **Temporary preview (this branch, pre-merge):** [Open the branch preview](https://htmlpreview.github.io/?https://github.com/cloudboy1975/upgraded-broccoli/blob/claude/tic-tac-toe-browser-game-tex1j7/asteroids.html) — the link below goes live once this PR merges to `main`. Remove this line after merging.
+
 - [Open the game](https://cloudboy1975.github.io/upgraded-broccoli/asteroids.html)
 - **Bottom control bar, split into thirds** — left/right zones turn the
   ship while held; the middle zone is dual-purpose: a quick tap fires,
