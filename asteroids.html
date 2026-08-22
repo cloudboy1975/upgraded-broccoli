@@ -31,6 +31,7 @@
     align-items: center;
     justify-content: flex-start;
     padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    -webkit-user-select: none;
     user-select: none;
     touch-action: manipulation;
   }
@@ -78,6 +79,9 @@
     border-radius: 16px;
     padding: 12px 16px;
     gap: 10px;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   .status-text {
@@ -176,7 +180,7 @@
   }
   .zone:active, .zone.active { background: #263449; transform: scale(0.97); }
   .zone-mid { gap: 2px; }
-  .zone-icon { font-size: 1.6rem; line-height: 1; }
+  .zone-icon { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.5px; line-height: 1; }
   .zone-caption { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
 
   .controls { display: flex; gap: 10px; width: 100%; }
@@ -236,7 +240,7 @@
     <div class="control-bar" id="controlBar">
       <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left">&#9664;</button>
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire or hold to thrust">
-        <span class="zone-icon">&#128293;</span>
+        <span class="zone-icon">FIRE</span>
         <span class="zone-caption">tap fire &middot; hold thrust</span>
       </button>
       <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right">&#9654;</button>
@@ -709,6 +713,7 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) {
       if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      forceReleaseAllInput();
     } else {
       state.timing.lastFrameTime = 0;
       if (!rafId) rafId = requestAnimationFrame(frame);
@@ -745,6 +750,7 @@
   // ---- Input: composition ------------------------------------------------------
   var touchLeft = false, touchRight = false, touchThrust = false;
   var kbLeft = false, kbRight = false, kbThrust = false;
+  var HOLD_WATCHDOG_MS = 12000; // no legitimate hold needs to last this long
 
   function composeInput() {
     state.input.left = touchLeft || kbLeft;
@@ -752,9 +758,28 @@
     state.input.thrust = touchThrust || kbThrust;
   }
 
+  // Every hold-zone binder below registers its "force release" function here.
+  // A stuck-held button (the touch never gets a pointerup/pointercancel -
+  // e.g. the OS backgrounds the tab mid-touch, or a long-press triggers the
+  // browser's own text-selection/callout takeover) is fixed by calling all
+  // of these from the visibilitychange/blur handlers below, plus each zone
+  // also has its own watchdog timeout as a last-resort fallback.
+  var heldZoneResets = [];
+
   // ---- Input: touch/pointer (three-zone bar) ------------------------------------------------------
   function bindHoldZone(el, setFlag) {
     var activeId = null;
+    var watchdogTimer = null;
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+      setFlag(false);
+      composeInput();
+    }
+
     el.addEventListener('pointerdown', function (e) {
       if (activeId !== null) return;
       activeId = e.pointerId;
@@ -762,17 +787,18 @@
       el.classList.add('active');
       setFlag(true);
       composeInput();
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
     });
     function release(e) {
       if (e.pointerId !== activeId) return;
-      activeId = null;
-      el.classList.remove('active');
-      setFlag(false);
-      composeInput();
+      hardRelease();
     }
     el.addEventListener('pointerup', release);
     el.addEventListener('pointercancel', release);
     el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
   }
 
   bindHoldZone(zoneLeft, function (v) { touchLeft = v; });
@@ -783,6 +809,20 @@
     var downX = 0, downY = 0;
     var holdTimer = null;
     var holdEngaged = false;
+    var watchdogTimer = null;
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      zoneMid.classList.remove('active');
+      clearTimeout(holdTimer);
+      clearTimeout(watchdogTimer);
+      if (holdEngaged) {
+        touchThrust = false;
+        composeInput();
+      }
+      holdEngaged = false;
+    }
 
     zoneMid.addEventListener('pointerdown', function (e) {
       if (activeId !== null) return;
@@ -796,26 +836,24 @@
         touchThrust = true;
         composeInput();
       }, HOLD_THRESHOLD_MS);
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
     });
 
     function endPress(e, allowFire) {
       if (e.pointerId !== activeId) return;
-      activeId = null;
-      zoneMid.classList.remove('active');
-      clearTimeout(holdTimer);
-      if (holdEngaged) {
-        touchThrust = false;
-        composeInput();
-      } else if (allowFire) {
-        var dx = e.clientX - downX, dy = e.clientY - downY;
-        if (Math.sqrt(dx * dx + dy * dy) < TAP_MAX_MOVE) fireBullet();
-      }
-      holdEngaged = false;
+      var wasHoldEngaged = holdEngaged;
+      var dx = e.clientX - downX, dy = e.clientY - downY;
+      var moved = Math.sqrt(dx * dx + dy * dy);
+      hardRelease();
+      if (!wasHoldEngaged && allowFire && moved < TAP_MAX_MOVE) fireBullet();
     }
 
     zoneMid.addEventListener('pointerup', function (e) { endPress(e, true); });
     zoneMid.addEventListener('pointercancel', function (e) { endPress(e, false); });
     zoneMid.addEventListener('lostpointercapture', function (e) { endPress(e, false); });
+
+    heldZoneResets.push(hardRelease);
   })();
 
   // ---- Input: keyboard fallback ------------------------------------------------------
@@ -855,6 +893,25 @@
       kbHoldEngaged = false;
     }
   });
+
+  // Same stuck-input safety net as the touch zones above, for the keyboard
+  // fallback (a held key could theoretically miss its keyup the same way a
+  // touch can miss its pointerup - e.g. alt-tabbing away mid-hold).
+  function forceReleaseKeyboard() {
+    clearTimeout(kbHoldTimer);
+    if (kbLeft || kbRight || kbThrust) {
+      kbLeft = false; kbRight = false; kbThrust = false;
+      composeInput();
+    }
+    kbHoldEngaged = false;
+  }
+
+  function forceReleaseAllInput() {
+    heldZoneResets.forEach(function (fn) { fn(); });
+    forceReleaseKeyboard();
+  }
+
+  window.addEventListener('blur', forceReleaseAllInput);
 
   // ---- Wire up controls ------------------------------------------------------
   // Belt-and-suspenders against long-press text selection / callout menus
