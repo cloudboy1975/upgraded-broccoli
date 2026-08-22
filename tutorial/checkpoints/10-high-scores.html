@@ -3,161 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>9. Lives, Game Over, Restart &mdash; Build Asteroids</title>
-<link rel="stylesheet" href="../assets/tutorial.css">
-<link rel="stylesheet" href="../assets/highlight-theme.css">
-<script src="../assets/highlight.min.js"></script>
-</head>
-<body>
-  <div class="page">
-    <div class="crumbs"><a href="../index.html">&larr; Build Asteroids</a></div>
-    <span class="lesson-kicker">Core &middot; Lesson 9 of 12</span>
-    <h1>Lives, Game Over, Restart</h1>
-    <div class="subtitle">
-Rocks have been able to hit the ship since lesson 4, but nothing happened when they did &mdash; there was no ship side of collision detection at all. This lesson adds it, along with the three things that make losing (and coming back) actually work: lives, a game-over state, and a restart that puts everything back exactly where it started.
-    </div>
-
-    <h2>The ship's side of a collision</h2>
-    <p>
-      Same squared-distance technique as lesson 7's bullet-vs-rock check,
-      run once against every rock, but only when the ship isn't currently
-      invulnerable &mdash; otherwise a respawn would immediately re-trigger
-      another hit before the player has any chance to react.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">// added inside handleCollisions(), after the bullet-vs-rock loop:
-if (!isInvulnerable()) {
-  for (var i = 0; i < state.rocks.length; i++) {
-    var rock = state.rocks[i];
-    var sx = state.ship.x - rock.x, sy = state.ship.y - rock.y;
-    var sr = state.ship.radius + rock.radius;
-    if (sx * sx + sy * sy <= sr * sr) {
-      shipHit();
-      break;
-    }
-  }
-}
-
-function isInvulnerable() { return performance.now() < state.ship.invulnerableUntil; }</code></pre>
-    </div>
-
-    <h2>Losing a life, or the game</h2>
-    <p>
-      <code>shipHit()</code> is the fork: still got lives left, respawn
-      with a couple seconds of invulnerability; out of lives, end the
-      game instead. <code>respawnShip()</code> deliberately doesn't reset
-      the ship's world position &mdash; only its velocity and heading &mdash;
-      so respawning doesn't yank the camera back to the origin.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">var RESPAWN_INVULN_MS = 2000;
-
-function shipHit() {
-  state.lives--;
-  if (state.lives <= 0) {
-    state.lives = 0;
-    endGame();
-  } else {
-    respawnShip();
-  }
-  renderHud();
-}
-
-function respawnShip() {
-  state.ship.vx = 0;
-  state.ship.vy = 0;
-  state.ship.heading = -Math.PI / 2;
-  state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
-}
-
-function endGame() {
-  state.phase = 'gameover';
-  overlayScoreEl.textContent = state.score;
-  overlayEl.classList.add('visible');
-}</code></pre>
-    </div>
-    <p>
-      Two more small pieces tie into <code>state.phase</code>: the game
-      loop only calls <code>update(dt)</code> while
-      <code>state.phase === 'playing'</code> (so a game-over screen
-      doesn't keep simulating rocks behind it), and
-      <code>fireBullet()</code> now bails out immediately if the phase
-      isn't <code>'playing'</code> &mdash; the guard mentioned back in
-      lesson 6.
-    </p>
-    <p>
-      Invulnerability gets a visual cue too: a two-line addition at the
-      top of <code>drawShip()</code> blinks the ship by skipping every
-      other 100ms window while <code>isInvulnerable()</code> is true.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">function drawShip() {
-  if (isInvulnerable() && Math.floor(performance.now() / 100) % 2 === 0) return;
-  // ...rest of drawShip unchanged
-}</code></pre>
-    </div>
-
-    <h2>Restarting cleanly</h2>
-    <p>
-      <code>resetGame()</code> is deliberately exhaustive &mdash; it's the
-      one place responsible for putting <em>every</em> piece of mutable
-      state (ship, rocks, bullets, lives, score, timers) back to its
-      starting value, then reseeding the field, so a restart is never
-      subtly different from a fresh page load.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">function resetGame() {
-  state.phase = 'playing';
-  state.ship.x = 0; state.ship.y = 0;
-  state.ship.vx = 0; state.ship.vy = 0;
-  state.ship.heading = -Math.PI / 2;
-  state.ship.thrusting = false;
-  state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
-  state.rocks = [];
-  state.bullets = [];
-  state.lives = 3;
-  state.score = 0;
-  state.spawn.timer = 0;
-  state.difficulty.elapsed = 0;
-  state.nextRockId = 1;
-  state.timing.lastFrameTime = 0;
-  seedRocks();
-  overlayEl.classList.remove('visible');
-  renderHud();
-}</code></pre>
-    </div>
-    <p>
-      Two buttons call it: the always-visible Restart below the canvas,
-      and the one inside the game-over overlay &mdash; same function,
-      wired to both, so there's exactly one place that defines what
-      "restart" actually means.
-    </p>
-
-    <h2>Try it</h2>
-    <p>Fly into a rock. You'll blink and get a couple invulnerable seconds instead of dying outright. Lose all three lives to see the game-over overlay, then hit Restart.</p>
-    <div class="demo-block">
-      <div class="demo-frame-wrap"><iframe src="../checkpoints/09-lives-gameover-restart.html" loading="lazy" title="Checkpoint 9 live demo"></iframe></div>
-      <div class="demo-links">
-        <a href="../checkpoints/09-lives-gameover-restart.html" target="_blank" rel="noopener">Open in a new tab</a>
-        <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
-      </div>
-    </div>
-
-    <h2>Full source so far</h2>
-    <details class="source-disclosure">
-      <summary>checkpoints/09-lives-gameover-restart.html</summary>
-      <div class="code-panel">
-        <pre><code class="language-html">&lt;!DOCTYPE html&gt;
-&lt;html lang=&quot;en&quot;&gt;
-&lt;head&gt;
-&lt;meta charset=&quot;UTF-8&quot;&gt;
-&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot;&gt;
-&lt;title&gt;Checkpoint 9 &amp;mdash; Lives, Game Over, Restart&lt;/title&gt;
-&lt;style&gt;
+<title>Checkpoint 10 &mdash; Persisted High Scores</title>
+<style>
   :root {
     --bg-1: #0f172a;
     --bg-2: #1e293b;
@@ -174,7 +21,7 @@ function endGame() {
     min-height: 100dvh;
     background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
     color: var(--muted);
-    font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -232,8 +79,8 @@ function endGame() {
   }
   .overlay.visible { display: flex; }
   .overlay-title { font-size: 1.4rem; font-weight: 800; color: var(--text); }
-  .overlay-score { color: var(--muted); font-size: 0.95rem; }
-  .overlay-score b { color: var(--text); }
+  .overlay-score, .overlay-best { color: var(--muted); font-size: 0.95rem; }
+  .overlay-score b, .overlay-best b { color: var(--text); }
   .overlay-btn { margin-top: 10px; min-width: 140px; flex: none; }
   .controls { display: flex; gap: 10px; width: 100%; max-width: 420px; }
   .btn {
@@ -247,6 +94,7 @@ function endGame() {
   }
   .btn:active { transform: scale(0.97); }
   .btn.primary { background: var(--accent); color: #052e16; }
+  .btn.secondary { background: var(--bg-2); color: var(--text); }
   .canvas-wrap {
     width: 100%;
     max-width: 420px;
@@ -259,37 +107,41 @@ function endGame() {
   }
   #gameCanvas { display: block; width: 100%; height: 100%; }
   .note { font-size: 0.8rem; text-align: center; }
-&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-  &lt;div class=&quot;status-bar&quot;&gt;
-    &lt;div class=&quot;status-text&quot;&gt;
-      &lt;span class=&quot;turn-dot playing&quot; id=&quot;phaseDot&quot;&gt;&lt;/span&gt;
-      &lt;span id=&quot;statusLabel&quot;&gt;Playing&lt;/span&gt;
-    &lt;/div&gt;
-    &lt;div class=&quot;scoreboard&quot;&gt;
-      &lt;div class=&quot;score-pill&quot;&gt;Score&lt;b id=&quot;scoreVal&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
-      &lt;div class=&quot;score-pill&quot;&gt;Lives&lt;b id=&quot;livesVal&quot;&gt;3&lt;/b&gt;&lt;/div&gt;
-    &lt;/div&gt;
-  &lt;/div&gt;
-  &lt;div class=&quot;canvas-wrap&quot; id=&quot;canvasWrap&quot;&gt;
-    &lt;canvas id=&quot;gameCanvas&quot;&gt;&lt;/canvas&gt;
-    &lt;div class=&quot;overlay&quot; id=&quot;gameOverOverlay&quot;&gt;
-      &lt;div class=&quot;overlay-title&quot;&gt;Game Over&lt;/div&gt;
-      &lt;div class=&quot;overlay-score&quot;&gt;Score: &lt;b id=&quot;overlayScore&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
-      &lt;button type=&quot;button&quot; class=&quot;btn primary overlay-btn&quot; id=&quot;overlayRestartBtn&quot;&gt;Restart&lt;/button&gt;
-    &lt;/div&gt;
-  &lt;/div&gt;
-  &lt;div class=&quot;controls&quot;&gt;
-    &lt;button type=&quot;button&quot; class=&quot;btn primary&quot; id=&quot;restartBtn&quot;&gt;Restart&lt;/button&gt;
-  &lt;/div&gt;
-  &lt;div class=&quot;note&quot;&gt;Checkpoint 9: crashing into a rock costs a life and gives you a moment of blinking invulnerability. Lose all three and restart.&lt;/div&gt;
+</style>
+</head>
+<body>
+  <div class="status-bar">
+    <div class="status-text">
+      <span class="turn-dot playing" id="phaseDot"></span>
+      <span id="statusLabel">Playing</span>
+    </div>
+    <div class="scoreboard">
+      <div class="score-pill">Score<b id="scoreVal">0</b></div>
+      <div class="score-pill">Lives<b id="livesVal">3</b></div>
+      <div class="score-pill">Best<b id="bestVal">0</b></div>
+    </div>
+  </div>
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="gameCanvas"></canvas>
+    <div class="overlay" id="gameOverOverlay">
+      <div class="overlay-title">Game Over</div>
+      <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
+      <div class="overlay-best">Best: <b id="overlayBest">0</b></div>
+      <button type="button" class="btn primary overlay-btn" id="overlayRestartBtn">Restart</button>
+    </div>
+  </div>
+  <div class="controls">
+    <button type="button" class="btn primary" id="restartBtn">Restart</button>
+    <button type="button" class="btn secondary" id="resetBestBtn">Reset Best</button>
+  </div>
+  <div class="note">Checkpoint 10: your best score survives a reload &mdash; try refreshing the page after a run.</div>
 
-&lt;script&gt;
+<script>
 (function () {
-  &quot;use strict&quot;;
+  "use strict";
 
   // ---- Constants ----------------------------------------------------
+  var HIGH_SCORE_KEY = 'ast-tutorial-highscore-v1';
   var SHIP_RADIUS = 12;
   var BULLET_RADIUS = 3;
   var THRUST_ACCEL = 220;
@@ -304,34 +156,37 @@ function endGame() {
   var HOLD_THRESHOLD_MS = 190;
 
   var ROCK_SIZES = {
-    large:  { radius: 46, speedRange: [30, 70],   score: 20,  child: &#x27;medium&#x27; },
-    medium: { radius: 27, speedRange: [50, 100],  score: 50,  child: &#x27;small&#x27; },
+    large:  { radius: 46, speedRange: [30, 70],   score: 20,  child: 'medium' },
+    medium: { radius: 27, speedRange: [50, 100],  score: 50,  child: 'small' },
     small:  { radius: 15, speedRange: [80, 140],  score: 100, child: null }
   };
 
-  var COLOR_SHIP = &#x27;#e2e8f0&#x27;;
-  var COLOR_BULLET = &#x27;#22c55e&#x27;;
-  var COLOR_FLAME = &#x27;#f97316&#x27;;
-  var COLOR_STAR = &#x27;rgba(148, 163, 184, 0.5)&#x27;;
-  var COLOR_ROCK_STROKE = &#x27;#334155&#x27;;
-  var COLOR_ROCK_FILL = &#x27;rgba(148, 163, 184, 0.18)&#x27;;
+  var COLOR_SHIP = '#e2e8f0';
+  var COLOR_BULLET = '#22c55e';
+  var COLOR_FLAME = '#f97316';
+  var COLOR_STAR = 'rgba(148, 163, 184, 0.5)';
+  var COLOR_ROCK_STROKE = '#334155';
+  var COLOR_ROCK_FILL = 'rgba(148, 163, 184, 0.18)';
 
   // ---- DOM ------------------------------------------------------------
-  var canvasWrap = document.getElementById(&#x27;canvasWrap&#x27;);
-  var canvas = document.getElementById(&#x27;gameCanvas&#x27;);
-  var ctx = canvas.getContext(&#x27;2d&#x27;);
-  var overlayEl = document.getElementById(&#x27;gameOverOverlay&#x27;);
-  var overlayScoreEl = document.getElementById(&#x27;overlayScore&#x27;);
-  var overlayRestartBtn = document.getElementById(&#x27;overlayRestartBtn&#x27;);
-  var restartBtn = document.getElementById(&#x27;restartBtn&#x27;);
-  var phaseDotEl = document.getElementById(&#x27;phaseDot&#x27;);
-  var statusLabelEl = document.getElementById(&#x27;statusLabel&#x27;);
-  var scoreValEl = document.getElementById(&#x27;scoreVal&#x27;);
-  var livesValEl = document.getElementById(&#x27;livesVal&#x27;);
+  var canvasWrap = document.getElementById('canvasWrap');
+  var canvas = document.getElementById('gameCanvas');
+  var ctx = canvas.getContext('2d');
+  var overlayEl = document.getElementById('gameOverOverlay');
+  var overlayScoreEl = document.getElementById('overlayScore');
+  var overlayBestEl = document.getElementById('overlayBest');
+  var overlayRestartBtn = document.getElementById('overlayRestartBtn');
+  var restartBtn = document.getElementById('restartBtn');
+  var resetBestBtn = document.getElementById('resetBestBtn');
+  var phaseDotEl = document.getElementById('phaseDot');
+  var statusLabelEl = document.getElementById('statusLabel');
+  var scoreValEl = document.getElementById('scoreVal');
+  var livesValEl = document.getElementById('livesVal');
+  var bestValEl = document.getElementById('bestVal');
 
   // ---- State ------------------------------------------------------------
   var state = {
-    phase: &#x27;playing&#x27;, // &#x27;playing&#x27; | &#x27;gameover&#x27;
+    phase: 'playing', // 'playing' | 'gameover'
     ship: {
       x: 0, y: 0, vx: 0, vy: 0,
       heading: -Math.PI / 2,
@@ -343,6 +198,7 @@ function endGame() {
     bullets: [],
     lives: 3,
     score: 0,
+    highScore: 0,
     nextRockId: 1,
     input: { left: false, right: false, thrust: false },
     spawn: { timer: 0 },
@@ -360,14 +216,14 @@ function endGame() {
     var dpr = window.devicePixelRatio || 1;
     var w = Math.round(rect.width);
     var h = Math.round(rect.height);
-    if (w === state.canvasCssW &amp;&amp; h === state.canvasCssH &amp;&amp; dpr === state.canvasDpr) return;
+    if (w === state.canvasCssW && h === state.canvasCssH && dpr === state.canvasDpr) return;
     state.canvasCssW = w;
     state.canvasCssH = h;
     state.canvasDpr = dpr;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
-    canvas.style.width = w + &#x27;px&#x27;;
-    canvas.style.height = h + &#x27;px&#x27;;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     generateStars();
   }
@@ -375,7 +231,7 @@ function endGame() {
   function generateStars() {
     stars = [];
     var count = Math.round((state.canvasCssW * state.canvasCssH) / 4000);
-    for (var i = 0; i &lt; count; i++) {
+    for (var i = 0; i < count; i++) {
       stars.push({
         x: Math.random() * state.canvasCssW,
         y: Math.random() * state.canvasCssH,
@@ -392,7 +248,7 @@ function endGame() {
 
   // ---- Firing ------------------------------------------------------
   function fireBullet() {
-    if (state.phase !== &#x27;playing&#x27;) return;
+    if (state.phase !== 'playing') return;
     var heading = state.ship.heading;
     state.bullets.push({
       x: state.ship.x + Math.cos(heading) * state.ship.radius,
@@ -404,14 +260,14 @@ function endGame() {
   }
 
   // ---- Input: keyboard ------------------------------------------------------
-  function isLeftKey(code) { return code === &#x27;ArrowLeft&#x27; || code === &#x27;KeyA&#x27;; }
-  function isRightKey(code) { return code === &#x27;ArrowRight&#x27; || code === &#x27;KeyD&#x27;; }
-  function isThrustKey(code) { return code === &#x27;Space&#x27; || code === &#x27;ArrowUp&#x27; || code === &#x27;KeyW&#x27;; }
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isThrustKey(code) { return code === 'Space' || code === 'ArrowUp' || code === 'KeyW'; }
 
   var kbHoldTimer = null;
   var kbHoldEngaged = false;
 
-  document.addEventListener(&#x27;keydown&#x27;, function (e) {
+  document.addEventListener('keydown', function (e) {
     if (isThrustKey(e.code)) e.preventDefault();
     if (e.repeat) return;
     if (isLeftKey(e.code)) state.input.left = true;
@@ -425,7 +281,7 @@ function endGame() {
     }
   });
 
-  document.addEventListener(&#x27;keyup&#x27;, function (e) {
+  document.addEventListener('keyup', function (e) {
     if (isLeftKey(e.code)) state.input.left = false;
     else if (isRightKey(e.code)) state.input.right = false;
     else if (isThrustKey(e.code)) {
@@ -461,7 +317,7 @@ function endGame() {
   function makeRockShape() {
     var points = [];
     var n = 10 + Math.floor(Math.random() * 4);
-    for (var i = 0; i &lt; n; i++) {
+    for (var i = 0; i < n; i++) {
       points.push({
         angle: (i / n) * Math.PI * 2,
         r: 0.75 + Math.random() * 0.5
@@ -486,22 +342,22 @@ function endGame() {
   function seedRocks() {
     var minDist = visibleRadius() * 0.6;
     var maxDist = despawnRadius() * 0.5;
-    for (var i = 0; i &lt; 6; i++) {
+    for (var i = 0; i < 6; i++) {
       var angle = Math.random() * Math.PI * 2;
       var dist = minDist + Math.random() * (maxDist - minDist);
       var x = state.ship.x + Math.cos(angle) * dist;
       var y = state.ship.y + Math.sin(angle) * dist;
       var dirAngle = Math.random() * Math.PI * 2;
       var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
-      state.rocks.push(createRock(&#x27;large&#x27;, x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
+      state.rocks.push(createRock('large', x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
     }
   }
 
   function trySpawnRocks(dt) {
     state.spawn.timer -= dt;
-    if (state.spawn.timer &gt; 0) return;
+    if (state.spawn.timer > 0) return;
     state.spawn.timer = SPAWN_CHECK_INTERVAL;
-    if (state.rocks.length &gt;= targetRockCount()) return;
+    if (state.rocks.length >= targetRockCount()) return;
 
     var angle = Math.random() * Math.PI * 2;
     var dist = spawnRingRadius();
@@ -509,15 +365,15 @@ function endGame() {
     var y = state.ship.y + Math.sin(angle) * dist;
     var inward = angle + Math.PI + (Math.random() - 0.5) * 1.0;
     var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
-    state.rocks.push(createRock(&#x27;large&#x27;, x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
+    state.rocks.push(createRock('large', x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
   }
 
   function despawnFarRocks() {
     var dr = despawnRadius();
-    for (var i = state.rocks.length - 1; i &gt;= 0; i--) {
+    for (var i = state.rocks.length - 1; i >= 0; i--) {
       var rk = state.rocks[i];
       var dx = rk.x - state.ship.x, dy = rk.y - state.ship.y;
-      if (dx * dx + dy * dy &gt; dr * dr) state.rocks.splice(i, 1);
+      if (dx * dx + dy * dy > dr * dr) state.rocks.splice(i, 1);
     }
   }
 
@@ -535,7 +391,7 @@ function endGame() {
     ship.vx *= damp;
     ship.vy *= damp;
     var speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-    if (speed &gt; MAX_SPEED) {
+    if (speed > MAX_SPEED) {
       var scale = MAX_SPEED / speed;
       ship.vx *= scale;
       ship.vy *= scale;
@@ -545,7 +401,7 @@ function endGame() {
   }
 
   function updateRocks(dt) {
-    for (var i = 0; i &lt; state.rocks.length; i++) {
+    for (var i = 0; i < state.rocks.length; i++) {
       var rk = state.rocks[i];
       rk.x += rk.vx * dt;
       rk.y += rk.vy * dt;
@@ -554,24 +410,24 @@ function endGame() {
   }
 
   function updateBullets(dt) {
-    for (var i = state.bullets.length - 1; i &gt;= 0; i--) {
+    for (var i = state.bullets.length - 1; i >= 0; i--) {
       var b = state.bullets[i];
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.ttl -= dt;
-      if (b.ttl &lt;= 0) state.bullets.splice(i, 1);
+      if (b.ttl <= 0) state.bullets.splice(i, 1);
     }
   }
 
   // ---- Collisions ------------------------------------------------------
   function handleCollisions() {
-    for (var bi = state.bullets.length - 1; bi &gt;= 0; bi--) {
+    for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
       var b = state.bullets[bi];
-      for (var ri = state.rocks.length - 1; ri &gt;= 0; ri--) {
+      for (var ri = state.rocks.length - 1; ri >= 0; ri--) {
         var rk = state.rocks[ri];
         var dx = b.x - rk.x, dy = b.y - rk.y;
         var rr = rk.radius + BULLET_RADIUS;
-        if (dx * dx + dy * dy &lt;= rr * rr) {
+        if (dx * dx + dy * dy <= rr * rr) {
           state.bullets.splice(bi, 1);
           splitRock(ri);
           break;
@@ -580,11 +436,11 @@ function endGame() {
     }
 
     if (!isInvulnerable()) {
-      for (var i = 0; i &lt; state.rocks.length; i++) {
+      for (var i = 0; i < state.rocks.length; i++) {
         var rock = state.rocks[i];
         var sx = state.ship.x - rock.x, sy = state.ship.y - rock.y;
         var sr = state.ship.radius + rock.radius;
-        if (sx * sx + sy * sy &lt;= sr * sr) {
+        if (sx * sx + sy * sy <= sr * sr) {
           shipHit();
           break;
         }
@@ -592,11 +448,11 @@ function endGame() {
     }
   }
 
-  function isInvulnerable() { return performance.now() &lt; state.ship.invulnerableUntil; }
+  function isInvulnerable() { return performance.now() < state.ship.invulnerableUntil; }
 
   function shipHit() {
     state.lives--;
-    if (state.lives &lt;= 0) {
+    if (state.lives <= 0) {
       state.lives = 0;
       endGame();
     } else {
@@ -613,9 +469,10 @@ function endGame() {
   }
 
   function endGame() {
-    state.phase = &#x27;gameover&#x27;;
+    state.phase = 'gameover';
     overlayScoreEl.textContent = state.score;
-    overlayEl.classList.add(&#x27;visible&#x27;);
+    overlayBestEl.textContent = state.highScore;
+    overlayEl.classList.add('visible');
   }
 
   function splitRock(index) {
@@ -626,7 +483,7 @@ function endGame() {
     if (!info.child) return;
     var baseAngle = (rock.vx || rock.vy) ? Math.atan2(rock.vy, rock.vx) : Math.random() * Math.PI * 2;
     var childInfo = ROCK_SIZES[info.child];
-    for (var k = 0; k &lt; 2; k++) {
+    for (var k = 0; k < 2; k++) {
       var spread = 0.5 + Math.random() * 0.3;
       var ang = baseAngle + (k === 0 ? spread : -spread);
       var speed = randRange(childInfo.speedRange) * speedMultiplier();
@@ -636,6 +493,29 @@ function endGame() {
 
   function addScore(n) {
     state.score += n;
+    if (state.score > state.highScore) {
+      state.highScore = state.score;
+      saveHighScore();
+    }
+    renderHud();
+  }
+
+  // ---- Persistence ------------------------------------------------------
+  function loadHighScore() {
+    try {
+      var raw = localStorage.getItem(HIGH_SCORE_KEY);
+      var n = parseInt(raw, 10);
+      state.highScore = (isFinite(n) && n > 0) ? n : 0;
+    } catch (e) { /* ignore storage errors (private browsing, quota, etc.) */ }
+  }
+
+  function saveHighScore() {
+    try { localStorage.setItem(HIGH_SCORE_KEY, String(state.highScore)); } catch (e) {}
+  }
+
+  function resetBest() {
+    state.highScore = 0;
+    saveHighScore();
     renderHud();
   }
 
@@ -643,13 +523,14 @@ function endGame() {
   function renderHud() {
     scoreValEl.textContent = state.score;
     livesValEl.textContent = state.lives;
-    phaseDotEl.className = &#x27;turn-dot &#x27; + (state.phase === &#x27;playing&#x27; ? &#x27;playing&#x27; : &#x27;gameover&#x27;);
-    statusLabelEl.textContent = state.phase === &#x27;playing&#x27; ? &#x27;Playing&#x27; : &#x27;Game Over&#x27;;
+    bestValEl.textContent = state.highScore;
+    phaseDotEl.className = 'turn-dot ' + (state.phase === 'playing' ? 'playing' : 'gameover');
+    statusLabelEl.textContent = state.phase === 'playing' ? 'Playing' : 'Game Over';
   }
 
   // ---- Reset / restart ------------------------------------------------------
   function resetGame() {
-    state.phase = &#x27;playing&#x27;;
+    state.phase = 'playing';
     state.ship.x = 0; state.ship.y = 0;
     state.ship.vx = 0; state.ship.vy = 0;
     state.ship.heading = -Math.PI / 2;
@@ -664,14 +545,14 @@ function endGame() {
     state.nextRockId = 1;
     state.timing.lastFrameTime = 0;
     seedRocks();
-    overlayEl.classList.remove(&#x27;visible&#x27;);
+    overlayEl.classList.remove('visible');
     renderHud();
   }
 
   // ---- Rendering ------------------------------------------------------
   function drawBackground() {
     ctx.fillStyle = COLOR_STAR;
-    for (var i = 0; i &lt; stars.length; i++) {
+    for (var i = 0; i < stars.length; i++) {
       var s = stars[i];
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
@@ -685,7 +566,7 @@ function endGame() {
     ctx.translate(p.x, p.y);
     ctx.rotate(rock.rotation);
     ctx.beginPath();
-    for (var i = 0; i &lt; rock.shapePoints.length; i++) {
+    for (var i = 0; i < rock.shapePoints.length; i++) {
       var pt = rock.shapePoints[i];
       var rad = rock.radius * pt.r;
       var px = Math.cos(pt.angle) * rad;
@@ -710,7 +591,7 @@ function endGame() {
   }
 
   function drawShip() {
-    if (isInvulnerable() &amp;&amp; Math.floor(performance.now() / 100) % 2 === 0) return;
+    if (isInvulnerable() && Math.floor(performance.now() / 100) % 2 === 0) return;
     var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
     var r = state.ship.radius;
     ctx.save();
@@ -743,8 +624,8 @@ function endGame() {
   function render() {
     ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
     drawBackground();
-    for (var i = 0; i &lt; state.rocks.length; i++) drawRock(state.rocks[i]);
-    for (var j = 0; j &lt; state.bullets.length; j++) drawBullet(state.bullets[j]);
+    for (var i = 0; i < state.rocks.length; i++) drawRock(state.rocks[i]);
+    for (var j = 0; j < state.bullets.length; j++) drawBullet(state.bullets[j]);
     drawShip();
   }
 
@@ -765,36 +646,22 @@ function endGame() {
     if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
     var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
     state.timing.lastFrameTime = ts;
-    if (state.phase === &#x27;playing&#x27;) update(dt);
+    if (state.phase === 'playing') update(dt);
     render();
   }
 
-  window.addEventListener(&#x27;resize&#x27;, onResize);
-  window.addEventListener(&#x27;orientationchange&#x27;, onResize);
-  restartBtn.addEventListener(&#x27;click&#x27;, resetGame);
-  overlayRestartBtn.addEventListener(&#x27;click&#x27;, resetGame);
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+  restartBtn.addEventListener('click', resetGame);
+  overlayRestartBtn.addEventListener('click', resetGame);
+  resetBestBtn.addEventListener('click', resetBest);
 
   // ---- Init ------------------------------------------------------
   resizeCanvas();
-  seedRocks();
+  loadHighScore();
+  resetGame(); // resetGame() already seeds the rock field, so it replaces the old seedRocks() call here
   rafId = requestAnimationFrame(frame);
 })();
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;
-</code></pre>
-      </div>
-    </details>
-
-    <div class="lesson-nav">
-      <a href="08-splitting-and-scoring.html"><span class="nav-label">Prev</span>&lsaquo; 8. Splitting Rocks and Scoring</a>
-      <a class="next" href="10-high-scores.html"><span class="nav-label">Next</span>10. Persisted High Scores &rsaquo;</a>
-    </div>
-
-    <footer class="page-footer"><a href="../index.html">Back to lesson list</a></footer>
-  </div>
-<script>
-  document.querySelectorAll('pre code').forEach(function (el) { hljs.highlightElement(el); });
 </script>
 </body>
 </html>
