@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Checkpoint 2 &mdash; Drawing the Ship</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--muted);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+  }
+  .canvas-wrap {
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 3 / 4;
+    position: relative;
+    background: var(--board);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+  #gameCanvas { display: block; width: 100%; height: 100%; }
+  .note { font-size: 0.8rem; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+  <div class="note">Checkpoint 2: a stationary ship, drawn with canvas transforms, over a tiny starfield.</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Constants ----------------------------------------------------
+  var SHIP_RADIUS = 12;
+  var COLOR_SHIP = '#e2e8f0';
+  var COLOR_STAR = 'rgba(148, 163, 184, 0.5)';
+  var MAX_DT = 0.05;
+
+  // ---- DOM ------------------------------------------------------------
+  var canvasWrap = document.getElementById('canvasWrap');
+  var canvas = document.getElementById('gameCanvas');
+  var ctx = canvas.getContext('2d');
+
+  // ---- State ------------------------------------------------------------
+  var state = {
+    ship: {
+      heading: -Math.PI / 2, // pointing "up"
+      radius: SHIP_RADIUS
+    },
+    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+    timing: { lastFrameTime: 0 }
+  };
+  window.__astDebugState = state;
+
+  var stars = [];
+
+  // ---- Canvas sizing ------------------------------------------------------
+  function resizeCanvas() {
+    var rect = canvasWrap.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.round(rect.width);
+    var h = Math.round(rect.height);
+    if (w === state.canvasCssW && h === state.canvasCssH && dpr === state.canvasDpr) return;
+    state.canvasCssW = w;
+    state.canvasCssH = h;
+    state.canvasDpr = dpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    generateStars();
+  }
+
+  function generateStars() {
+    stars = [];
+    var count = Math.round((state.canvasCssW * state.canvasCssH) / 4000);
+    for (var i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * state.canvasCssW,
+        y: Math.random() * state.canvasCssH,
+        r: Math.random() * 1.2 + 0.3
+      });
+    }
+  }
+
+  var resizeTimer = null;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resizeCanvas, 150);
+  }
+
+  // ---- Rendering ------------------------------------------------------
+  function drawBackground() {
+    ctx.fillStyle = COLOR_STAR;
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawShip() {
+    var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
+    var r = state.ship.radius;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(state.ship.heading);
+
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r * 0.7, r * 0.7);
+    ctx.lineTo(-r * 0.35, 0);
+    ctx.lineTo(-r * 0.7, -r * 0.7);
+    ctx.closePath();
+    ctx.strokeStyle = COLOR_SHIP;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
+    drawBackground();
+    drawShip();
+  }
+
+  // ---- Game loop ------------------------------------------------------
+  var rafId = null;
+  function frame(ts) {
+    rafId = requestAnimationFrame(frame);
+    if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
+    var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
+    state.timing.lastFrameTime = ts;
+    render();
+  }
+
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+
+  // ---- Init ------------------------------------------------------
+  resizeCanvas();
+  rafId = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

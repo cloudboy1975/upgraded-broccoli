@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Checkpoint 1 &mdash; Canvas and Loop</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--muted);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+  }
+  .canvas-wrap {
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 3 / 4;
+    position: relative;
+    background: var(--board);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+  #gameCanvas { display: block; width: 100%; height: 100%; }
+  .note { font-size: 0.8rem; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+  <div class="note">Checkpoint 1: an empty, resizing canvas driven by a real game loop.</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var canvasWrap = document.getElementById('canvasWrap');
+  var canvas = document.getElementById('gameCanvas');
+  var ctx = canvas.getContext('2d');
+
+  var state = {
+    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+    timing: { lastFrameTime: 0 }
+  };
+  window.__astDebugState = state; // read-only hook used by the tutorial's own tests
+
+  var MAX_DT = 0.05;
+
+  // ---- Canvas sizing ------------------------------------------------------
+  function resizeCanvas() {
+    var rect = canvasWrap.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.round(rect.width);
+    var h = Math.round(rect.height);
+    if (w === state.canvasCssW && h === state.canvasCssH && dpr === state.canvasDpr) return;
+    state.canvasCssW = w;
+    state.canvasCssH = h;
+    state.canvasDpr = dpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  var resizeTimer = null;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resizeCanvas, 150);
+  }
+
+  // ---- Rendering ------------------------------------------------------
+  function render() {
+    ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
+  }
+
+  // ---- Game loop ------------------------------------------------------
+  var rafId = null;
+  function frame(ts) {
+    rafId = requestAnimationFrame(frame);
+    if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
+    var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
+    state.timing.lastFrameTime = ts;
+    render();
+  }
+
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+
+  // ---- Init ------------------------------------------------------
+  resizeCanvas();
+  rafId = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

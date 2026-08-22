@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Build Asteroids &mdash; A Step-by-Step Tutorial</title>
+<link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <div class="page">
+    <div class="crumbs"><a href="../index.html">&larr; All games</a></div>
+    <h1>Build Asteroids</h1>
+    <div class="subtitle">
+      A construction tutorial for <a href="../asteroids.html">Asteroids</a> and
+      <a href="../asteroids-2.html">Asteroids II</a> &mdash; the same two games
+      in this collection, rebuilt here one small piece at a time. Each lesson
+      adds one mechanic, shows the exact code for it, and gives you a live,
+      playable "game so far" to try before moving on.
+    </div>
+
+    <h2>Core: Building Asteroids from Scratch</h2>
+    <p>Twelve lessons, plain JavaScript and a &lt;canvas&gt; element, zero
+      frameworks &mdash; ending with the same game shipped as
+      <code>asteroids.html</code>.</p>
+    <div class="lesson-list">
+      <a class="lesson-card" href="lessons/01-canvas-and-loop.html">
+        <div class="lesson-num">1</div>
+        <div class="lesson-info">
+          <div class="lesson-title">The Canvas and the Game Loop</div>
+          <div class="lesson-desc">A resizing full-screen canvas and a requestAnimationFrame loop that ticks with real elapsed time</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/02-drawing-the-ship.html">
+        <div class="lesson-num">2</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Drawing the Ship</div>
+          <div class="lesson-desc">Game state as plain data, and drawing a rotated shape with canvas transforms</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/03-turning-and-thrust.html">
+        <div class="lesson-num">3</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Turning and Thrust</div>
+          <div class="lesson-desc">Keyboard input, heading, and accumulating a velocity vector with drag</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/04-the-camera-trick.html">
+        <div class="lesson-num">4</div>
+        <div class="lesson-info">
+          <div class="lesson-title">The Camera Trick</div>
+          <div class="lesson-desc">Keeping the ship pinned to screen-center by moving the world instead of the ship</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/05-asteroids-and-wraparound.html">
+        <div class="lesson-num">5</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Asteroids and Wraparound</div>
+          <div class="lesson-desc">Spawning drifting rocks in an unbounded world and wrapping them around the camera</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/06-shooting.html">
+        <div class="lesson-num">6</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Shooting</div>
+          <div class="lesson-desc">Bullets, a fire-rate cooldown, and giving projectiles a lifespan</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/07-collisions.html">
+        <div class="lesson-num">7</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Collisions</div>
+          <div class="lesson-desc">Circle-vs-circle distance checks between bullets, rocks, and the ship</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/08-splitting-and-scoring.html">
+        <div class="lesson-num">8</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Splitting Rocks and Scoring</div>
+          <div class="lesson-desc">Big rocks break into smaller ones, with points that scale as they shrink</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/09-lives-gameover-restart.html">
+        <div class="lesson-num">9</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Lives, Game Over, Restart</div>
+          <div class="lesson-desc">Respawn invulnerability, a game-over overlay, and resetting state cleanly</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/10-high-scores.html">
+        <div class="lesson-num">10</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Persisted High Scores</div>
+          <div class="lesson-desc">Saving and loading a best score with localStorage</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/11-mobile-control-bar.html">
+        <div class="lesson-num">11</div>
+        <div class="lesson-info">
+          <div class="lesson-title">The Mobile Control Bar</div>
+          <div class="lesson-desc">A three-zone touch bar &mdash; hold-to-turn and tap-fire/hold-thrust, with a keyboard fallback</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card" href="lessons/12-mobile-hardening.html">
+        <div class="lesson-num">12</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Mobile Hardening</div>
+          <div class="lesson-desc">The real bugs shipping to phones surfaces: stuck buttons, the long-press magnifier, accidental pinch-zoom</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+    </div>
+
+    <h2>Bonus: Leveling Up to Phaser</h2>
+    <p>Six more lessons taking the finished game from lesson 12 and rebuilding
+      it on top of <a href="https://phaser.io/">Phaser 3</a>, ending with the
+      game shipped as <code>asteroids-2.html</code>.</p>
+    <div class="lesson-list">
+      <a class="lesson-card bonus" href="lessons/13-bonus-why-a-framework.html">
+        <div class="lesson-num">13</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Why Reach for a Framework</div>
+          <div class="lesson-desc">What a game framework buys you once a hand-rolled loop starts creaking</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card bonus" href="lessons/14-bonus-porting-to-phaser.html">
+        <div class="lesson-num">14</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Porting the Game Loop to Phaser</div>
+          <div class="lesson-desc">Scenes, Arcade Physics bodies, and baked textures from Graphics objects</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card bonus" href="lessons/15-bonus-camera-follow-in-phaser.html">
+        <div class="lesson-num">15</div>
+        <div class="lesson-info">
+          <div class="lesson-title">The Camera Trick, Phaser's Way</div>
+          <div class="lesson-desc">Swapping lesson 4's hand-rolled camera math for cameras.main.startFollow()</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card bonus" href="lessons/16-bonus-aliens-and-warp.html">
+        <div class="lesson-num">16</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Alien Ships and Hyperspace Warp</div>
+          <div class="lesson-desc">The two mechanics v1 deliberately left out, added back on top of Phaser</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card bonus" href="lessons/17-bonus-procedural-sound.html">
+        <div class="lesson-num">17</div>
+        <div class="lesson-info">
+          <div class="lesson-title">Procedural Sound</div>
+          <div class="lesson-desc">Lasers, explosions, and a warp whoosh synthesized with the Web Audio API &mdash; zero audio files</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+      <a class="lesson-card bonus" href="lessons/18-bonus-fullscreen-mobile-layout.html">
+        <div class="lesson-num">18</div>
+        <div class="lesson-info">
+          <div class="lesson-title">A Real Full-Screen Mobile Layout</div>
+          <div class="lesson-desc">Edge-to-edge canvas, safe-area insets, and overscroll-behavior without requestFullscreen()</div>
+        </div>
+        <div class="chevron">&rsaquo;</div>
+      </a>
+    </div>
+
+    <footer class="page-footer">
+      Building your own game? See <a href="../CONTROLS.md">CONTROLS.md</a>
+      for the mobile control-bar pattern on its own. &middot;
+      <a href="../index.html">Back to all games</a>
+    </footer>
+  </div>
+</body>
+</html>

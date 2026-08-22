@@ -1,0 +1,66 @@
+/* Custom highlight.js theme for the tutorial's code panels.
+   Built against this site's own palette (see tutorial.css :root)
+   instead of a stock highlight.js theme, so code reads as part of
+   the site rather than an imported style. */
+
+.hljs {
+  color: var(--text);
+  background: transparent; /* .code-panel supplies the panel background */
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-type,
+.hljs-literal,
+.hljs-tag {
+  color: var(--accent);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-bullet {
+  color: #fbbf24; /* amber - reads clearly against the dark bg without adding a new global var */
+}
+
+.hljs-number {
+  color: #38bdf8; /* sky blue */
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_,
+.hljs-name {
+  color: var(--flame);
+  font-weight: 600;
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-template-variable {
+  color: #a78bfa; /* violet - object properties, HTML attributes */
+}
+
+.hljs-params {
+  color: var(--text);
+}
+
+.hljs-punctuation,
+.hljs-operator {
+  color: var(--muted);
+}
+
+.hljs-deletion { color: var(--danger); }
+.hljs-addition { color: var(--accent); }
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }

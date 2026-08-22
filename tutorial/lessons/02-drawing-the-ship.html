@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>2. Drawing the Ship &mdash; Build Asteroids</title>
+<link rel="stylesheet" href="../assets/tutorial.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/highlight.min.js"></script>
+</head>
+<body>
+  <div class="page">
+    <div class="crumbs"><a href="../index.html">&larr; Build Asteroids</a></div>
+    <span class="lesson-kicker">Core &middot; Lesson 2 of 12</span>
+    <h1>Drawing the Ship</h1>
+    <div class="subtitle">
+      Now that the canvas is alive, let's put something on it &mdash; the
+      ship, standing still for now (input arrives next lesson). This is
+      also where <code>state</code> shows up: one plain object holding
+      everything about the game world, read by every draw function. That
+      single-object pattern is what the rest of the game is built on.
+    </div>
+
+    <h2>State as data</h2>
+    <p>
+      Rather than scattering separate variables for the ship's position,
+      heading, and so on, everything lives in one <code>state</code>
+      object. That pays off later: it's the one thing a restart has to
+      reset, the one thing collision code reads from, and the one thing a
+      test can inspect from the outside &mdash; which is exactly what the
+      debug hook below is for.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">var SHIP_RADIUS = 12;
+
+var state = {
+  ship: {
+    heading: -Math.PI / 2, // pointing "up"
+    radius: SHIP_RADIUS
+  },
+  canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+  timing: { lastFrameTime: 0 }
+};
+window.__astDebugState = state; // read-only hook used by this tutorial's own tests</code></pre>
+    </div>
+    <p>
+      Heading is in radians, and <code>-Math.PI / 2</code> means "up" in
+      canvas coordinates &mdash; canvas angles increase clockwise from the
+      positive x-axis, so straight up is a quarter turn counter-clockwise
+      from "facing right."
+    </p>
+
+    <h2>Drawing a rotated shape</h2>
+    <p>
+      Rather than computing each point of a rotated triangle by hand, the
+      canvas has a transform stack: <code>save()</code> remembers where
+      you were, <code>translate()</code>/<code>rotate()</code> move and
+      spin the coordinate system itself, and <code>restore()</code> puts
+      it back. So the ship's shape is drawn as if it always faces along
+      the positive x-axis (angle 0) &mdash; the transform handles making it
+      actually point the right way.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">var COLOR_SHIP = '#e2e8f0';
+
+function drawShip() {
+  var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
+  var r = state.ship.radius;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(state.ship.heading);
+
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(-r * 0.7, r * 0.7);
+  ctx.lineTo(-r * 0.35, 0);
+  ctx.lineTo(-r * 0.7, -r * 0.7);
+  ctx.closePath();
+  ctx.strokeStyle = COLOR_SHIP;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}</code></pre>
+    </div>
+    <p>
+      The four points trace a simple arrowhead: a nose out at
+      <code>(r, 0)</code>, two back corners, and a notch pulled in at the
+      tail so it reads as a ship rather than a plain triangle. Note it's
+      drawn at the exact center of the canvas every time, regardless of
+      any <code>x</code>/<code>y</code> the ship might have &mdash; lesson 4
+      explains why that's deliberate.
+    </p>
+
+    <h2>A little atmosphere</h2>
+    <p>
+      Two small functions add a starfield: <code>generateStars()</code>
+      scatters a handful of dots (scaled to the canvas area, so it looks
+      similar on any screen size) whenever the canvas resizes, and
+      <code>drawBackground()</code> paints them each frame, before the
+      ship.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">var COLOR_STAR = 'rgba(148, 163, 184, 0.5)';
+var stars = [];
+
+function generateStars() {
+  stars = [];
+  var count = Math.round((state.canvasCssW * state.canvasCssH) / 4000);
+  for (var i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * state.canvasCssW,
+      y: Math.random() * state.canvasCssH,
+      r: Math.random() * 1.2 + 0.3
+    });
+  }
+}
+
+function drawBackground() {
+  ctx.fillStyle = COLOR_STAR;
+  for (var i = 0; i < stars.length; i++) {
+    var s = stars[i];
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}</code></pre>
+    </div>
+    <p>
+      <code>generateStars()</code> gets called at the end of
+      <code>resizeCanvas()</code> from lesson 1, and <code>render()</code>
+      now calls <code>drawBackground()</code> then <code>drawShip()</code>,
+      in that order, so the ship is always drawn on top.
+    </p>
+
+    <h2>Try it</h2>
+    <p>A stationary ship over a starfield. It'll start moving in the next lesson.</p>
+    <div class="demo-block">
+      <div class="demo-frame-wrap"><iframe src="../checkpoints/02-drawing-the-ship.html" loading="lazy" title="Checkpoint 2 live demo"></iframe></div>
+      <div class="demo-links">
+        <a href="../checkpoints/02-drawing-the-ship.html" target="_blank" rel="noopener">Open in a new tab</a>
+        <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
+      </div>
+    </div>
+
+    <h2>Full source so far</h2>
+    <details class="source-disclosure">
+      <summary>checkpoints/02-drawing-the-ship.html</summary>
+      <div class="code-panel">
+        <pre><code class="language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;UTF-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot;&gt;
+&lt;title&gt;Checkpoint 2 &amp;mdash; Drawing the Ship&lt;/title&gt;
+&lt;style&gt;
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--muted);
+    font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+  }
+  .canvas-wrap {
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 3 / 4;
+    position: relative;
+    background: var(--board);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+  #gameCanvas { display: block; width: 100%; height: 100%; }
+  .note { font-size: 0.8rem; text-align: center; }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;div class=&quot;canvas-wrap&quot; id=&quot;canvasWrap&quot;&gt;
+    &lt;canvas id=&quot;gameCanvas&quot;&gt;&lt;/canvas&gt;
+  &lt;/div&gt;
+  &lt;div class=&quot;note&quot;&gt;Checkpoint 2: a stationary ship, drawn with canvas transforms, over a tiny starfield.&lt;/div&gt;
+
+&lt;script&gt;
+(function () {
+  &quot;use strict&quot;;
+
+  // ---- Constants ----------------------------------------------------
+  var SHIP_RADIUS = 12;
+  var COLOR_SHIP = &#x27;#e2e8f0&#x27;;
+  var COLOR_STAR = &#x27;rgba(148, 163, 184, 0.5)&#x27;;
+  var MAX_DT = 0.05;
+
+  // ---- DOM ------------------------------------------------------------
+  var canvasWrap = document.getElementById(&#x27;canvasWrap&#x27;);
+  var canvas = document.getElementById(&#x27;gameCanvas&#x27;);
+  var ctx = canvas.getContext(&#x27;2d&#x27;);
+
+  // ---- State ------------------------------------------------------------
+  var state = {
+    ship: {
+      heading: -Math.PI / 2, // pointing &quot;up&quot;
+      radius: SHIP_RADIUS
+    },
+    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+    timing: { lastFrameTime: 0 }
+  };
+  window.__astDebugState = state;
+
+  var stars = [];
+
+  // ---- Canvas sizing ------------------------------------------------------
+  function resizeCanvas() {
+    var rect = canvasWrap.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.round(rect.width);
+    var h = Math.round(rect.height);
+    if (w === state.canvasCssW &amp;&amp; h === state.canvasCssH &amp;&amp; dpr === state.canvasDpr) return;
+    state.canvasCssW = w;
+    state.canvasCssH = h;
+    state.canvasDpr = dpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + &#x27;px&#x27;;
+    canvas.style.height = h + &#x27;px&#x27;;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    generateStars();
+  }
+
+  function generateStars() {
+    stars = [];
+    var count = Math.round((state.canvasCssW * state.canvasCssH) / 4000);
+    for (var i = 0; i &lt; count; i++) {
+      stars.push({
+        x: Math.random() * state.canvasCssW,
+        y: Math.random() * state.canvasCssH,
+        r: Math.random() * 1.2 + 0.3
+      });
+    }
+  }
+
+  var resizeTimer = null;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resizeCanvas, 150);
+  }
+
+  // ---- Rendering ------------------------------------------------------
+  function drawBackground() {
+    ctx.fillStyle = COLOR_STAR;
+    for (var i = 0; i &lt; stars.length; i++) {
+      var s = stars[i];
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawShip() {
+    var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
+    var r = state.ship.radius;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(state.ship.heading);
+
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r * 0.7, r * 0.7);
+    ctx.lineTo(-r * 0.35, 0);
+    ctx.lineTo(-r * 0.7, -r * 0.7);
+    ctx.closePath();
+    ctx.strokeStyle = COLOR_SHIP;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
+    drawBackground();
+    drawShip();
+  }
+
+  // ---- Game loop ------------------------------------------------------
+  var rafId = null;
+  function frame(ts) {
+    rafId = requestAnimationFrame(frame);
+    if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
+    var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
+    state.timing.lastFrameTime = ts;
+    render();
+  }
+
+  window.addEventListener(&#x27;resize&#x27;, onResize);
+  window.addEventListener(&#x27;orientationchange&#x27;, onResize);
+
+  // ---- Init ------------------------------------------------------
+  resizeCanvas();
+  rafId = requestAnimationFrame(frame);
+})();
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+      </div>
+    </details>
+
+    <div class="lesson-nav">
+      <a class="prev" href="01-canvas-and-loop.html"><span class="nav-label">Prev</span>&lsaquo; 1. Canvas and Loop</a>
+      <a class="next" href="03-turning-and-thrust.html"><span class="nav-label">Next</span>3. Turning and Thrust &rsaquo;</a>
+    </div>
+
+    <footer class="page-footer"><a href="../index.html">Back to lesson list</a></footer>
+  </div>
+<script>
+  document.querySelectorAll('pre code').forEach(function (el) { hljs.highlightElement(el); });
+</script>
+</body>
+</html>

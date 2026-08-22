@@ -1,0 +1,265 @@
+/* Shared layout/typography for the "Build Asteroids" tutorial pages.
+   Reuses the same palette and card style as the rest of the site
+   (index.html, asteroids.html) so the tutorial feels native, not bolted on. */
+
+:root {
+  --bg-1: #0f172a;
+  --bg-2: #1e293b;
+  --card: #1e293b;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #22c55e;
+  --danger: #ef4444;
+  --flame: #f97316;
+  --line: #334155;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  min-height: 100dvh;
+  background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: max(20px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+  -webkit-user-select: text; /* tutorial prose/code should stay selectable/copyable, unlike the games */
+  user-select: text;
+}
+
+.page {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.crumbs {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--text); }
+
+h1 {
+  font-size: clamp(1.5rem, 6vw, 2.1rem);
+  margin: 0;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 8px 0 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 0.98rem;
+  margin: -8px 0 0;
+  line-height: 1.5;
+}
+
+.lesson-kicker {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.lesson-kicker.bonus { color: var(--flame); }
+
+p { line-height: 1.6; margin: 0 0 4px; }
+p, li { font-size: 0.98rem; }
+ul, ol { line-height: 1.6; padding-left: 1.3em; margin: 0; }
+
+code:not(pre code) {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.1em 0.4em;
+  font-size: 0.88em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ---- Code panels ------------------------------------------------------ */
+
+.code-panel {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.code-panel-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.code-panel pre {
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.code-panel code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+/* ---- "Try it" live demo ------------------------------------------------ */
+
+.demo-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.demo-frame-wrap {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  height: 520px;
+  max-height: 70vh;
+}
+.demo-frame-wrap iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+.demo-links {
+  display: flex;
+  gap: 14px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.demo-links a { color: var(--accent); text-decoration: none; }
+.demo-links a:hover { text-decoration: underline; }
+
+/* ---- Full source disclosure -------------------------------------------- */
+
+details.source-disclosure {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+details.source-disclosure summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  background: var(--bg-2);
+  list-style: none;
+}
+details.source-disclosure summary::-webkit-details-marker { display: none; }
+details.source-disclosure summary::before {
+  content: "\25B8";
+  display: inline-block;
+  margin-right: 8px;
+  transition: transform 0.15s;
+}
+details.source-disclosure[open] summary::before { transform: rotate(90deg); }
+details.source-disclosure .code-panel {
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* ---- Lesson nav footer -------------------------------------------------- */
+
+.lesson-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+.lesson-nav a {
+  flex: 1;
+  display: block;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 12px 14px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 0.85rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  transition: transform 0.12s, filter 0.15s;
+}
+.lesson-nav a:active { transform: scale(0.98); }
+.lesson-nav a:hover { filter: brightness(1.08); }
+.lesson-nav a.next { text-align: right; }
+.lesson-nav .nav-label { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; }
+.lesson-nav .placeholder { visibility: hidden; }
+
+/* ---- Landing-page lesson list (reuses index.html's card look) --------- */
+
+.lesson-group-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 4px 0 -4px;
+}
+
+.lesson-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lesson-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 14px 16px;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  transition: transform 0.12s, filter 0.15s;
+}
+.lesson-card:active { transform: scale(0.98); }
+.lesson-card:hover { filter: brightness(1.08); }
+
+.lesson-num {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.18);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.lesson-card.bonus .lesson-num { background: rgba(249, 115, 22, 0.18); color: var(--flame); }
+
+.lesson-info { flex: 1; }
+.lesson-title { font-weight: 700; font-size: 0.98rem; margin-bottom: 2px; }
+.lesson-desc { color: var(--muted); font-size: 0.8rem; }
+.chevron { color: var(--muted); font-size: 1.2rem; }
+
+footer.page-footer {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+footer.page-footer a { color: var(--muted); }
