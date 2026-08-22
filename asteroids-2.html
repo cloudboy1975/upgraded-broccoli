@@ -83,6 +83,22 @@
   }
   .hud-stats b { color: var(--text); font-size: 0.82rem; margin-left: 3px; }
 
+  /* Visible build stamp so it's obvious whether a fresh load actually
+     landed, vs. a cached copy of an older push. Bump the timestamp any
+     time this file changes. */
+  .build-tag {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 50px);
+    left: max(10px, env(safe-area-inset-left));
+    font-size: 0.6rem;
+    color: var(--muted);
+    opacity: 0.55;
+    z-index: 5;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
   .icon-btn {
     width: 30px;
     height: 30px;
@@ -263,6 +279,8 @@
 </head>
 <body>
   <div id="gameRoot"></div>
+
+  <div class="build-tag">build 2026-08-22 08:08 UTC</div>
 
   <div class="hud-bar" id="hudBar">
     <a class="back-link" href="index.html">&larr; All</a>
