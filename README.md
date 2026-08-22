@@ -50,5 +50,36 @@ doesn't move it — instead the asteroid field drifts past you.
   scaling up as they get smaller
 - 3 lives, live score, and a persisted high score (saved locally)
 
-All three games follow the same look and feel, and every screen has a link
-back to the games hub.
+### Asteroids II
+
+[`asteroids-2.html`](asteroids-2.html) &mdash; a bigger step up from the
+original: the same ship-centered twist, now with the alien ships and
+hyperspace warp v1 deliberately left out, built on the
+[Phaser 3](https://phaser.io/) game framework and a real edge-to-edge
+full-screen layout.
+
+- [Open the game](https://cloudboy1975.github.io/upgraded-broccoli/asteroids-2.html)
+- Built on Phaser 3 (vendored locally as `phaser.min.js` &mdash; still zero
+  build step, and it keeps the game working fully offline, true to "download
+  and double-click")
+- **Alien saucers** periodically drift through and fire back, plus a
+  **hyperspace warp** button (top-right, with a cooldown ring) to instantly
+  teleport out of danger
+- **Full-screen edge-to-edge layout** &mdash; the canvas fills the whole
+  viewport with thin translucent HUD/control bars floating over it, instead
+  of the centered-card look the other games use. Real `requestFullscreen()`
+  is still gated behind an iOS Safari developer flag most users will never
+  enable, so this leans on `100dvh`, safe-area insets, and
+  `overscroll-behavior: none` to feel fullscreen and glitch-free without it
+- **Procedural sound** &mdash; laser, explosions, alien blips, and a warp
+  whoosh, all synthesized in code via the Web Audio API, zero audio asset
+  files
+- Same three-zone control bar as the original (left/right turn, tap-fire /
+  hold-thrust middle zone), plus a keyboard fallback and a Shift-to-warp
+  shortcut
+- 3 lives, live score, and a persisted high score (saved locally)
+
+All four games share the same color palette and type system; the first
+three additionally share a centered-card page layout, while Asteroids II
+breaks out to an edge-to-edge full-screen layout suited to its controls.
+Every screen links back to the games hub.
