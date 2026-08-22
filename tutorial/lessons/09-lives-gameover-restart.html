@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>7. Collisions &mdash; Build Asteroids</title>
+<title>9. Lives, Game Over, Restart &mdash; Build Asteroids</title>
 <link rel="stylesheet" href="../assets/tutorial.css">
 <link rel="stylesheet" href="../assets/highlight-theme.css">
 <script src="../assets/highlight.min.js"></script>
@@ -11,86 +11,162 @@
 <body>
   <div class="page">
     <div class="crumbs"><a href="../index.html">&larr; Build Asteroids</a></div>
-    <span class="lesson-kicker">Core &middot; Lesson 7 of 12</span>
-    <h1>Collisions</h1>
+    <span class="lesson-kicker">Core &middot; Lesson 9 of 12</span>
+    <h1>Lives, Game Over, Restart</h1>
     <div class="subtitle">
-Every object in this game is a circle for physics purposes, however jagged it looks on screen &mdash; a rock's polygon shape is just decoration drawn on top of a plain circular collision radius. That one simplification is what makes collision detection cheap enough to check every pair, every single frame.
+Rocks have been able to hit the ship since lesson 4, but nothing happened when they did &mdash; there was no ship side of collision detection at all. This lesson adds it, along with the three things that make losing (and coming back) actually work: lives, a game-over state, and a restart that puts everything back exactly where it started.
     </div>
 
-    <h2>Two circles overlap when...</h2>
+    <h2>The ship's side of a collision</h2>
     <p>
-      ...the distance between their centers is less than the sum of their
-      radii. The usual trick: never call <code>Math.sqrt()</code> to get
-      an actual distance if you don't have to &mdash; square both sides of
-      the comparison instead. <code>dx*dx + dy*dy &lt;= rr*rr</code> answers
-      exactly the same question as comparing real distances, without the
-      (comparatively expensive) square root, run for every bullet against
-      every rock, every frame.
+      Same squared-distance technique as lesson 7's bullet-vs-rock check,
+      run once against every rock, but only when the ship isn't currently
+      invulnerable &mdash; otherwise a respawn would immediately re-trigger
+      another hit before the player has any chance to react.
     </p>
     <div class="code-panel">
       <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">function handleCollisions() {
-  for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
-    var b = state.bullets[bi];
-    for (var ri = state.rocks.length - 1; ri >= 0; ri--) {
-      var rk = state.rocks[ri];
-      var dx = b.x - rk.x, dy = b.y - rk.y;
-      var rr = rk.radius + BULLET_RADIUS;
-      if (dx * dx + dy * dy <= rr * rr) {
-        state.bullets.splice(bi, 1);
-        state.rocks.splice(ri, 1); // scaffolding - lesson 8 replaces this with splitRock()
-        break;
-      }
+      <pre><code class="language-javascript">// added inside handleCollisions(), after the bullet-vs-rock loop:
+if (!isInvulnerable()) {
+  for (var i = 0; i < state.rocks.length; i++) {
+    var rock = state.rocks[i];
+    var sx = state.ship.x - rock.x, sy = state.ship.y - rock.y;
+    var sr = state.ship.radius + rock.radius;
+    if (sx * sx + sy * sy <= sr * sr) {
+      shipHit();
+      break;
     }
   }
+}
+
+function isInvulnerable() { return performance.now() < state.ship.invulnerableUntil; }</code></pre>
+    </div>
+
+    <h2>Losing a life, or the game</h2>
+    <p>
+      <code>shipHit()</code> is the fork: still got lives left, respawn
+      with a couple seconds of invulnerability; out of lives, end the
+      game instead. <code>respawnShip()</code> deliberately doesn't reset
+      the ship's world position &mdash; only its velocity and heading &mdash;
+      so respawning doesn't yank the camera back to the origin.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">var RESPAWN_INVULN_MS = 2000;
+
+function shipHit() {
+  state.lives--;
+  if (state.lives <= 0) {
+    state.lives = 0;
+    endGame();
+  } else {
+    respawnShip();
+  }
+  renderHud();
+}
+
+function respawnShip() {
+  state.ship.vx = 0;
+  state.ship.vy = 0;
+  state.ship.heading = -Math.PI / 2;
+  state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+}
+
+function endGame() {
+  state.phase = 'gameover';
+  overlayScoreEl.textContent = state.score;
+  overlayEl.classList.add('visible');
 }</code></pre>
     </div>
     <p>
-      Both loops count backward for the same reason lesson 5's despawn
-      loop did: <code>splice()</code> during forward iteration skips
-      whatever shifts into the position you just removed. The
-      <code>break</code> after a hit stops that bullet from also checking
-      the rest of the rocks it can't have hit anymore, since it was just
-      removed.
+      Two more small pieces tie into <code>state.phase</code>: the game
+      loop only calls <code>update(dt)</code> while
+      <code>state.phase === 'playing'</code> (so a game-over screen
+      doesn't keep simulating rocks behind it), and
+      <code>fireBullet()</code> now bails out immediately if the phase
+      isn't <code>'playing'</code> &mdash; the guard mentioned back in
+      lesson 6.
     </p>
     <p>
-      For now, a hit just deletes the rock outright &mdash; no splitting,
-      no score. That line is scaffolding, same idea as lesson 4's parked
-      rock: the detection logic above it (the loops, the distance check)
-      is exactly what ships in the final game; what happens
-      <em>after</em> a hit is what the next two lessons build out.
-      <code>handleCollisions()</code> runs once per frame from
-      <code>update()</code>, after everything has moved for that frame
-      and before the next frame's input is read.
+      Invulnerability gets a visual cue too: a two-line addition at the
+      top of <code>drawShip()</code> blinks the ship by skipping every
+      other 100ms window while <code>isInvulnerable()</code> is true.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">function drawShip() {
+  if (isInvulnerable() && Math.floor(performance.now() / 100) % 2 === 0) return;
+  // ...rest of drawShip unchanged
+}</code></pre>
+    </div>
+
+    <h2>Restarting cleanly</h2>
+    <p>
+      <code>resetGame()</code> is deliberately exhaustive &mdash; it's the
+      one place responsible for putting <em>every</em> piece of mutable
+      state (ship, rocks, bullets, lives, score, timers) back to its
+      starting value, then reseeding the field, so a restart is never
+      subtly different from a fresh page load.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">function resetGame() {
+  state.phase = 'playing';
+  state.ship.x = 0; state.ship.y = 0;
+  state.ship.vx = 0; state.ship.vy = 0;
+  state.ship.heading = -Math.PI / 2;
+  state.ship.thrusting = false;
+  state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+  state.rocks = [];
+  state.bullets = [];
+  state.lives = 3;
+  state.score = 0;
+  state.spawn.timer = 0;
+  state.difficulty.elapsed = 0;
+  state.nextRockId = 1;
+  state.timing.lastFrameTime = 0;
+  seedRocks();
+  overlayEl.classList.remove('visible');
+  renderHud();
+}</code></pre>
+    </div>
+    <p>
+      Two buttons call it: the always-visible Restart below the canvas,
+      and the one inside the game-over overlay &mdash; same function,
+      wired to both, so there's exactly one place that defines what
+      "restart" actually means.
     </p>
 
     <h2>Try it</h2>
-    <p>Shoot a rock. It disappears outright for now &mdash; no pieces, no points. Both land next lesson.</p>
+    <p>Fly into a rock. You'll blink and get a couple invulnerable seconds instead of dying outright. Lose all three lives to see the game-over overlay, then hit Restart.</p>
     <div class="demo-block">
-      <div class="demo-frame-wrap"><iframe src="../checkpoints/07-collisions.html" loading="lazy" title="Checkpoint 7 live demo"></iframe></div>
+      <div class="demo-frame-wrap"><iframe src="../checkpoints/09-lives-gameover-restart.html" loading="lazy" title="Checkpoint 9 live demo"></iframe></div>
       <div class="demo-links">
-        <a href="../checkpoints/07-collisions.html" target="_blank" rel="noopener">Open in a new tab</a>
+        <a href="../checkpoints/09-lives-gameover-restart.html" target="_blank" rel="noopener">Open in a new tab</a>
         <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
       </div>
     </div>
 
     <h2>Full source so far</h2>
     <details class="source-disclosure">
-      <summary>checkpoints/07-collisions.html</summary>
+      <summary>checkpoints/09-lives-gameover-restart.html</summary>
       <div class="code-panel">
         <pre><code class="language-html">&lt;!DOCTYPE html&gt;
 &lt;html lang=&quot;en&quot;&gt;
 &lt;head&gt;
 &lt;meta charset=&quot;UTF-8&quot;&gt;
 &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot;&gt;
-&lt;title&gt;Checkpoint 7 &amp;mdash; Collisions&lt;/title&gt;
+&lt;title&gt;Checkpoint 9 &amp;mdash; Lives, Game Over, Restart&lt;/title&gt;
 &lt;style&gt;
   :root {
     --bg-1: #0f172a;
     --bg-2: #1e293b;
     --board: #1e293b;
+    --cell: #0f172a;
     --text: #e2e8f0;
     --muted: #94a3b8;
+    --accent: #22c55e;
+    --danger: #ef4444;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; }
@@ -106,6 +182,71 @@ Every object in this game is a circle for physics purposes, however jagged it lo
     gap: 10px;
     padding: 16px;
   }
+  .status-bar {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-2);
+    border-radius: 16px;
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  .status-text {
+    font-size: clamp(0.9rem, 3.8vw, 1.05rem);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .turn-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .turn-dot.playing { background: var(--accent); }
+  .turn-dot.gameover { background: var(--danger); }
+  .scoreboard { display: flex; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+  .score-pill {
+    background: var(--cell);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    min-width: 44px;
+  }
+  .score-pill b { display: block; font-size: 1rem; color: var(--text); }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.85);
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay.visible { display: flex; }
+  .overlay-title { font-size: 1.4rem; font-weight: 800; color: var(--text); }
+  .overlay-score { color: var(--muted); font-size: 0.95rem; }
+  .overlay-score b { color: var(--text); }
+  .overlay-btn { margin-top: 10px; min-width: 140px; flex: none; }
+  .controls { display: flex; gap: 10px; width: 100%; max-width: 420px; }
+  .btn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 13px 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--accent); color: #052e16; }
   .canvas-wrap {
     width: 100%;
     max-width: 420px;
@@ -121,10 +262,28 @@ Every object in this game is a circle for physics purposes, however jagged it lo
 &lt;/style&gt;
 &lt;/head&gt;
 &lt;body&gt;
+  &lt;div class=&quot;status-bar&quot;&gt;
+    &lt;div class=&quot;status-text&quot;&gt;
+      &lt;span class=&quot;turn-dot playing&quot; id=&quot;phaseDot&quot;&gt;&lt;/span&gt;
+      &lt;span id=&quot;statusLabel&quot;&gt;Playing&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;scoreboard&quot;&gt;
+      &lt;div class=&quot;score-pill&quot;&gt;Score&lt;b id=&quot;scoreVal&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
+      &lt;div class=&quot;score-pill&quot;&gt;Lives&lt;b id=&quot;livesVal&quot;&gt;3&lt;/b&gt;&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
   &lt;div class=&quot;canvas-wrap&quot; id=&quot;canvasWrap&quot;&gt;
     &lt;canvas id=&quot;gameCanvas&quot;&gt;&lt;/canvas&gt;
+    &lt;div class=&quot;overlay&quot; id=&quot;gameOverOverlay&quot;&gt;
+      &lt;div class=&quot;overlay-title&quot;&gt;Game Over&lt;/div&gt;
+      &lt;div class=&quot;overlay-score&quot;&gt;Score: &lt;b id=&quot;overlayScore&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
+      &lt;button type=&quot;button&quot; class=&quot;btn primary overlay-btn&quot; id=&quot;overlayRestartBtn&quot;&gt;Restart&lt;/button&gt;
+    &lt;/div&gt;
   &lt;/div&gt;
-  &lt;div class=&quot;note&quot;&gt;Checkpoint 7: bullets now actually destroy rocks on contact &amp;mdash; no splitting or score yet, that&#x27;s next lesson.&lt;/div&gt;
+  &lt;div class=&quot;controls&quot;&gt;
+    &lt;button type=&quot;button&quot; class=&quot;btn primary&quot; id=&quot;restartBtn&quot;&gt;Restart&lt;/button&gt;
+  &lt;/div&gt;
+  &lt;div class=&quot;note&quot;&gt;Checkpoint 9: crashing into a rock costs a life and gives you a moment of blinking invulnerability. Lose all three and restart.&lt;/div&gt;
 
 &lt;script&gt;
 (function () {
@@ -139,6 +298,7 @@ Every object in this game is a circle for physics purposes, however jagged it lo
   var TURN_RATE = 3.2; // radians/sec
   var BULLET_SPEED = 480;
   var BULLET_LIFETIME = 0.9; // seconds
+  var RESPAWN_INVULN_MS = 2000;
   var MAX_DT = 0.05;
   var SPAWN_CHECK_INTERVAL = 0.5; // seconds
   var HOLD_THRESHOLD_MS = 190;
@@ -160,17 +320,29 @@ Every object in this game is a circle for physics purposes, however jagged it lo
   var canvasWrap = document.getElementById(&#x27;canvasWrap&#x27;);
   var canvas = document.getElementById(&#x27;gameCanvas&#x27;);
   var ctx = canvas.getContext(&#x27;2d&#x27;);
+  var overlayEl = document.getElementById(&#x27;gameOverOverlay&#x27;);
+  var overlayScoreEl = document.getElementById(&#x27;overlayScore&#x27;);
+  var overlayRestartBtn = document.getElementById(&#x27;overlayRestartBtn&#x27;);
+  var restartBtn = document.getElementById(&#x27;restartBtn&#x27;);
+  var phaseDotEl = document.getElementById(&#x27;phaseDot&#x27;);
+  var statusLabelEl = document.getElementById(&#x27;statusLabel&#x27;);
+  var scoreValEl = document.getElementById(&#x27;scoreVal&#x27;);
+  var livesValEl = document.getElementById(&#x27;livesVal&#x27;);
 
   // ---- State ------------------------------------------------------------
   var state = {
+    phase: &#x27;playing&#x27;, // &#x27;playing&#x27; | &#x27;gameover&#x27;
     ship: {
       x: 0, y: 0, vx: 0, vy: 0,
       heading: -Math.PI / 2,
       thrusting: false,
+      invulnerableUntil: 0,
       radius: SHIP_RADIUS
     },
     rocks: [],
     bullets: [],
+    lives: 3,
+    score: 0,
     nextRockId: 1,
     input: { left: false, right: false, thrust: false },
     spawn: { timer: 0 },
@@ -220,6 +392,7 @@ Every object in this game is a circle for physics purposes, however jagged it lo
 
   // ---- Firing ------------------------------------------------------
   function fireBullet() {
+    if (state.phase !== &#x27;playing&#x27;) return;
     var heading = state.ship.heading;
     state.bullets.push({
       x: state.ship.x + Math.cos(heading) * state.ship.radius,
@@ -400,11 +573,99 @@ Every object in this game is a circle for physics purposes, however jagged it lo
         var rr = rk.radius + BULLET_RADIUS;
         if (dx * dx + dy * dy &lt;= rr * rr) {
           state.bullets.splice(bi, 1);
-          state.rocks.splice(ri, 1); // scaffolding - lesson 8 replaces this with splitRock()
+          splitRock(ri);
           break;
         }
       }
     }
+
+    if (!isInvulnerable()) {
+      for (var i = 0; i &lt; state.rocks.length; i++) {
+        var rock = state.rocks[i];
+        var sx = state.ship.x - rock.x, sy = state.ship.y - rock.y;
+        var sr = state.ship.radius + rock.radius;
+        if (sx * sx + sy * sy &lt;= sr * sr) {
+          shipHit();
+          break;
+        }
+      }
+    }
+  }
+
+  function isInvulnerable() { return performance.now() &lt; state.ship.invulnerableUntil; }
+
+  function shipHit() {
+    state.lives--;
+    if (state.lives &lt;= 0) {
+      state.lives = 0;
+      endGame();
+    } else {
+      respawnShip();
+    }
+    renderHud();
+  }
+
+  function respawnShip() {
+    state.ship.vx = 0;
+    state.ship.vy = 0;
+    state.ship.heading = -Math.PI / 2;
+    state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+  }
+
+  function endGame() {
+    state.phase = &#x27;gameover&#x27;;
+    overlayScoreEl.textContent = state.score;
+    overlayEl.classList.add(&#x27;visible&#x27;);
+  }
+
+  function splitRock(index) {
+    var rock = state.rocks[index];
+    state.rocks.splice(index, 1);
+    var info = ROCK_SIZES[rock.size];
+    addScore(info.score);
+    if (!info.child) return;
+    var baseAngle = (rock.vx || rock.vy) ? Math.atan2(rock.vy, rock.vx) : Math.random() * Math.PI * 2;
+    var childInfo = ROCK_SIZES[info.child];
+    for (var k = 0; k &lt; 2; k++) {
+      var spread = 0.5 + Math.random() * 0.3;
+      var ang = baseAngle + (k === 0 ? spread : -spread);
+      var speed = randRange(childInfo.speedRange) * speedMultiplier();
+      state.rocks.push(createRock(info.child, rock.x, rock.y, Math.cos(ang) * speed, Math.sin(ang) * speed));
+    }
+  }
+
+  function addScore(n) {
+    state.score += n;
+    renderHud();
+  }
+
+  // ---- HUD ------------------------------------------------------
+  function renderHud() {
+    scoreValEl.textContent = state.score;
+    livesValEl.textContent = state.lives;
+    phaseDotEl.className = &#x27;turn-dot &#x27; + (state.phase === &#x27;playing&#x27; ? &#x27;playing&#x27; : &#x27;gameover&#x27;);
+    statusLabelEl.textContent = state.phase === &#x27;playing&#x27; ? &#x27;Playing&#x27; : &#x27;Game Over&#x27;;
+  }
+
+  // ---- Reset / restart ------------------------------------------------------
+  function resetGame() {
+    state.phase = &#x27;playing&#x27;;
+    state.ship.x = 0; state.ship.y = 0;
+    state.ship.vx = 0; state.ship.vy = 0;
+    state.ship.heading = -Math.PI / 2;
+    state.ship.thrusting = false;
+    state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+    state.rocks = [];
+    state.bullets = [];
+    state.lives = 3;
+    state.score = 0;
+    state.spawn.timer = 0;
+    state.difficulty.elapsed = 0;
+    state.nextRockId = 1;
+    state.timing.lastFrameTime = 0;
+    seedRocks();
+    overlayEl.classList.remove(&#x27;visible&#x27;);
+    renderHud();
   }
 
   // ---- Rendering ------------------------------------------------------
@@ -449,6 +710,7 @@ Every object in this game is a circle for physics purposes, however jagged it lo
   }
 
   function drawShip() {
+    if (isInvulnerable() &amp;&amp; Math.floor(performance.now() / 100) % 2 === 0) return;
     var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
     var r = state.ship.radius;
     ctx.save();
@@ -503,12 +765,14 @@ Every object in this game is a circle for physics purposes, however jagged it lo
     if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
     var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
     state.timing.lastFrameTime = ts;
-    update(dt);
+    if (state.phase === &#x27;playing&#x27;) update(dt);
     render();
   }
 
   window.addEventListener(&#x27;resize&#x27;, onResize);
   window.addEventListener(&#x27;orientationchange&#x27;, onResize);
+  restartBtn.addEventListener(&#x27;click&#x27;, resetGame);
+  overlayRestartBtn.addEventListener(&#x27;click&#x27;, resetGame);
 
   // ---- Init ------------------------------------------------------
   resizeCanvas();
@@ -523,8 +787,10 @@ Every object in this game is a circle for physics purposes, however jagged it lo
     </details>
 
     <div class="lesson-nav">
-      <a href="06-shooting.html"><span class="nav-label">Prev</span>&lsaquo; 6. Shooting</a>
-      <a class="next" href="08-splitting-and-scoring.html"><span class="nav-label">Next</span>8. Splitting Rocks and Scoring &rsaquo;</a>
+      <a href="08-splitting-and-scoring.html"><span class="nav-label">Prev</span>&lsaquo; 8. Splitting Rocks and Scoring</a>
+      <span class="next placeholder" style="text-align:right; padding: 12px 14px; font-size: 0.85rem;">
+        <span class="nav-label">Next</span>10. Persisted High Scores &mdash; coming soon
+      </span>
     </div>
 
     <footer class="page-footer"><a href="../index.html">Back to lesson list</a></footer>
