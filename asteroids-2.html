@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Asteroids II</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --cell: #0f172a;
+    --line: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #22c55e;
+    --danger: #ef4444;
+    --flame: #f97316;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+  body {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100vw;
+    background: var(--bg-1);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #gameRoot { position: fixed; inset: 0; z-index: 0; }
+  #gameRoot canvas { display: block; }
+
+  .hud-bar {
+    position: fixed;
+    top: env(safe-area-inset-top);
+    left: 0;
+    right: 0;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 max(10px, env(safe-area-inset-left)) 0 max(10px, env(safe-area-inset-right));
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 10;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .back-link:hover { color: var(--text); }
+
+  .hud-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-weight: 600;
+    white-space: nowrap;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .hud-stats b { color: var(--text); font-size: 0.82rem; margin-left: 3px; }
+
+  /* Visible build stamp so it's obvious whether a fresh load actually
+     landed, vs. a cached copy of an older push. Bump the timestamp any
+     time this file changes. */
+  .build-tag {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 50px);
+    left: max(10px, env(safe-area-inset-left));
+    font-size: 0.6rem;
+    color: var(--muted);
+    opacity: 0.55;
+    z-index: 5;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .icon-btn:active { transform: scale(0.9); }
+
+  .warp-btn {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 58px);
+    right: max(12px, env(safe-area-inset-right));
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: rgba(30, 41, 59, 0.7);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    cursor: pointer;
+    z-index: 15;
+    touch-action: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    padding: 0;
+    transition: background 0.1s, transform 0.08s, opacity 0.15s;
+  }
+  .warp-btn:disabled { opacity: 0.4; border-color: var(--muted); cursor: default; }
+  .warp-btn:active:not(:disabled) { transform: scale(0.94); }
+
+  .warp-icon {
+    position: relative;
+    z-index: 1;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    pointer-events: none;
+  }
+
+  .warp-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    pointer-events: none;
+  }
+  .warp-ring circle {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3;
+  }
+
+  .control-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 8px;
+    padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    touch-action: none;
+    z-index: 10;
+  }
+
+  .zone {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: rgba(30, 41, 59, 0.75);
+    color: var(--text);
+    border-radius: 16px;
+    height: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    transition: background 0.1s, transform 0.08s;
+  }
+  .zone:active, .zone.active { background: rgba(38, 52, 73, 0.9); transform: scale(0.97); }
+  .zone-mid { gap: 8px; }
+  .zone-caption { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+
+  /* Pure CSS shapes, zero text/image content - a mobile browser's
+     double-tap-then-hold word-selection gesture (which shows a
+     magnifier/loupe bubble - the "image popping up" artifact) needs
+     actual text or image content to select. These shapes give it
+     nothing to grab. */
+  .zone-shape { display: block; pointer-events: none; }
+  .zone-shape.arrow-left {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-right: 18px solid var(--text);
+  }
+  .zone-shape.arrow-right {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-left: 18px solid var(--text);
+  }
+  .zone-shape.fire-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--flame);
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.9);
+    text-align: center;
+    padding: 20px;
+    z-index: 20;
+  }
+  .overlay.visible { display: flex; }
+  .overlay-title { font-size: 1.6rem; font-weight: 800; }
+  .overlay-score, .overlay-best { color: var(--muted); font-size: 0.95rem; }
+  .overlay-score b, .overlay-best b { color: var(--text); }
+  .overlay-actions { display: flex; gap: 10px; margin-top: 14px; width: 100%; max-width: 280px; }
+
+  .btn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 13px 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--accent); color: #052e16; }
+  .btn.secondary { background: var(--bg-2); color: var(--text); }
+  .btn:hover { filter: brightness(1.1); }
+</style>
+</head>
+<body>
+  <div id="gameRoot"></div>
+
+  <div class="build-tag">build 2026-08-22 20:42 UTC</div>
+
+  <div class="hud-bar" id="hudBar">
+    <a class="back-link" href="index.html">&larr; All</a>
+    <div class="hud-stats">
+      <span>Score<b id="scoreVal">0</b></span>
+      <span>Lives<b id="livesVal">3</b></span>
+      <span>Best<b id="bestVal">0</b></span>
+    </div>
+    <button type="button" class="icon-btn" id="restartBtn" aria-label="Restart">&#8635;</button>
+  </div>
+
+  <button type="button" class="warp-btn" id="warpBtn" aria-label="Hyperspace warp">
+    <svg class="warp-ring" viewBox="0 0 60 60"><circle id="warpRingCircle" cx="30" cy="30" r="27"></circle></svg>
+    <span class="warp-icon" aria-hidden="true"></span>
+  </button>
+
+  <div class="control-bar" id="controlBar">
+    <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left"><span class="zone-shape arrow-left" aria-hidden="true"></span></button>
+    <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire or hold to thrust">
+      <span class="zone-shape fire-dot" aria-hidden="true"></span>
+      <span class="zone-caption" aria-hidden="true">tap fire &middot; hold thrust</span>
+    </button>
+    <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right"><span class="zone-shape arrow-right" aria-hidden="true"></span></button>
+  </div>
+
+  <div class="overlay" id="gameOverOverlay">
+    <div class="overlay-title">Game Over</div>
+    <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
+    <div class="overlay-best">Best: <b id="overlayBest">0</b></div>
+    <div class="overlay-actions">
+      <button type="button" class="btn primary" id="overlayRestartBtn">Restart</button>
+      <button type="button" class="btn secondary" id="resetBestBtn">Reset Best</button>
+    </div>
+  </div>
+
+<script src="phaser.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ==================================================================
+  // Constants
+  // ==================================================================
+  var HIGH_SCORE_KEY = 'ast2-highscore-v1';
+
+  var SHIP_RADIUS = 12;
+  var BULLET_RADIUS = 3;
+  var THRUST_ACCEL = 220;
+  var MAX_SPEED = 260;
+  var DAMPING_PER_SECOND = 0.5;
+  var TURN_RATE = 3.2; // rad/s
+  var BULLET_SPEED = 480;
+  var BULLET_LIFETIME_MS = 900;
+  var RESPAWN_INVULN_MS = 2000;
+  var MAX_DT = 0.05;
+  var SPAWN_CHECK_INTERVAL_MS = 500;
+  var HOLD_THRESHOLD_MS = 190;
+  var TAP_MAX_MOVE = 12;
+
+  var ROCK_SIZES = {
+    large:  { radius: 46, speedRange: [30, 70],  score: 20,  child: 'medium' },
+    medium: { radius: 27, speedRange: [50, 100], score: 50,  child: 'small' },
+    small:  { radius: 15, speedRange: [80, 140], score: 100, child: null }
+  };
+  var ROCK_VARIANTS_PER_SIZE = 4;
+
+  var ALIEN_RADIUS = 16;
+  var ALIEN_MIN_ELAPSED = 20; // seconds
+  var ALIEN_INTERVAL_MIN = 9; // seconds
+  var ALIEN_INTERVAL_MAX = 18; // seconds
+  var ALIEN_INTERVAL_RAMP = 90; // seconds
+  var ALIEN_SPEED = 110;
+  var ALIEN_FIRE_INTERVAL_MS = 1600;
+  var ALIEN_FIRE_JITTER_MS = 500;
+  var ALIEN_AIM_SPREAD = 0.35; // rad
+  var ALIEN_BULLET_SPEED = 260;
+  var ALIEN_BULLET_RADIUS = 3;
+  var ALIEN_BULLET_LIFETIME_MS = 1600;
+  var ALIEN_SCORE = 200;
+
+  var WARP_MIN_DIST = 150;
+  var WARP_MAX_DIST_FACTOR = 1.2;
+  var WARP_SAFETY_MARGIN = 20;
+  var WARP_MAX_ATTEMPTS = 8;
+  var WARP_COOLDOWN_MS = 5000;
+  var WARP_RING_CIRCUMFERENCE = 2 * Math.PI * 27;
+
+  var COLOR_SHIP = 0xe2e8f0;
+  var COLOR_BULLET = 0x22c55e;
+  var COLOR_ROCK_STROKE = 0x334155;
+  var COLOR_ROCK_FILL = 0x94a3b8;
+  var COLOR_FLAME = 0xf97316;
+  var COLOR_DANGER = 0xef4444;
+  var COLOR_STAR = 0x94a3b8;
+  var COLOR_BG = 0x0f172a;
+
+  // ==================================================================
+  // Helpers
+  // ==================================================================
+  function randRange(range) { return range[0] + Math.random() * (range[1] - range[0]); }
+
+  function makeRockShapePoints() {
+    var points = [];
+    var n = 10 + Math.floor(Math.random() * 4);
+    for (var i = 0; i < n; i++) {
+      points.push({ angle: (i / n) * Math.PI * 2, r: 0.75 + Math.random() * 0.5 });
+    }
+    return points;
+  }
+
+  function loadHighScore() {
+    try {
+      var raw = localStorage.getItem(HIGH_SCORE_KEY);
+      var n = parseInt(raw, 10);
+      return (isFinite(n) && n > 0) ? n : 0;
+    } catch (e) { return 0; }
+  }
+
+  function saveHighScore(v) {
+    try { localStorage.setItem(HIGH_SCORE_KEY, String(v)); } catch (e) {}
+  }
+
+  // ==================================================================
+  // Procedural sound module (raw Web Audio, zero asset files)
+  // ==================================================================
+  var Sound = (function () {
+    var ctx = null;
+    var noiseBuffer = null;
+    var humOsc = null, humGain = null, humActive = false;
+
+    function ensureAudio() {
+      if (!ctx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+
+    function hasContext() { return !!ctx; }
+
+    function getNoiseBuffer() {
+      if (noiseBuffer) return noiseBuffer;
+      var len = Math.floor(ctx.sampleRate * 0.5);
+      noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      var data = noiseBuffer.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return noiseBuffer;
+    }
+
+    function envGain(startTime, peak, attack, decay) {
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0, startTime);
+      g.gain.linearRampToValueAtTime(peak, startTime + attack);
+      g.gain.exponentialRampToValueAtTime(0.001, startTime + attack + decay);
+      return g;
+    }
+
+    function playLaser() {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(900, t);
+      osc.frequency.exponentialRampToValueAtTime(200, t + 0.12);
+      var g = envGain(t, 0.18, 0.005, 0.11);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.14);
+    }
+
+    function playExplosion(kind) {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var cutoff = kind === 'large' ? 400 : kind === 'medium' ? 800 : kind === 'alien' ? 600 : 1400;
+      var duration = kind === 'alien' ? 0.35 : 0.25;
+      var src = ctx.createBufferSource();
+      src.buffer = getNoiseBuffer();
+      var filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(cutoff, t);
+      var g = envGain(t, 0.35, 0.005, duration);
+      src.connect(filter).connect(g).connect(ctx.destination);
+      src.start(t);
+      src.stop(t + duration + 0.05);
+    }
+
+    function playShipHit() {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var src = ctx.createBufferSource();
+      src.buffer = getNoiseBuffer();
+      var filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(500, t);
+      var g1 = envGain(t, 0.5, 0.005, 0.5);
+      src.connect(filter).connect(g1).connect(ctx.destination);
+      src.start(t);
+      src.stop(t + 0.55);
+
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(80, t);
+      osc.frequency.exponentialRampToValueAtTime(40, t + 0.4);
+      var g2 = envGain(t, 0.4, 0.005, 0.4);
+      osc.connect(g2).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.45);
+    }
+
+    function playBlip(freq1, freq2) {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var osc = ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq1, t);
+      osc.frequency.setValueAtTime(freq2, t + 0.08);
+      var g = envGain(t, 0.15, 0.005, 0.12);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    }
+
+    function playAlienAppear() { playBlip(300, 420); }
+    function playAlienFire() { playBlip(500, 350); }
+
+    function playWarp() {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(220, t);
+      osc.frequency.exponentialRampToValueAtTime(880, t + 0.45);
+      var lfo = ctx.createOscillator();
+      lfo.frequency.setValueAtTime(18, t);
+      var lfoGain = ctx.createGain();
+      lfoGain.gain.setValueAtTime(30, t);
+      lfo.connect(lfoGain).connect(osc.frequency);
+      var g = envGain(t, 0.22, 0.02, 0.45);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(t);
+      lfo.start(t);
+      osc.stop(t + 0.5);
+      lfo.stop(t + 0.5);
+    }
+
+    function startThrustHum() {
+      if (!ctx || humActive) return;
+      humActive = true;
+      humOsc = ctx.createOscillator();
+      humOsc.type = 'triangle';
+      humOsc.frequency.setValueAtTime(70, ctx.currentTime);
+      humGain = ctx.createGain();
+      humGain.gain.setValueAtTime(0, ctx.currentTime);
+      humGain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.03);
+      humOsc.connect(humGain).connect(ctx.destination);
+      humOsc.start();
+    }
+
+    function stopThrustHum() {
+      if (!ctx || !humActive) return;
+      humActive = false;
+      var t = ctx.currentTime;
+      humGain.gain.linearRampToValueAtTime(0, t + 0.06);
+      humOsc.stop(t + 0.08);
+      humOsc = null;
+      humGain = null;
+    }
+
+    return {
+      ensureAudio: ensureAudio,
+      hasContext: hasContext,
+      playLaser: playLaser,
+      playExplosion: playExplosion,
+      playShipHit: playShipHit,
+      playAlienAppear: playAlienAppear,
+      playAlienFire: playAlienFire,
+      playWarp: playWarp,
+      startThrustHum: startThrustHum,
+      stopThrustHum: stopThrustHum
+    };
+  })();
+
+  // ==================================================================
+  // Phaser scene
+  // ==================================================================
+  var mainScene = null;
+
+  function MainScene() {
+    Phaser.Scene.call(this, { key: 'Main' });
+  }
+  MainScene.prototype = Object.create(Phaser.Scene.prototype);
+  MainScene.prototype.constructor = MainScene;
+
+  MainScene.prototype.create = function () {
+    mainScene = this;
+    this.alien = null;
+
+    this.buildTextures();
+    this.initState();
+    this.buildWorld();
+    this.wireCollisions();
+    this.exposeDebugHooks();
+
+    var self = this;
+    this.scale.on('resize', function (gameSize) {
+      self.cameras.main.setSize(gameSize.width, gameSize.height);
+      self.generateStars();
+    });
+
+    this.renderHud();
+  };
+
+  MainScene.prototype.buildTextures = function () {
+    var self = this;
+
+    Object.keys(ROCK_SIZES).forEach(function (size) {
+      var radius = ROCK_SIZES[size].radius;
+      var diameter = radius * 2;
+      for (var v = 0; v < ROCK_VARIANTS_PER_SIZE; v++) {
+        var points = makeRockShapePoints();
+        var g = self.make.graphics({ x: 0, y: 0, add: false });
+        g.fillStyle(COLOR_ROCK_FILL, 0.18);
+        g.lineStyle(2, COLOR_ROCK_STROKE, 1);
+        g.beginPath();
+        points.forEach(function (p, i) {
+          var r = radius * p.r;
+          var px = radius + Math.cos(p.angle) * r;
+          var py = radius + Math.sin(p.angle) * r;
+          if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+        });
+        g.closePath();
+        g.fillPath();
+        g.strokePath();
+        g.generateTexture('rock_' + size + '_' + v, diameter, diameter);
+        g.destroy();
+      }
+    });
+
+    // Ship: triangle outline, nose along +x, centered in a SHIP_RADIUS*2 square
+    (function () {
+      var r = SHIP_RADIUS;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.lineStyle(2, COLOR_SHIP, 1);
+      g.beginPath();
+      g.moveTo(r + r, r);
+      g.lineTo(r - r * 0.7, r + r * 0.7);
+      g.lineTo(r - r * 0.35, r);
+      g.lineTo(r - r * 0.7, r - r * 0.7);
+      g.closePath();
+      g.strokePath();
+      g.generateTexture('shipTex', r * 2, r * 2);
+      g.destroy();
+    })();
+
+    // Flame: small triangle, tip at local x=0 (left), base at x=w (right, attach edge)
+    (function () {
+      var w = SHIP_RADIUS, h = SHIP_RADIUS * 0.8;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_FLAME, 1);
+      g.beginPath();
+      g.moveTo(w, 0);
+      g.lineTo(0, h / 2);
+      g.lineTo(w, h);
+      g.closePath();
+      g.fillPath();
+      g.generateTexture('flameTex', w, h);
+      g.destroy();
+    })();
+
+    // Bullets
+    (function () {
+      var d = BULLET_RADIUS * 2;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_BULLET, 1);
+      g.fillCircle(BULLET_RADIUS, BULLET_RADIUS, BULLET_RADIUS);
+      g.generateTexture('bulletTex', d, d);
+      g.destroy();
+    })();
+    (function () {
+      var d = ALIEN_BULLET_RADIUS * 2;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_DANGER, 1);
+      g.fillCircle(ALIEN_BULLET_RADIUS, ALIEN_BULLET_RADIUS, ALIEN_BULLET_RADIUS);
+      g.generateTexture('alienBulletTex', d, d);
+      g.destroy();
+    })();
+
+    // Alien saucer
+    (function () {
+      var w = ALIEN_RADIUS * 2, h = ALIEN_RADIUS * 1.3;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_DANGER, 0.2);
+      g.fillEllipse(w / 2, h * 0.65, w * 0.9, h * 0.7);
+      g.lineStyle(2, COLOR_DANGER, 1);
+      g.strokeEllipse(w / 2, h * 0.65, w * 0.9, h * 0.7);
+      g.fillStyle(COLOR_DANGER, 0.3);
+      g.fillEllipse(w / 2, h * 0.35, w * 0.45, h * 0.5);
+      g.strokeEllipse(w / 2, h * 0.35, w * 0.45, h * 0.5);
+      g.generateTexture('alienTex', w, h);
+      g.destroy();
+    })();
+  };
+
+  MainScene.prototype.initState = function () {
+    this.state = {
+      phase: 'playing',
+      lives: 3,
+      score: 0,
+      highScore: loadHighScore(),
+      input: { left: false, right: false, thrust: false },
+      thrusting: false,
+      invulnerableUntil: 0,
+      warpCooldownUntil: 0,
+      difficultyElapsed: 0,
+      spawnTimerMs: 0,
+      alienTimerMs: ALIEN_MIN_ELAPSED * 1000,
+      alienFireTimerMs: 0
+    };
+  };
+
+  MainScene.prototype.buildWorld = function () {
+    this.cameras.main.setBackgroundColor(COLOR_BG);
+    this.generateStars();
+
+    this.shipFlame = this.add.sprite(-(SHIP_RADIUS * 0.35), 0, 'flameTex');
+    this.shipFlame.setOrigin(1, 0.5);
+    this.shipFlame.setVisible(false);
+    this.shipBody = this.add.sprite(0, 0, 'shipTex');
+
+    this.ship = this.add.container(0, 0, [this.shipFlame, this.shipBody]);
+    this.physics.world.enable(this.ship);
+    this.ship.body.setCircle(SHIP_RADIUS, -SHIP_RADIUS, -SHIP_RADIUS);
+    this.ship.body.setDamping(true);
+    this.ship.body.setDrag(1 - DAMPING_PER_SECOND, 1 - DAMPING_PER_SECOND);
+    this.ship.body.setAllowGravity(false);
+    this.ship.rotation = -Math.PI / 2;
+
+    this.cameras.main.startFollow(this.ship, true, 1, 1);
+
+    this.rocks = this.physics.add.group();
+    this.bullets = this.physics.add.group();
+    this.alienGroup = this.physics.add.group();
+    this.alienBullets = this.physics.add.group();
+
+    this.seedRocks();
+  };
+
+  MainScene.prototype.generateStars = function () {
+    if (this.starsGfx) this.starsGfx.destroy();
+    var w = this.scale.width, h = this.scale.height;
+    var g = this.add.graphics();
+    g.setScrollFactor(0);
+    g.setDepth(-10);
+    g.fillStyle(COLOR_STAR, 0.5);
+    var count = Math.round((w * h) / 4000);
+    for (var i = 0; i < count; i++) {
+      g.fillCircle(Math.random() * w, Math.random() * h, Math.random() * 1.2 + 0.3);
+    }
+    this.starsGfx = g;
+  };
+
+  MainScene.prototype.wireCollisions = function () {
+    var self = this;
+    this.physics.add.overlap(this.bullets, this.rocks, function (bullet, rock) { self.onBulletHitRock(bullet, rock); });
+    this.physics.add.overlap(this.bullets, this.alienGroup, function (bullet, alien) { self.onBulletHitAlien(bullet, alien); });
+    this.physics.add.overlap(this.ship, this.rocks, function () { self.shipHit(); });
+    this.physics.add.overlap(this.ship, this.alienGroup, function () { self.shipHit(); });
+    this.physics.add.overlap(this.ship, this.alienBullets, function (ship, bullet) { bullet.destroy(); self.shipHit(); });
+  };
+
+  // ---- Rocks ------------------------------------------------------
+  MainScene.prototype.visibleRadius = function () {
+    var w = this.scale.width, h = this.scale.height;
+    return Math.sqrt(w * w + h * h) / 2;
+  };
+  MainScene.prototype.spawnRingRadius = function () { return this.visibleRadius() + 80; };
+  MainScene.prototype.despawnRadius = function () { return this.visibleRadius() * 2.5; };
+  MainScene.prototype.targetRockCount = function () { return Math.min(6 + Math.floor(this.state.difficultyElapsed / 30), 14); };
+  MainScene.prototype.speedMultiplier = function () { return 1 + Math.min(this.state.difficultyElapsed / 60, 1) * 0.5; };
+
+  MainScene.prototype.createRock = function (size, x, y, vx, vy) {
+    var variant = Phaser.Math.Between(0, ROCK_VARIANTS_PER_SIZE - 1);
+    var rock = this.rocks.create(x, y, 'rock_' + size + '_' + variant);
+    rock.rockSize = size;
+    rock.body.setCircle(ROCK_SIZES[size].radius);
+    rock.body.setAllowGravity(false);
+    rock.body.setVelocity(vx, vy);
+    rock.body.setAngularVelocity(Phaser.Math.RadToDeg((Math.random() - 0.5) * 1.6));
+    return rock;
+  };
+
+  MainScene.prototype.seedRocks = function () {
+    var minDist = this.visibleRadius() * 0.6;
+    var maxDist = this.despawnRadius() * 0.5;
+    for (var i = 0; i < 6; i++) {
+      var angle = Math.random() * Math.PI * 2;
+      var dist = minDist + Math.random() * (maxDist - minDist);
+      var x = this.ship.x + Math.cos(angle) * dist;
+      var y = this.ship.y + Math.sin(angle) * dist;
+      var dirAngle = Math.random() * Math.PI * 2;
+      var speed = randRange(ROCK_SIZES.large.speedRange) * this.speedMultiplier();
+      this.createRock('large', x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed);
+    }
+  };
+
+  MainScene.prototype.trySpawnRock = function (dtMs) {
+    this.state.spawnTimerMs -= dtMs;
+    if (this.state.spawnTimerMs > 0) return;
+    this.state.spawnTimerMs = SPAWN_CHECK_INTERVAL_MS;
+    if (this.rocks.getLength() >= this.targetRockCount()) return;
+    var angle = Math.random() * Math.PI * 2;
+    var dist = this.spawnRingRadius();
+    var x = this.ship.x + Math.cos(angle) * dist;
+    var y = this.ship.y + Math.sin(angle) * dist;
+    var inward = angle + Math.PI + (Math.random() - 0.5) * 1.0;
+    var speed = randRange(ROCK_SIZES.large.speedRange) * this.speedMultiplier();
+    this.createRock('large', x, y, Math.cos(inward) * speed, Math.sin(inward) * speed);
+  };
+
+  MainScene.prototype.onBulletHitRock = function (bullet, rock) {
+    bullet.destroy();
+    this.splitRock(rock);
+  };
+
+  MainScene.prototype.splitRock = function (rock) {
+    var size = rock.rockSize;
+    var x = rock.x, y = rock.y;
+    var vx = rock.body.velocity.x, vy = rock.body.velocity.y;
+    rock.destroy();
+    var info = ROCK_SIZES[size];
+    this.addScore(info.score);
+    Sound.playExplosion(size);
+    if (!info.child) return;
+    var baseAngle = (vx || vy) ? Math.atan2(vy, vx) : Math.random() * Math.PI * 2;
+    var childInfo = ROCK_SIZES[info.child];
+    for (var k = 0; k < 2; k++) {
+      var spread = 0.5 + Math.random() * 0.3;
+      var ang = baseAngle + (k === 0 ? spread : -spread);
+      var speed = randRange(childInfo.speedRange) * this.speedMultiplier();
+      this.createRock(info.child, x, y, Math.cos(ang) * speed, Math.sin(ang) * speed);
+    }
+  };
+
+  // ---- Aliens ------------------------------------------------------
+  MainScene.prototype.tryAlienSpawn = function (dtMs) {
+    if (this.state.difficultyElapsed < ALIEN_MIN_ELAPSED) return;
+    if (this.alien && this.alien.active) return;
+    this.state.alienTimerMs -= dtMs;
+    if (this.state.alienTimerMs > 0) return;
+    var rampT = Math.min((this.state.difficultyElapsed - ALIEN_MIN_ELAPSED) / ALIEN_INTERVAL_RAMP, 1);
+    var interval = Phaser.Math.Linear(ALIEN_INTERVAL_MAX, ALIEN_INTERVAL_MIN, rampT) * 1000;
+    this.state.alienTimerMs = interval;
+    this.spawnAlien();
+  };
+
+  MainScene.prototype.spawnAlien = function () {
+    var angle = Math.random() * Math.PI * 2;
+    var dist = this.spawnRingRadius();
+    var x = this.ship.x + Math.cos(angle) * dist;
+    var y = this.ship.y + Math.sin(angle) * dist;
+    var dirAngle = angle + Math.PI + (Math.random() - 0.5) * 0.6;
+    var alien = this.alienGroup.create(x, y, 'alienTex');
+    alien.body.setCircle(ALIEN_RADIUS);
+    alien.body.setAllowGravity(false);
+    alien.body.setVelocity(Math.cos(dirAngle) * ALIEN_SPEED, Math.sin(dirAngle) * ALIEN_SPEED);
+    this.alien = alien;
+    this.state.alienFireTimerMs = ALIEN_FIRE_INTERVAL_MS;
+    Sound.playAlienAppear();
+  };
+
+  MainScene.prototype.updateAlien = function (dtMs) {
+    if (!this.alien || !this.alien.active) return;
+    this.state.alienFireTimerMs -= dtMs;
+    if (this.state.alienFireTimerMs <= 0) {
+      this.alienFire();
+      this.state.alienFireTimerMs = ALIEN_FIRE_INTERVAL_MS + (Math.random() - 0.5) * ALIEN_FIRE_JITTER_MS;
+    }
+  };
+
+  MainScene.prototype.alienFire = function () {
+    if (!this.alien || !this.alien.active) return;
+    var dx = this.ship.x - this.alien.x, dy = this.ship.y - this.alien.y;
+    var angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * ALIEN_AIM_SPREAD;
+    var bullet = this.alienBullets.create(this.alien.x, this.alien.y, 'alienBulletTex');
+    bullet.body.setCircle(ALIEN_BULLET_RADIUS);
+    bullet.body.setAllowGravity(false);
+    var v = this.physics.velocityFromRotation(angle, ALIEN_BULLET_SPEED);
+    bullet.body.setVelocity(v.x, v.y);
+    var self = this;
+    this.time.delayedCall(ALIEN_BULLET_LIFETIME_MS, function () { if (bullet.active) bullet.destroy(); });
+    Sound.playAlienFire();
+  };
+
+  MainScene.prototype.onBulletHitAlien = function (bullet, alien) {
+    bullet.destroy();
+    alien.destroy();
+    this.alien = null;
+    this.addScore(ALIEN_SCORE);
+    Sound.playExplosion('alien');
+  };
+
+  MainScene.prototype.despawnFarEntities = function () {
+    var self = this;
+    var dr2 = this.despawnRadius() * this.despawnRadius();
+    function farAway(obj) {
+      var dx = obj.x - self.ship.x, dy = obj.y - self.ship.y;
+      return dx * dx + dy * dy > dr2;
+    }
+    this.rocks.getChildren().slice().forEach(function (r) { if (farAway(r)) r.destroy(); });
+    this.alienGroup.getChildren().slice().forEach(function (a) { if (farAway(a)) { a.destroy(); self.alien = null; } });
+    this.alienBullets.getChildren().slice().forEach(function (b) { if (farAway(b)) b.destroy(); });
+  };
+
+  // ---- Ship / bullets / combat ------------------------------------------------------
+  MainScene.prototype.fireBullet = function () {
+    if (this.state.phase !== 'playing') return;
+    var heading = this.ship.rotation;
+    var bullet = this.bullets.create(
+      this.ship.x + Math.cos(heading) * SHIP_RADIUS,
+      this.ship.y + Math.sin(heading) * SHIP_RADIUS,
+      'bulletTex'
+    );
+    bullet.body.setCircle(BULLET_RADIUS);
+    bullet.body.setAllowGravity(false);
+    var v = this.physics.velocityFromRotation(heading, BULLET_SPEED);
+    bullet.body.setVelocity(v.x, v.y);
+    this.time.delayedCall(BULLET_LIFETIME_MS, function () { if (bullet.active) bullet.destroy(); });
+    Sound.playLaser();
+  };
+
+  MainScene.prototype.isWarpSpotSafe = function (x, y) {
+    var margin = SHIP_RADIUS + WARP_SAFETY_MARGIN;
+    var rocks = this.rocks.getChildren();
+    for (var i = 0; i < rocks.length; i++) {
+      var r = rocks[i];
+      var dx = x - r.x, dy = y - r.y;
+      var rr = margin + r.body.radius;
+      if (dx * dx + dy * dy < rr * rr) return false;
+    }
+    if (this.alien && this.alien.active) {
+      var dax = x - this.alien.x, day = y - this.alien.y;
+      var arr = margin + ALIEN_RADIUS;
+      if (dax * dax + day * day < arr * arr) return false;
+    }
+    return true;
+  };
+
+  MainScene.prototype.warp = function () {
+    if (this.state.phase !== 'playing') return;
+    if (this.time.now < this.state.warpCooldownUntil) return;
+    var vr = this.visibleRadius();
+    var best = null;
+    for (var attempt = 0; attempt < WARP_MAX_ATTEMPTS; attempt++) {
+      var angle = Math.random() * Math.PI * 2;
+      var dist = WARP_MIN_DIST + Math.random() * (vr * WARP_MAX_DIST_FACTOR - WARP_MIN_DIST);
+      var x = this.ship.x + Math.cos(angle) * dist;
+      var y = this.ship.y + Math.sin(angle) * dist;
+      best = { x: x, y: y };
+      if (this.isWarpSpotSafe(x, y)) break;
+    }
+    this.ship.body.reset(best.x, best.y);
+    this.state.invulnerableUntil = this.time.now + RESPAWN_INVULN_MS;
+    this.state.warpCooldownUntil = this.time.now + WARP_COOLDOWN_MS;
+    Sound.playWarp();
+  };
+
+  MainScene.prototype.addScore = function (n) {
+    this.state.score += n;
+    if (this.state.score > this.state.highScore) {
+      this.state.highScore = this.state.score;
+      saveHighScore(this.state.highScore);
+    }
+    this.renderHud();
+  };
+
+  MainScene.prototype.shipHit = function () {
+    if (this.time.now < this.state.invulnerableUntil) return;
+    this.state.lives--;
+    Sound.playShipHit();
+    if (this.state.lives <= 0) {
+      this.state.lives = 0;
+      this.endGame();
+    } else {
+      this.respawnShip();
+    }
+    this.renderHud();
+  };
+
+  MainScene.prototype.respawnShip = function () {
+    this.ship.body.setVelocity(0, 0);
+    this.ship.rotation = -Math.PI / 2;
+    this.state.invulnerableUntil = this.time.now + RESPAWN_INVULN_MS;
+  };
+
+  MainScene.prototype.endGame = function () {
+    this.state.phase = 'gameover';
+    Sound.stopThrustHum();
+    document.getElementById('overlayScore').textContent = this.state.score;
+    document.getElementById('overlayBest').textContent = this.state.highScore;
+    document.getElementById('gameOverOverlay').classList.add('visible');
+  };
+
+  MainScene.prototype.resetGame = function () {
+    this.state.phase = 'playing';
+    this.state.lives = 3;
+    this.state.score = 0;
+    this.state.thrusting = false;
+    this.state.difficultyElapsed = 0;
+    this.state.spawnTimerMs = 0;
+    this.state.alienTimerMs = ALIEN_MIN_ELAPSED * 1000;
+    this.state.alienFireTimerMs = 0;
+    this.state.warpCooldownUntil = 0;
+    this.state.invulnerableUntil = this.time.now + RESPAWN_INVULN_MS;
+
+    this.rocks.clear(true, true);
+    this.bullets.clear(true, true);
+    this.alienGroup.clear(true, true);
+    this.alienBullets.clear(true, true);
+    this.alien = null;
+
+    this.ship.body.reset(0, 0);
+    this.ship.rotation = -Math.PI / 2;
+    this.ship.setVisible(true);
+    this.shipFlame.setVisible(false);
+    Sound.stopThrustHum();
+
+    this.seedRocks();
+    document.getElementById('gameOverOverlay').classList.remove('visible');
+    this.renderHud();
+  };
+
+  MainScene.prototype.renderHud = function () {
+    document.getElementById('scoreVal').textContent = this.state.score;
+    document.getElementById('livesVal').textContent = this.state.lives;
+    document.getElementById('bestVal').textContent = this.state.highScore;
+  };
+
+  MainScene.prototype.updateInvulnerabilityFlicker = function () {
+    var invuln = this.time.now < this.state.invulnerableUntil;
+    if (invuln) {
+      this.ship.setVisible(Math.floor(this.time.now / 100) % 2 !== 0);
+    } else {
+      this.ship.setVisible(true);
+    }
+  };
+
+  MainScene.prototype.updateWarpUI = function () {
+    var remaining = Math.max(0, this.state.warpCooldownUntil - this.time.now);
+    var frac = remaining / WARP_COOLDOWN_MS;
+    var ring = document.getElementById('warpRingCircle');
+    ring.style.strokeDashoffset = String(WARP_RING_CIRCUMFERENCE * frac);
+    document.getElementById('warpBtn').disabled = remaining > 0;
+  };
+
+  MainScene.prototype.exposeDebugHooks = function () {
+    var self = this;
+    window.__ast2DebugState = this.state;
+    window.__ast2Debug = {
+      scene: this,
+      ship: this.ship,
+      rocks: this.rocks,
+      bullets: this.bullets,
+      alienGroup: this.alienGroup,
+      alienBullets: this.alienBullets,
+      spawnAlienNow: function () {
+        self.state.difficultyElapsed = Math.max(self.state.difficultyElapsed, ALIEN_MIN_ELAPSED);
+        self.state.alienTimerMs = 0;
+        self.tryAlienSpawn(0);
+      },
+      forceExpireWarpCooldown: function () { self.state.warpCooldownUntil = 0; },
+      audioContextCreated: function () { return Sound.hasContext(); }
+    };
+  };
+
+  MainScene.prototype.update = function (time, delta) {
+    var dt = Math.min(delta / 1000, MAX_DT);
+    var dtMs = dt * 1000;
+
+    if (this.state.input.left) this.ship.rotation -= TURN_RATE * dt;
+    if (this.state.input.right) this.ship.rotation += TURN_RATE * dt;
+
+    var thrusting = this.state.input.thrust && this.state.phase === 'playing';
+    if (thrusting !== this.state.thrusting) {
+      this.state.thrusting = thrusting;
+      this.shipFlame.setVisible(thrusting);
+      if (thrusting) Sound.startThrustHum(); else Sound.stopThrustHum();
+    }
+    if (thrusting) {
+      var v = this.physics.velocityFromRotation(this.ship.rotation, THRUST_ACCEL);
+      this.ship.body.setAcceleration(v.x, v.y);
+      this.shipFlame.scaleX = 0.8 + Math.random() * 0.5;
+    } else {
+      this.ship.body.setAcceleration(0, 0);
+    }
+
+    var body = this.ship.body;
+    var speed = body.velocity.length();
+    if (speed > MAX_SPEED) body.velocity.scale(MAX_SPEED / speed);
+
+    if (this.state.phase === 'playing') {
+      this.state.difficultyElapsed += dt;
+      this.trySpawnRock(dtMs);
+      this.tryAlienSpawn(dtMs);
+      this.updateAlien(dtMs);
+      this.despawnFarEntities();
+    }
+
+    this.updateWarpUI();
+    this.updateInvulnerabilityFlicker();
+  };
+
+  // ==================================================================
+  // Input: three-zone control bar (ported from asteroids.html) + warp
+  // ==================================================================
+  var controlBar = document.getElementById('controlBar');
+  var zoneLeft = document.getElementById('zoneLeft');
+  var zoneMid = document.getElementById('zoneMid');
+  var zoneRight = document.getElementById('zoneRight');
+  var warpBtn = document.getElementById('warpBtn');
+  var restartBtn = document.getElementById('restartBtn');
+  var overlayRestartBtn = document.getElementById('overlayRestartBtn');
+  var resetBestBtn = document.getElementById('resetBestBtn');
+
+  var touchLeft = false, touchRight = false, touchThrust = false;
+  var kbLeft = false, kbRight = false, kbThrust = false;
+  var HOLD_WATCHDOG_MS = 12000; // no legitimate hold needs to last this long
+
+  function composeInput() {
+    if (!mainScene) return;
+    mainScene.state.input.left = touchLeft || kbLeft;
+    mainScene.state.input.right = touchRight || kbRight;
+    mainScene.state.input.thrust = touchThrust || kbThrust;
+  }
+
+  // Every hold-zone binder below registers its "force release" function here.
+  // A stuck-held button (the touch never gets a pointerup/pointercancel -
+  // e.g. the OS backgrounds the tab mid-touch, or a long-press triggers the
+  // browser's own text-selection/callout takeover) is fixed by calling all
+  // of these from a single top-level visibilitychange/blur listener, plus
+  // each zone also has its own watchdog timeout as a last-resort fallback.
+  var heldZoneResets = [];
+
+  // iOS Safari's native long-press-to-select gesture (the magnifier/loupe
+  // callout) is driven by its own touch gesture recognizer that runs
+  // independently of Pointer Events - CSS user-select/touch-callout alone
+  // doesn't reliably suppress it once an element also has active JS touch
+  // handling. The well-tested way to actually cancel it is a non-passive
+  // touchstart listener that calls preventDefault().
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
+  function bindHoldZone(el, setFlag) {
+    var activeId = null;
+    var watchdogTimer = null;
+    suppressCallout(el);
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+      setFlag(false);
+      composeInput();
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      // A pointerdown while activeId is already set means either a stale
+      // session (the previous touch never got a pointerup/pointercancel -
+      // exactly the "stuck button" case) or a second finger on the same
+      // zone. Either way, release whatever's recorded and start fresh
+      // rather than silently ignoring the new press - that silent-ignore
+      // was why tapping a stuck button didn't fix it.
+      hardRelease();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      setFlag(true);
+      composeInput();
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  }
+
+  bindHoldZone(zoneLeft, function (v) { touchLeft = v; });
+  bindHoldZone(zoneRight, function (v) { touchRight = v; });
+
+  (function bindMidZone() {
+    var activeId = null;
+    var downX = 0, downY = 0;
+    var holdTimer = null;
+    var holdEngaged = false;
+    var watchdogTimer = null;
+    suppressCallout(zoneMid);
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      zoneMid.classList.remove('active');
+      clearTimeout(holdTimer);
+      clearTimeout(watchdogTimer);
+      if (holdEngaged) {
+        touchThrust = false;
+        composeInput();
+      }
+      holdEngaged = false;
+    }
+
+    zoneMid.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      // See bindHoldZone above: release any stale/stuck session instead of
+      // silently ignoring the new press.
+      hardRelease();
+      activeId = e.pointerId;
+      try { zoneMid.setPointerCapture(activeId); } catch (err) {}
+      downX = e.clientX; downY = e.clientY;
+      holdEngaged = false;
+      zoneMid.classList.add('active');
+      holdTimer = setTimeout(function () {
+        holdEngaged = true;
+        touchThrust = true;
+        composeInput();
+      }, HOLD_THRESHOLD_MS);
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+
+    function endPress(e, allowFire) {
+      if (e.pointerId !== activeId) return;
+      var wasHoldEngaged = holdEngaged;
+      var dx = e.clientX - downX, dy = e.clientY - downY;
+      var moved = Math.sqrt(dx * dx + dy * dy);
+      hardRelease();
+      if (!wasHoldEngaged && allowFire && moved < TAP_MAX_MOVE && mainScene) mainScene.fireBullet();
+    }
+
+    zoneMid.addEventListener('pointerup', function (e) { endPress(e, true); });
+    zoneMid.addEventListener('pointercancel', function (e) { endPress(e, false); });
+    zoneMid.addEventListener('lostpointercapture', function (e) { endPress(e, false); });
+
+    heldZoneResets.push(hardRelease);
+  })();
+
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isThrustKey(code) { return code === 'Space' || code === 'ArrowUp' || code === 'KeyW'; }
+  function isWarpKey(code) { return code === 'ShiftLeft' || code === 'ShiftRight'; }
+
+  var kbHoldTimer = null;
+  var kbHoldEngaged = false;
+
+  document.addEventListener('keydown', function (e) {
+    Sound.ensureAudio();
+    if (isThrustKey(e.code)) e.preventDefault();
+    if (isWarpKey(e.code)) { if (!e.repeat && mainScene) mainScene.warp(); return; }
+    if (e.repeat) return;
+    if (isLeftKey(e.code)) { kbLeft = true; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = true; composeInput(); }
+    else if (isThrustKey(e.code)) {
+      kbHoldEngaged = false;
+      kbHoldTimer = setTimeout(function () {
+        kbHoldEngaged = true;
+        kbThrust = true;
+        composeInput();
+      }, HOLD_THRESHOLD_MS);
+    }
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (isLeftKey(e.code)) { kbLeft = false; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = false; composeInput(); }
+    else if (isThrustKey(e.code)) {
+      clearTimeout(kbHoldTimer);
+      if (kbHoldEngaged) {
+        kbThrust = false;
+        composeInput();
+      } else if (mainScene) {
+        mainScene.fireBullet();
+      }
+      kbHoldEngaged = false;
+    }
+  });
+
+  // Same stuck-input safety net as the touch zones above, for the keyboard
+  // fallback (a held key could theoretically miss its keyup the same way a
+  // touch can miss its pointerup - e.g. alt-tabbing away mid-hold).
+  function forceReleaseKeyboard() {
+    clearTimeout(kbHoldTimer);
+    if (kbLeft || kbRight || kbThrust) {
+      kbLeft = false; kbRight = false; kbThrust = false;
+      composeInput();
+    }
+    kbHoldEngaged = false;
+  }
+
+  function forceReleaseAllInput() {
+    heldZoneResets.forEach(function (fn) { fn(); });
+    forceReleaseKeyboard();
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) forceReleaseAllInput();
+  });
+  window.addEventListener('blur', forceReleaseAllInput);
+
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
+  warpBtn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  warpBtn.addEventListener('selectstart', function (e) { e.preventDefault(); });
+
+  warpBtn.addEventListener('pointerdown', function () { Sound.ensureAudio(); });
+  warpBtn.addEventListener('click', function () { if (mainScene) mainScene.warp(); });
+
+  restartBtn.addEventListener('click', function () { if (mainScene) mainScene.resetGame(); });
+  overlayRestartBtn.addEventListener('click', function () { if (mainScene) mainScene.resetGame(); });
+  resetBestBtn.addEventListener('click', function () {
+    if (!mainScene) return;
+    mainScene.state.highScore = 0;
+    saveHighScore(0);
+    mainScene.renderHud();
+  });
+
+  // ==================================================================
+  // Prevent / auto-recover from accidental page pinch-zoom
+  // ==================================================================
+  // iOS Safari ignores maximum-scale/user-scalable in the viewport meta
+  // tag (deliberate, for accessibility - Apple won't let a page fully
+  // block pinch-zoom that way) and touch-action:none isn't 100% reliable
+  // against pinch specifically on iOS either. Two layers: stop the
+  // WebKit gesture events outright, and as a safety net, snap the zoom
+  // back to 1x shortly after any pinch that gets through anyway, so a
+  // player is never stuck zoomed in with no way back.
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var resetTimer = null;
+
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+
+    function scheduleZoomCheck() {
+      clearTimeout(resetTimer);
+      // Debounced rather than immediate: fires repeatedly during an active
+      // pinch, so only check/correct once the gesture has actually settled
+      // (otherwise this would fight the user's fingers mid-pinch).
+      resetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+    }
+  })();
+
+  // ==================================================================
+  // Boot
+  // ==================================================================
+  var warpRingCircle = document.getElementById('warpRingCircle');
+  warpRingCircle.style.strokeDasharray = String(WARP_RING_CIRCUMFERENCE);
+  warpRingCircle.style.strokeDashoffset = '0';
+
+  var config = {
+    type: Phaser.AUTO,
+    parent: 'gameRoot',
+    backgroundColor: COLOR_BG,
+    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER },
+    physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
+    scene: [MainScene],
+    disableContextMenu: true
+  };
+
+  new Phaser.Game(config);
+})();
+</script>
+</body>
+</html>
