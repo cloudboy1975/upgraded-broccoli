@@ -280,7 +280,7 @@
 <body>
   <div id="gameRoot"></div>
 
-  <div class="build-tag">build 2026-08-22 08:25 UTC</div>
+  <div class="build-tag">build 2026-08-22 08:31 UTC</div>
 
   <div class="hud-bar" id="hudBar">
     <a class="back-link" href="index.html">&larr; All</a>
@@ -1124,9 +1124,20 @@
   // each zone also has its own watchdog timeout as a last-resort fallback.
   var heldZoneResets = [];
 
+  // iOS Safari's native long-press-to-select gesture (the magnifier/loupe
+  // callout) is driven by its own touch gesture recognizer that runs
+  // independently of Pointer Events - CSS user-select/touch-callout alone
+  // doesn't reliably suppress it once an element also has active JS touch
+  // handling. The well-tested way to actually cancel it is a non-passive
+  // touchstart listener that calls preventDefault().
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
   function bindHoldZone(el, setFlag) {
     var activeId = null;
     var watchdogTimer = null;
+    suppressCallout(el);
 
     function hardRelease() {
       if (activeId === null) return;
@@ -1138,6 +1149,7 @@
     }
 
     el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
       Sound.ensureAudio();
       // A pointerdown while activeId is already set means either a stale
       // session (the previous touch never got a pointerup/pointercancel -
@@ -1174,6 +1186,7 @@
     var holdTimer = null;
     var holdEngaged = false;
     var watchdogTimer = null;
+    suppressCallout(zoneMid);
 
     function hardRelease() {
       if (activeId === null) return;
@@ -1189,6 +1202,7 @@
     }
 
     zoneMid.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
       Sound.ensureAudio();
       // See bindHoldZone above: release any stale/stuck session instead of
       // silently ignoring the new press.

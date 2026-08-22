@@ -281,7 +281,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Open this file directly in any browser &mdash; no install needed. &middot; <a href="index.html">More games</a> &middot; build 2026-08-22 08:25 UTC</footer>
+    <footer>Open this file directly in any browser &mdash; no install needed. &middot; <a href="index.html">More games</a> &middot; build 2026-08-22 08:31 UTC</footer>
   </div>
 
 <script>
@@ -797,9 +797,20 @@
   var heldZoneResets = [];
 
   // ---- Input: touch/pointer (three-zone bar) ------------------------------------------------------
+  // iOS Safari's native long-press-to-select gesture (the magnifier/loupe
+  // callout) is driven by its own touch gesture recognizer that runs
+  // independently of Pointer Events - CSS user-select/touch-callout alone
+  // doesn't reliably suppress it once an element also has active JS touch
+  // handling. The well-tested way to actually cancel it is a non-passive
+  // touchstart listener that calls preventDefault().
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
   function bindHoldZone(el, setFlag) {
     var activeId = null;
     var watchdogTimer = null;
+    suppressCallout(el);
 
     function hardRelease() {
       if (activeId === null) return;
@@ -811,6 +822,7 @@
     }
 
     el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
       // A pointerdown while activeId is already set means either a stale
       // session (the previous touch never got a pointerup/pointercancel -
       // exactly the "stuck button" case) or a second finger on the same
@@ -846,6 +858,7 @@
     var holdTimer = null;
     var holdEngaged = false;
     var watchdogTimer = null;
+    suppressCallout(zoneMid);
 
     function hardRelease() {
       if (activeId === null) return;
@@ -861,6 +874,7 @@
     }
 
     zoneMid.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
       // See bindHoldZone above: release any stale/stuck session instead of
       // silently ignoring the new press.
       hardRelease();
