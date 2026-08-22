@@ -280,7 +280,7 @@
 <body>
   <div id="gameRoot"></div>
 
-  <div class="build-tag">build 2026-08-22 08:08 UTC</div>
+  <div class="build-tag">build 2026-08-22 08:25 UTC</div>
 
   <div class="hud-bar" id="hudBar">
     <a class="back-link" href="index.html">&larr; All</a>
@@ -1301,6 +1301,48 @@
     saveHighScore(0);
     mainScene.renderHud();
   });
+
+  // ==================================================================
+  // Prevent / auto-recover from accidental page pinch-zoom
+  // ==================================================================
+  // iOS Safari ignores maximum-scale/user-scalable in the viewport meta
+  // tag (deliberate, for accessibility - Apple won't let a page fully
+  // block pinch-zoom that way) and touch-action:none isn't 100% reliable
+  // against pinch specifically on iOS either. Two layers: stop the
+  // WebKit gesture events outright, and as a safety net, snap the zoom
+  // back to 1x shortly after any pinch that gets through anyway, so a
+  // player is never stuck zoomed in with no way back.
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var resetTimer = null;
+
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+
+    function scheduleZoomCheck() {
+      clearTimeout(resetTimer);
+      // Debounced rather than immediate: fires repeatedly during an active
+      // pinch, so only check/correct once the gesture has actually settled
+      // (otherwise this would fight the user's fingers mid-pinch).
+      resetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+    }
+  })();
 
   // ==================================================================
   // Boot
