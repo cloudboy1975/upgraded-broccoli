@@ -15,6 +15,7 @@
     --muted: #94a3b8;
     --accent: #22c55e;
     --danger: #ef4444;
+    --flame: #f97316;
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -179,9 +180,33 @@
     transition: background 0.1s, transform 0.08s;
   }
   .zone:active, .zone.active { background: #263449; transform: scale(0.97); }
-  .zone-mid { gap: 2px; }
-  .zone-icon { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.5px; line-height: 1; }
+  .zone-mid { gap: 8px; }
   .zone-caption { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+
+  /* Pure CSS shapes, zero text/image content - a mobile browser's
+     double-tap-then-hold word-selection gesture (which shows a
+     magnifier/loupe bubble - the "image popping up" artifact) needs
+     actual text or image content to select. These shapes give it
+     nothing to grab. */
+  .zone-shape { display: block; pointer-events: none; }
+  .zone-shape.arrow-left {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-right: 18px solid var(--text);
+  }
+  .zone-shape.arrow-right {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-left: 18px solid var(--text);
+  }
+  .zone-shape.fire-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--flame);
+  }
 
   .controls { display: flex; gap: 10px; width: 100%; }
 
@@ -238,12 +263,12 @@
     </div>
 
     <div class="control-bar" id="controlBar">
-      <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left">&#9664;</button>
+      <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left"><span class="zone-shape arrow-left" aria-hidden="true"></span></button>
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire or hold to thrust">
-        <span class="zone-icon">FIRE</span>
+        <span class="zone-shape fire-dot" aria-hidden="true"></span>
         <span class="zone-caption">tap fire &middot; hold thrust</span>
       </button>
-      <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right">&#9654;</button>
+      <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right"><span class="zone-shape arrow-right" aria-hidden="true"></span></button>
     </div>
 
     <div class="controls">
