@@ -3,117 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>10. Persisted High Scores &mdash; Build Asteroids</title>
-<link rel="stylesheet" href="../assets/tutorial.css">
-<link rel="stylesheet" href="../assets/highlight-theme.css">
-<script src="../assets/highlight.min.js"></script>
-</head>
-<body>
-  <div class="page">
-    <div class="crumbs"><a href="../index.html">&larr; Build Asteroids</a></div>
-    <span class="lesson-kicker">Core &middot; Lesson 10 of 12</span>
-    <h1>Persisted High Scores</h1>
-    <div class="subtitle">
-Score has existed since lesson 8, but it's only ever lived in memory &mdash; refresh the page and it's gone. This short lesson adds the last piece of the HUD (a Best pill) and saves it to localStorage, so a high score survives closing the tab.
-    </div>
-
-    <h2>A namespaced storage key</h2>
-    <p>
-      <code>localStorage</code> is shared by every page on the same
-      origin. On GitHub Pages, that means every game in this collection
-      &mdash; and every checkpoint file in this tutorial &mdash; shares one
-      storage bucket. Using a specific, versioned key
-      (<code>ast-highscore-v1</code> in the real game; this tutorial uses
-      its own <code>ast-tutorial-highscore-v1</code> so trying it out here
-      can't clobber your actual game progress) keeps that sharing from
-      turning into collisions. The <code>-v1</code> suffix is cheap
-      insurance too &mdash; if the saved shape ever needs to change later,
-      bumping it to <code>-v2</code> means old, incompatible data is
-      simply ignored instead of crashing something that expects the new
-      shape.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">var HIGH_SCORE_KEY = 'ast-highscore-v1';
-
-function loadHighScore() {
-  try {
-    var raw = localStorage.getItem(HIGH_SCORE_KEY);
-    var n = parseInt(raw, 10);
-    state.highScore = (isFinite(n) && n > 0) ? n : 0;
-  } catch (e) { /* ignore storage errors (private browsing, quota, etc.) */ }
-}
-
-function saveHighScore() {
-  try { localStorage.setItem(HIGH_SCORE_KEY, String(state.highScore)); } catch (e) {}
-}</code></pre>
-    </div>
-    <p>
-      Both are wrapped in <code>try</code>/<code>catch</code>: some
-      browsers throw on <code>localStorage</code> access entirely in
-      private-browsing modes, or if storage is full. Either way, the game
-      should keep working with just an unsaved high score rather than
-      crash outright.
-    </p>
-
-    <h2>Wiring it in</h2>
-    <p>
-      <code>addScore()</code> checks the new total against
-      <code>state.highScore</code> every time, saving only when there's
-      an actual new best &mdash; not on every single point. A Best pill
-      joins Score and Lives in the status bar, and a second button,
-      <b>Reset Best</b>, clears it back to zero on purpose.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">function addScore(n) {
-  state.score += n;
-  if (state.score > state.highScore) {
-    state.highScore = state.score;
-    saveHighScore();
-  }
-  renderHud();
-}
-
-function resetBest() {
-  state.highScore = 0;
-  saveHighScore();
-  renderHud();
-}</code></pre>
-    </div>
-    <p>
-      <code>renderHud()</code> gets one more line
-      (<code>bestValEl.textContent = state.highScore</code>), and the
-      init sequence calls <code>loadHighScore()</code> right after
-      resizing the canvas and before the very first
-      <code>resetGame()</code> &mdash; which, now that it exists, replaces
-      the standalone <code>seedRocks()</code> call used at init since
-      lesson 5. <code>resetGame()</code> already seeds the field itself,
-      so calling it directly is simpler than calling two functions that
-      do overlapping work.
-    </p>
-
-    <h2>Try it</h2>
-    <p>Destroy a few rocks, then reload this page. Your best score is still here. Reset Best clears it back to zero, on purpose.</p>
-    <div class="demo-block">
-      <div class="demo-frame-wrap"><iframe src="../checkpoints/10-high-scores.html" loading="lazy" title="Checkpoint 10 live demo"></iframe></div>
-      <div class="demo-links">
-        <a href="../checkpoints/10-high-scores.html" target="_blank" rel="noopener">Open in a new tab</a>
-        <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
-      </div>
-    </div>
-
-    <h2>Full source so far</h2>
-    <details class="source-disclosure">
-      <summary>checkpoints/10-high-scores.html</summary>
-      <div class="code-panel">
-        <pre><code class="language-html">&lt;!DOCTYPE html&gt;
-&lt;html lang=&quot;en&quot;&gt;
-&lt;head&gt;
-&lt;meta charset=&quot;UTF-8&quot;&gt;
-&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot;&gt;
-&lt;title&gt;Checkpoint 10 &amp;mdash; Persisted High Scores&lt;/title&gt;
-&lt;style&gt;
+<title>Checkpoint 11 &mdash; The Mobile Control Bar</title>
+<style>
   :root {
     --bg-1: #0f172a;
     --bg-2: #1e293b;
@@ -123,14 +14,15 @@ function resetBest() {
     --muted: #94a3b8;
     --accent: #22c55e;
     --danger: #ef4444;
+    --flame: #f97316;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; height: 100%; }
   body {
     min-height: 100dvh;
     background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
     color: var(--muted);
-    font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -204,6 +96,57 @@ function resetBest() {
   .btn:active { transform: scale(0.97); }
   .btn.primary { background: var(--accent); color: #052e16; }
   .btn.secondary { background: var(--bg-2); color: var(--text); }
+
+  .control-bar {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+    touch-action: none;
+  }
+  .zone {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: var(--bg-2);
+    color: var(--text);
+    border-radius: 16px;
+    height: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    transition: background 0.1s, transform 0.08s;
+  }
+  .zone:active, .zone.active { background: #263449; transform: scale(0.97); }
+  .zone-mid { gap: 8px; }
+  .zone-caption { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+  .zone-shape { display: block; pointer-events: none; }
+  .zone-shape.arrow-left {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-right: 18px solid var(--text);
+  }
+  .zone-shape.arrow-right {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-left: 18px solid var(--text);
+  }
+  .zone-shape.fire-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--flame);
+  }
+
   .canvas-wrap {
     width: 100%;
     max-width: 420px;
@@ -216,41 +159,50 @@ function resetBest() {
   }
   #gameCanvas { display: block; width: 100%; height: 100%; }
   .note { font-size: 0.8rem; text-align: center; }
-&lt;/style&gt;
-&lt;/head&gt;
-&lt;body&gt;
-  &lt;div class=&quot;status-bar&quot;&gt;
-    &lt;div class=&quot;status-text&quot;&gt;
-      &lt;span class=&quot;turn-dot playing&quot; id=&quot;phaseDot&quot;&gt;&lt;/span&gt;
-      &lt;span id=&quot;statusLabel&quot;&gt;Playing&lt;/span&gt;
-    &lt;/div&gt;
-    &lt;div class=&quot;scoreboard&quot;&gt;
-      &lt;div class=&quot;score-pill&quot;&gt;Score&lt;b id=&quot;scoreVal&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
-      &lt;div class=&quot;score-pill&quot;&gt;Lives&lt;b id=&quot;livesVal&quot;&gt;3&lt;/b&gt;&lt;/div&gt;
-      &lt;div class=&quot;score-pill&quot;&gt;Best&lt;b id=&quot;bestVal&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
-    &lt;/div&gt;
-  &lt;/div&gt;
-  &lt;div class=&quot;canvas-wrap&quot; id=&quot;canvasWrap&quot;&gt;
-    &lt;canvas id=&quot;gameCanvas&quot;&gt;&lt;/canvas&gt;
-    &lt;div class=&quot;overlay&quot; id=&quot;gameOverOverlay&quot;&gt;
-      &lt;div class=&quot;overlay-title&quot;&gt;Game Over&lt;/div&gt;
-      &lt;div class=&quot;overlay-score&quot;&gt;Score: &lt;b id=&quot;overlayScore&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
-      &lt;div class=&quot;overlay-best&quot;&gt;Best: &lt;b id=&quot;overlayBest&quot;&gt;0&lt;/b&gt;&lt;/div&gt;
-      &lt;button type=&quot;button&quot; class=&quot;btn primary overlay-btn&quot; id=&quot;overlayRestartBtn&quot;&gt;Restart&lt;/button&gt;
-    &lt;/div&gt;
-  &lt;/div&gt;
-  &lt;div class=&quot;controls&quot;&gt;
-    &lt;button type=&quot;button&quot; class=&quot;btn primary&quot; id=&quot;restartBtn&quot;&gt;Restart&lt;/button&gt;
-    &lt;button type=&quot;button&quot; class=&quot;btn secondary&quot; id=&quot;resetBestBtn&quot;&gt;Reset Best&lt;/button&gt;
-  &lt;/div&gt;
-  &lt;div class=&quot;note&quot;&gt;Checkpoint 10: your best score survives a reload &amp;mdash; try refreshing the page after a run.&lt;/div&gt;
+</style>
+</head>
+<body>
+  <div class="status-bar">
+    <div class="status-text">
+      <span class="turn-dot playing" id="phaseDot"></span>
+      <span id="statusLabel">Playing</span>
+    </div>
+    <div class="scoreboard">
+      <div class="score-pill">Score<b id="scoreVal">0</b></div>
+      <div class="score-pill">Lives<b id="livesVal">3</b></div>
+      <div class="score-pill">Best<b id="bestVal">0</b></div>
+    </div>
+  </div>
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="gameCanvas"></canvas>
+    <div class="overlay" id="gameOverOverlay">
+      <div class="overlay-title">Game Over</div>
+      <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
+      <div class="overlay-best">Best: <b id="overlayBest">0</b></div>
+      <button type="button" class="btn primary overlay-btn" id="overlayRestartBtn">Restart</button>
+    </div>
+  </div>
+  <div class="control-bar" id="controlBar">
+    <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left"><span class="zone-shape arrow-left" aria-hidden="true"></span></button>
+    <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire or hold to thrust">
+      <span class="zone-shape fire-dot" aria-hidden="true"></span>
+      <span class="zone-caption" aria-hidden="true">tap fire &middot; hold thrust</span>
+    </button>
+    <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right"><span class="zone-shape arrow-right" aria-hidden="true"></span></button>
+  </div>
 
-&lt;script&gt;
+  <div class="controls">
+    <button type="button" class="btn primary" id="restartBtn">Restart</button>
+    <button type="button" class="btn secondary" id="resetBestBtn">Reset Best</button>
+  </div>
+  <div class="note">Checkpoint 11: the three-zone touch bar &mdash; hold left/right to turn, tap the middle to fire, hold it to thrust. Keyboard still works too.</div>
+
+<script>
 (function () {
-  &quot;use strict&quot;;
+  "use strict";
 
   // ---- Constants ----------------------------------------------------
-  var HIGH_SCORE_KEY = &#x27;ast-tutorial-highscore-v1&#x27;;
+  var HIGH_SCORE_KEY = 'ast-tutorial-highscore-v1';
   var SHIP_RADIUS = 12;
   var BULLET_RADIUS = 3;
   var THRUST_ACCEL = 220;
@@ -263,39 +215,44 @@ function resetBest() {
   var MAX_DT = 0.05;
   var SPAWN_CHECK_INTERVAL = 0.5; // seconds
   var HOLD_THRESHOLD_MS = 190;
+  var TAP_MAX_MOVE = 12; // px
 
   var ROCK_SIZES = {
-    large:  { radius: 46, speedRange: [30, 70],   score: 20,  child: &#x27;medium&#x27; },
-    medium: { radius: 27, speedRange: [50, 100],  score: 50,  child: &#x27;small&#x27; },
+    large:  { radius: 46, speedRange: [30, 70],   score: 20,  child: 'medium' },
+    medium: { radius: 27, speedRange: [50, 100],  score: 50,  child: 'small' },
     small:  { radius: 15, speedRange: [80, 140],  score: 100, child: null }
   };
 
-  var COLOR_SHIP = &#x27;#e2e8f0&#x27;;
-  var COLOR_BULLET = &#x27;#22c55e&#x27;;
-  var COLOR_FLAME = &#x27;#f97316&#x27;;
-  var COLOR_STAR = &#x27;rgba(148, 163, 184, 0.5)&#x27;;
-  var COLOR_ROCK_STROKE = &#x27;#334155&#x27;;
-  var COLOR_ROCK_FILL = &#x27;rgba(148, 163, 184, 0.18)&#x27;;
+  var COLOR_SHIP = '#e2e8f0';
+  var COLOR_BULLET = '#22c55e';
+  var COLOR_FLAME = '#f97316';
+  var COLOR_STAR = 'rgba(148, 163, 184, 0.5)';
+  var COLOR_ROCK_STROKE = '#334155';
+  var COLOR_ROCK_FILL = 'rgba(148, 163, 184, 0.18)';
 
   // ---- DOM ------------------------------------------------------------
-  var canvasWrap = document.getElementById(&#x27;canvasWrap&#x27;);
-  var canvas = document.getElementById(&#x27;gameCanvas&#x27;);
-  var ctx = canvas.getContext(&#x27;2d&#x27;);
-  var overlayEl = document.getElementById(&#x27;gameOverOverlay&#x27;);
-  var overlayScoreEl = document.getElementById(&#x27;overlayScore&#x27;);
-  var overlayBestEl = document.getElementById(&#x27;overlayBest&#x27;);
-  var overlayRestartBtn = document.getElementById(&#x27;overlayRestartBtn&#x27;);
-  var restartBtn = document.getElementById(&#x27;restartBtn&#x27;);
-  var resetBestBtn = document.getElementById(&#x27;resetBestBtn&#x27;);
-  var phaseDotEl = document.getElementById(&#x27;phaseDot&#x27;);
-  var statusLabelEl = document.getElementById(&#x27;statusLabel&#x27;);
-  var scoreValEl = document.getElementById(&#x27;scoreVal&#x27;);
-  var livesValEl = document.getElementById(&#x27;livesVal&#x27;);
-  var bestValEl = document.getElementById(&#x27;bestVal&#x27;);
+  var canvasWrap = document.getElementById('canvasWrap');
+  var canvas = document.getElementById('gameCanvas');
+  var ctx = canvas.getContext('2d');
+  var overlayEl = document.getElementById('gameOverOverlay');
+  var overlayScoreEl = document.getElementById('overlayScore');
+  var overlayBestEl = document.getElementById('overlayBest');
+  var overlayRestartBtn = document.getElementById('overlayRestartBtn');
+  var restartBtn = document.getElementById('restartBtn');
+  var resetBestBtn = document.getElementById('resetBestBtn');
+  var phaseDotEl = document.getElementById('phaseDot');
+  var statusLabelEl = document.getElementById('statusLabel');
+  var scoreValEl = document.getElementById('scoreVal');
+  var livesValEl = document.getElementById('livesVal');
+  var controlBar = document.getElementById('controlBar');
+  var zoneLeft = document.getElementById('zoneLeft');
+  var zoneMid = document.getElementById('zoneMid');
+  var zoneRight = document.getElementById('zoneRight');
+  var bestValEl = document.getElementById('bestVal');
 
   // ---- State ------------------------------------------------------------
   var state = {
-    phase: &#x27;playing&#x27;, // &#x27;playing&#x27; | &#x27;gameover&#x27;
+    phase: 'playing', // 'playing' | 'gameover'
     ship: {
       x: 0, y: 0, vx: 0, vy: 0,
       heading: -Math.PI / 2,
@@ -325,14 +282,14 @@ function resetBest() {
     var dpr = window.devicePixelRatio || 1;
     var w = Math.round(rect.width);
     var h = Math.round(rect.height);
-    if (w === state.canvasCssW &amp;&amp; h === state.canvasCssH &amp;&amp; dpr === state.canvasDpr) return;
+    if (w === state.canvasCssW && h === state.canvasCssH && dpr === state.canvasDpr) return;
     state.canvasCssW = w;
     state.canvasCssH = h;
     state.canvasDpr = dpr;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
-    canvas.style.width = w + &#x27;px&#x27;;
-    canvas.style.height = h + &#x27;px&#x27;;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     generateStars();
   }
@@ -340,7 +297,7 @@ function resetBest() {
   function generateStars() {
     stars = [];
     var count = Math.round((state.canvasCssW * state.canvasCssH) / 4000);
-    for (var i = 0; i &lt; count; i++) {
+    for (var i = 0; i < count; i++) {
       stars.push({
         x: Math.random() * state.canvasCssW,
         y: Math.random() * state.canvasCssH,
@@ -357,7 +314,7 @@ function resetBest() {
 
   // ---- Firing ------------------------------------------------------
   function fireBullet() {
-    if (state.phase !== &#x27;playing&#x27;) return;
+    if (state.phase !== 'playing') return;
     var heading = state.ship.heading;
     state.bullets.push({
       x: state.ship.x + Math.cos(heading) * state.ship.radius,
@@ -368,35 +325,115 @@ function resetBest() {
     });
   }
 
+  // ---- Input: composition ------------------------------------------------------
+  // Touch and keyboard each set their own flags; composeInput() ORs them
+  // together into state.input, so either input method works on its own
+  // and neither has to know the other exists.
+  var touchLeft = false, touchRight = false, touchThrust = false;
+  var kbLeft = false, kbRight = false, kbThrust = false;
+
+  function composeInput() {
+    state.input.left = touchLeft || kbLeft;
+    state.input.right = touchRight || kbRight;
+    state.input.thrust = touchThrust || kbThrust;
+  }
+
+  // ---- Input: touch/pointer (three-zone bar) ------------------------------------------------------
+  function bindHoldZone(el, setFlag) {
+    var activeId = null;
+
+    el.addEventListener('pointerdown', function (e) {
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      setFlag(true);
+      composeInput();
+    });
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      activeId = null;
+      el.classList.remove('active');
+      setFlag(false);
+      composeInput();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+  }
+
+  bindHoldZone(zoneLeft, function (v) { touchLeft = v; });
+  bindHoldZone(zoneRight, function (v) { touchRight = v; });
+
+  (function bindMidZone() {
+    var activeId = null;
+    var downX = 0, downY = 0;
+    var holdTimer = null;
+    var holdEngaged = false;
+
+    zoneMid.addEventListener('pointerdown', function (e) {
+      activeId = e.pointerId;
+      try { zoneMid.setPointerCapture(activeId); } catch (err) {}
+      downX = e.clientX; downY = e.clientY;
+      holdEngaged = false;
+      zoneMid.classList.add('active');
+      holdTimer = setTimeout(function () {
+        holdEngaged = true;
+        touchThrust = true;
+        composeInput();
+      }, HOLD_THRESHOLD_MS);
+    });
+
+    function endPress(e, allowFire) {
+      if (e.pointerId !== activeId) return;
+      activeId = null;
+      zoneMid.classList.remove('active');
+      clearTimeout(holdTimer);
+      var wasHoldEngaged = holdEngaged;
+      var dx = e.clientX - downX, dy = e.clientY - downY;
+      var moved = Math.sqrt(dx * dx + dy * dy);
+      if (wasHoldEngaged) {
+        touchThrust = false;
+        composeInput();
+      }
+      if (!wasHoldEngaged && allowFire && moved < TAP_MAX_MOVE) fireBullet();
+    }
+
+    zoneMid.addEventListener('pointerup', function (e) { endPress(e, true); });
+    zoneMid.addEventListener('pointercancel', function (e) { endPress(e, false); });
+    zoneMid.addEventListener('lostpointercapture', function (e) { endPress(e, false); });
+  })();
+
   // ---- Input: keyboard ------------------------------------------------------
-  function isLeftKey(code) { return code === &#x27;ArrowLeft&#x27; || code === &#x27;KeyA&#x27;; }
-  function isRightKey(code) { return code === &#x27;ArrowRight&#x27; || code === &#x27;KeyD&#x27;; }
-  function isThrustKey(code) { return code === &#x27;Space&#x27; || code === &#x27;ArrowUp&#x27; || code === &#x27;KeyW&#x27;; }
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isThrustKey(code) { return code === 'Space' || code === 'ArrowUp' || code === 'KeyW'; }
 
   var kbHoldTimer = null;
   var kbHoldEngaged = false;
 
-  document.addEventListener(&#x27;keydown&#x27;, function (e) {
+  document.addEventListener('keydown', function (e) {
     if (isThrustKey(e.code)) e.preventDefault();
     if (e.repeat) return;
-    if (isLeftKey(e.code)) state.input.left = true;
-    else if (isRightKey(e.code)) state.input.right = true;
+    if (isLeftKey(e.code)) { kbLeft = true; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = true; composeInput(); }
     else if (isThrustKey(e.code)) {
       kbHoldEngaged = false;
       kbHoldTimer = setTimeout(function () {
         kbHoldEngaged = true;
-        state.input.thrust = true;
+        kbThrust = true;
+        composeInput();
       }, HOLD_THRESHOLD_MS);
     }
   });
 
-  document.addEventListener(&#x27;keyup&#x27;, function (e) {
-    if (isLeftKey(e.code)) state.input.left = false;
-    else if (isRightKey(e.code)) state.input.right = false;
+  document.addEventListener('keyup', function (e) {
+    if (isLeftKey(e.code)) { kbLeft = false; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = false; composeInput(); }
     else if (isThrustKey(e.code)) {
       clearTimeout(kbHoldTimer);
       if (kbHoldEngaged) {
-        state.input.thrust = false;
+        kbThrust = false;
+        composeInput();
       } else {
         fireBullet();
       }
@@ -426,7 +463,7 @@ function resetBest() {
   function makeRockShape() {
     var points = [];
     var n = 10 + Math.floor(Math.random() * 4);
-    for (var i = 0; i &lt; n; i++) {
+    for (var i = 0; i < n; i++) {
       points.push({
         angle: (i / n) * Math.PI * 2,
         r: 0.75 + Math.random() * 0.5
@@ -451,22 +488,22 @@ function resetBest() {
   function seedRocks() {
     var minDist = visibleRadius() * 0.6;
     var maxDist = despawnRadius() * 0.5;
-    for (var i = 0; i &lt; 6; i++) {
+    for (var i = 0; i < 6; i++) {
       var angle = Math.random() * Math.PI * 2;
       var dist = minDist + Math.random() * (maxDist - minDist);
       var x = state.ship.x + Math.cos(angle) * dist;
       var y = state.ship.y + Math.sin(angle) * dist;
       var dirAngle = Math.random() * Math.PI * 2;
       var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
-      state.rocks.push(createRock(&#x27;large&#x27;, x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
+      state.rocks.push(createRock('large', x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
     }
   }
 
   function trySpawnRocks(dt) {
     state.spawn.timer -= dt;
-    if (state.spawn.timer &gt; 0) return;
+    if (state.spawn.timer > 0) return;
     state.spawn.timer = SPAWN_CHECK_INTERVAL;
-    if (state.rocks.length &gt;= targetRockCount()) return;
+    if (state.rocks.length >= targetRockCount()) return;
 
     var angle = Math.random() * Math.PI * 2;
     var dist = spawnRingRadius();
@@ -474,15 +511,15 @@ function resetBest() {
     var y = state.ship.y + Math.sin(angle) * dist;
     var inward = angle + Math.PI + (Math.random() - 0.5) * 1.0;
     var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
-    state.rocks.push(createRock(&#x27;large&#x27;, x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
+    state.rocks.push(createRock('large', x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
   }
 
   function despawnFarRocks() {
     var dr = despawnRadius();
-    for (var i = state.rocks.length - 1; i &gt;= 0; i--) {
+    for (var i = state.rocks.length - 1; i >= 0; i--) {
       var rk = state.rocks[i];
       var dx = rk.x - state.ship.x, dy = rk.y - state.ship.y;
-      if (dx * dx + dy * dy &gt; dr * dr) state.rocks.splice(i, 1);
+      if (dx * dx + dy * dy > dr * dr) state.rocks.splice(i, 1);
     }
   }
 
@@ -500,7 +537,7 @@ function resetBest() {
     ship.vx *= damp;
     ship.vy *= damp;
     var speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-    if (speed &gt; MAX_SPEED) {
+    if (speed > MAX_SPEED) {
       var scale = MAX_SPEED / speed;
       ship.vx *= scale;
       ship.vy *= scale;
@@ -510,7 +547,7 @@ function resetBest() {
   }
 
   function updateRocks(dt) {
-    for (var i = 0; i &lt; state.rocks.length; i++) {
+    for (var i = 0; i < state.rocks.length; i++) {
       var rk = state.rocks[i];
       rk.x += rk.vx * dt;
       rk.y += rk.vy * dt;
@@ -519,24 +556,24 @@ function resetBest() {
   }
 
   function updateBullets(dt) {
-    for (var i = state.bullets.length - 1; i &gt;= 0; i--) {
+    for (var i = state.bullets.length - 1; i >= 0; i--) {
       var b = state.bullets[i];
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.ttl -= dt;
-      if (b.ttl &lt;= 0) state.bullets.splice(i, 1);
+      if (b.ttl <= 0) state.bullets.splice(i, 1);
     }
   }
 
   // ---- Collisions ------------------------------------------------------
   function handleCollisions() {
-    for (var bi = state.bullets.length - 1; bi &gt;= 0; bi--) {
+    for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
       var b = state.bullets[bi];
-      for (var ri = state.rocks.length - 1; ri &gt;= 0; ri--) {
+      for (var ri = state.rocks.length - 1; ri >= 0; ri--) {
         var rk = state.rocks[ri];
         var dx = b.x - rk.x, dy = b.y - rk.y;
         var rr = rk.radius + BULLET_RADIUS;
-        if (dx * dx + dy * dy &lt;= rr * rr) {
+        if (dx * dx + dy * dy <= rr * rr) {
           state.bullets.splice(bi, 1);
           splitRock(ri);
           break;
@@ -545,11 +582,11 @@ function resetBest() {
     }
 
     if (!isInvulnerable()) {
-      for (var i = 0; i &lt; state.rocks.length; i++) {
+      for (var i = 0; i < state.rocks.length; i++) {
         var rock = state.rocks[i];
         var sx = state.ship.x - rock.x, sy = state.ship.y - rock.y;
         var sr = state.ship.radius + rock.radius;
-        if (sx * sx + sy * sy &lt;= sr * sr) {
+        if (sx * sx + sy * sy <= sr * sr) {
           shipHit();
           break;
         }
@@ -557,11 +594,11 @@ function resetBest() {
     }
   }
 
-  function isInvulnerable() { return performance.now() &lt; state.ship.invulnerableUntil; }
+  function isInvulnerable() { return performance.now() < state.ship.invulnerableUntil; }
 
   function shipHit() {
     state.lives--;
-    if (state.lives &lt;= 0) {
+    if (state.lives <= 0) {
       state.lives = 0;
       endGame();
     } else {
@@ -578,10 +615,10 @@ function resetBest() {
   }
 
   function endGame() {
-    state.phase = &#x27;gameover&#x27;;
+    state.phase = 'gameover';
     overlayScoreEl.textContent = state.score;
     overlayBestEl.textContent = state.highScore;
-    overlayEl.classList.add(&#x27;visible&#x27;);
+    overlayEl.classList.add('visible');
   }
 
   function splitRock(index) {
@@ -592,7 +629,7 @@ function resetBest() {
     if (!info.child) return;
     var baseAngle = (rock.vx || rock.vy) ? Math.atan2(rock.vy, rock.vx) : Math.random() * Math.PI * 2;
     var childInfo = ROCK_SIZES[info.child];
-    for (var k = 0; k &lt; 2; k++) {
+    for (var k = 0; k < 2; k++) {
       var spread = 0.5 + Math.random() * 0.3;
       var ang = baseAngle + (k === 0 ? spread : -spread);
       var speed = randRange(childInfo.speedRange) * speedMultiplier();
@@ -602,7 +639,7 @@ function resetBest() {
 
   function addScore(n) {
     state.score += n;
-    if (state.score &gt; state.highScore) {
+    if (state.score > state.highScore) {
       state.highScore = state.score;
       saveHighScore();
     }
@@ -614,7 +651,7 @@ function resetBest() {
     try {
       var raw = localStorage.getItem(HIGH_SCORE_KEY);
       var n = parseInt(raw, 10);
-      state.highScore = (isFinite(n) &amp;&amp; n &gt; 0) ? n : 0;
+      state.highScore = (isFinite(n) && n > 0) ? n : 0;
     } catch (e) { /* ignore storage errors (private browsing, quota, etc.) */ }
   }
 
@@ -633,13 +670,13 @@ function resetBest() {
     scoreValEl.textContent = state.score;
     livesValEl.textContent = state.lives;
     bestValEl.textContent = state.highScore;
-    phaseDotEl.className = &#x27;turn-dot &#x27; + (state.phase === &#x27;playing&#x27; ? &#x27;playing&#x27; : &#x27;gameover&#x27;);
-    statusLabelEl.textContent = state.phase === &#x27;playing&#x27; ? &#x27;Playing&#x27; : &#x27;Game Over&#x27;;
+    phaseDotEl.className = 'turn-dot ' + (state.phase === 'playing' ? 'playing' : 'gameover');
+    statusLabelEl.textContent = state.phase === 'playing' ? 'Playing' : 'Game Over';
   }
 
   // ---- Reset / restart ------------------------------------------------------
   function resetGame() {
-    state.phase = &#x27;playing&#x27;;
+    state.phase = 'playing';
     state.ship.x = 0; state.ship.y = 0;
     state.ship.vx = 0; state.ship.vy = 0;
     state.ship.heading = -Math.PI / 2;
@@ -654,14 +691,14 @@ function resetBest() {
     state.nextRockId = 1;
     state.timing.lastFrameTime = 0;
     seedRocks();
-    overlayEl.classList.remove(&#x27;visible&#x27;);
+    overlayEl.classList.remove('visible');
     renderHud();
   }
 
   // ---- Rendering ------------------------------------------------------
   function drawBackground() {
     ctx.fillStyle = COLOR_STAR;
-    for (var i = 0; i &lt; stars.length; i++) {
+    for (var i = 0; i < stars.length; i++) {
       var s = stars[i];
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
@@ -675,7 +712,7 @@ function resetBest() {
     ctx.translate(p.x, p.y);
     ctx.rotate(rock.rotation);
     ctx.beginPath();
-    for (var i = 0; i &lt; rock.shapePoints.length; i++) {
+    for (var i = 0; i < rock.shapePoints.length; i++) {
       var pt = rock.shapePoints[i];
       var rad = rock.radius * pt.r;
       var px = Math.cos(pt.angle) * rad;
@@ -700,7 +737,7 @@ function resetBest() {
   }
 
   function drawShip() {
-    if (isInvulnerable() &amp;&amp; Math.floor(performance.now() / 100) % 2 === 0) return;
+    if (isInvulnerable() && Math.floor(performance.now() / 100) % 2 === 0) return;
     var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
     var r = state.ship.radius;
     ctx.save();
@@ -733,8 +770,8 @@ function resetBest() {
   function render() {
     ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
     drawBackground();
-    for (var i = 0; i &lt; state.rocks.length; i++) drawRock(state.rocks[i]);
-    for (var j = 0; j &lt; state.bullets.length; j++) drawBullet(state.bullets[j]);
+    for (var i = 0; i < state.rocks.length; i++) drawRock(state.rocks[i]);
+    for (var j = 0; j < state.bullets.length; j++) drawBullet(state.bullets[j]);
     drawShip();
   }
 
@@ -755,15 +792,15 @@ function resetBest() {
     if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
     var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
     state.timing.lastFrameTime = ts;
-    if (state.phase === &#x27;playing&#x27;) update(dt);
+    if (state.phase === 'playing') update(dt);
     render();
   }
 
-  window.addEventListener(&#x27;resize&#x27;, onResize);
-  window.addEventListener(&#x27;orientationchange&#x27;, onResize);
-  restartBtn.addEventListener(&#x27;click&#x27;, resetGame);
-  overlayRestartBtn.addEventListener(&#x27;click&#x27;, resetGame);
-  resetBestBtn.addEventListener(&#x27;click&#x27;, resetBest);
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+  restartBtn.addEventListener('click', resetGame);
+  overlayRestartBtn.addEventListener('click', resetGame);
+  resetBestBtn.addEventListener('click', resetBest);
 
   // ---- Init ------------------------------------------------------
   resizeCanvas();
@@ -771,22 +808,6 @@ function resetBest() {
   resetGame(); // resetGame() already seeds the rock field, so it replaces the old seedRocks() call here
   rafId = requestAnimationFrame(frame);
 })();
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;
-</code></pre>
-      </div>
-    </details>
-
-    <div class="lesson-nav">
-      <a href="09-lives-gameover-restart.html"><span class="nav-label">Prev</span>&lsaquo; 9. Lives, Game Over, Restart</a>
-      <a class="next" href="11-mobile-control-bar.html"><span class="nav-label">Next</span>11. The Mobile Control Bar &rsaquo;</a>
-    </div>
-
-    <footer class="page-footer"><a href="../index.html">Back to lesson list</a></footer>
-  </div>
-<script>
-  document.querySelectorAll('pre code').forEach(function (el) { hljs.highlightElement(el); });
 </script>
 </body>
 </html>
