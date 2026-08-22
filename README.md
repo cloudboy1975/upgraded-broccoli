@@ -9,6 +9,8 @@ to all of them.
 
 - **Browse them all instantly:** [Open the games hub](https://cloudboy1975.github.io/upgraded-broccoli/)
 - **Or run locally:** download any `.html` file below and double-click it (or drag it into a browser tab).
+- **Building another game?** See [`CONTROLS.md`](CONTROLS.md) for the
+  reusable two-thumb control-bar pattern used by both Asteroids games.
 
 Served via GitHub Pages from `main`, so these links always reflect what's
 merged — no branch or preview links to keep updating.
