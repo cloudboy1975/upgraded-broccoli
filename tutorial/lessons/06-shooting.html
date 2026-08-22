@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>5. Rocks in an Endless Field &mdash; Build Asteroids</title>
+<title>6. Shooting &mdash; Build Asteroids</title>
 <link rel="stylesheet" href="../assets/tutorial.css">
 <link rel="stylesheet" href="../assets/highlight-theme.css">
 <script src="../assets/highlight.min.js"></script>
@@ -11,152 +11,142 @@
 <body>
   <div class="page">
     <div class="crumbs"><a href="../index.html">&larr; Build Asteroids</a></div>
-    <span class="lesson-kicker">Core &middot; Lesson 5 of 12</span>
-    <h1>Rocks in an Endless Field</h1>
+    <span class="lesson-kicker">Core &middot; Lesson 6 of 12</span>
+    <h1>Shooting</h1>
     <div class="subtitle">
-This game doesn't wrap rocks around screen edges the way the original arcade cabinet did &mdash; there are no edges, since the world is unbounded and the camera just follows the ship (lesson 4). Instead, rocks spawn in a ring just outside what's visible and get cleaned up once they're far enough behind you that they'd never be seen again. This lesson replaces last lesson's single parked rock with that real system.
+One button, two jobs: tap it and the ship fires; hold it and the ship thrusts instead. Getting that distinction right needs an upgrade to the keyboard handler from lesson 3 &mdash; and once there's a way to fire, bullets need their own small physics and lifespan.
     </div>
 
-    <h2>Seeding the field</h2>
+    <h2>A bullet, briefly</h2>
     <p>
-      When the game starts, <code>seedRocks()</code> scatters six large
-      rocks at random angles around the ship, each already moving in a
-      random direction. Scattering them between 60% of the visible
-      radius and half the despawn radius keeps the very first moment from
-      either dropping a rock right on top of you or spawning one so far
-      out it's invisible.
+      <code>fireBullet()</code> spawns one bullet at the tip of the ship
+      (<code>ship.radius</code> out along its heading, so it doesn't
+      appear to come from inside the hull), moving at a fixed speed along
+      that same heading. <code>ttl</code> (time to live) counts down every
+      frame; once it hits zero the bullet is removed, so shots don't
+      travel forever.
     </p>
     <div class="code-panel">
       <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">function randRange(range) { return range[0] + Math.random() * (range[1] - range[0]); }
+      <pre><code class="language-javascript">var BULLET_RADIUS = 3;
+var BULLET_SPEED = 480;
+var BULLET_LIFETIME = 0.9; // seconds
 
-function visibleRadius() {
-  return Math.sqrt(state.canvasCssW * state.canvasCssW + state.canvasCssH * state.canvasCssH) / 2;
-}
-function despawnRadius() { return visibleRadius() * 2.5; }
-
-function seedRocks() {
-  var minDist = visibleRadius() * 0.6;
-  var maxDist = despawnRadius() * 0.5;
-  for (var i = 0; i < 6; i++) {
-    var angle = Math.random() * Math.PI * 2;
-    var dist = minDist + Math.random() * (maxDist - minDist);
-    var x = state.ship.x + Math.cos(angle) * dist;
-    var y = state.ship.y + Math.sin(angle) * dist;
-    var dirAngle = Math.random() * Math.PI * 2;
-    var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
-    state.rocks.push(createRock('large', x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
-  }
-}</code></pre>
-    </div>
-    <p>
-      <code>visibleRadius()</code> is the radius of a circle just big
-      enough to cover the whole canvas from its center &mdash; the
-      Pythagorean diagonal, halved. Everything about spawning and
-      despawning is expressed relative to it, so it automatically adapts
-      to whatever size screen it's running on.
-    </p>
-
-    <h2>Spawning ahead, forever</h2>
-    <p>
-      Every half second (<code>SPAWN_CHECK_INTERVAL</code>), if the rock
-      count is under a target that slowly ramps up over time, one more
-      large rock spawns in a ring just past the edge of what's visible
-      (<code>spawnRingRadius()</code>), aimed roughly &mdash; not exactly,
-      there's some randomness in the angle &mdash; back toward the ship.
-      That inward aim is what makes new rocks feel like a real threat
-      instead of drifting past uselessly off in some random direction.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">var SPAWN_CHECK_INTERVAL = 0.5; // seconds
-
-function spawnRingRadius() { return visibleRadius() + 80; }
-function targetRockCount() { return Math.min(6 + Math.floor(state.difficulty.elapsed / 30), 14); }
-function speedMultiplier() { return 1 + Math.min(state.difficulty.elapsed / 60, 1) * 0.5; }
-
-function trySpawnRocks(dt) {
-  state.spawn.timer -= dt;
-  if (state.spawn.timer > 0) return;
-  state.spawn.timer = SPAWN_CHECK_INTERVAL;
-  if (state.rocks.length >= targetRockCount()) return;
-
-  var angle = Math.random() * Math.PI * 2;
-  var dist = spawnRingRadius();
-  var x = state.ship.x + Math.cos(angle) * dist;
-  var y = state.ship.y + Math.sin(angle) * dist;
-  var inward = angle + Math.PI + (Math.random() - 0.5) * 1.0;
-  var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
-  state.rocks.push(createRock('large', x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
-}</code></pre>
-    </div>
-    <p>
-      <code>targetRockCount()</code> and <code>speedMultiplier()</code>
-      both read <code>state.difficulty.elapsed</code> &mdash; total seconds
-      played &mdash; so the field slowly gets denser and faster the longer
-      you survive, capping out rather than spiraling out of control
-      forever.
-    </p>
-
-    <h2>Cleaning up behind you</h2>
-    <p>
-      Without some cleanup, a rock spawned five minutes ago and drifting
-      the opposite direction from the ship would still be sitting in the
-      array, updated every frame, forever. <code>despawnFarRocks()</code>
-      just removes anything that's drifted out past
-      <code>despawnRadius()</code> &mdash; far enough that it could never
-      be on screen again regardless of where the ship goes next.
-    </p>
-    <div class="code-panel">
-      <div class="code-panel-label">JavaScript</div>
-      <pre><code class="language-javascript">function despawnFarRocks() {
-  var dr = despawnRadius();
-  for (var i = state.rocks.length - 1; i >= 0; i--) {
-    var rk = state.rocks[i];
-    var dx = rk.x - state.ship.x, dy = rk.y - state.ship.y;
-    if (dx * dx + dy * dy > dr * dr) state.rocks.splice(i, 1);
-  }
+function fireBullet() {
+  var heading = state.ship.heading;
+  state.bullets.push({
+    x: state.ship.x + Math.cos(heading) * state.ship.radius,
+    y: state.ship.y + Math.sin(heading) * state.ship.radius,
+    vx: Math.cos(heading) * BULLET_SPEED,
+    vy: Math.sin(heading) * BULLET_SPEED,
+    ttl: BULLET_LIFETIME
+  });
 }
 
-function updateRocks(dt) {
-  for (var i = 0; i < state.rocks.length; i++) {
-    var rk = state.rocks[i];
-    rk.x += rk.vx * dt;
-    rk.y += rk.vy * dt;
-    rk.rotation += rk.rotationSpeed * dt;
+function updateBullets(dt) {
+  for (var i = state.bullets.length - 1; i >= 0; i--) {
+    var b = state.bullets[i];
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.ttl -= dt;
+    if (b.ttl <= 0) state.bullets.splice(i, 1);
   }
 }</code></pre>
     </div>
     <p>
-      The loop counts backward specifically so <code>splice()</code>
-      removing an element mid-loop doesn't skip the next one &mdash; a
-      classic array-mutation-during-iteration bug avoided by iterating in
-      reverse. <code>update(dt)</code> now calls
-      <code>updateRocks</code>, <code>trySpawnRocks</code>, and
-      <code>despawnFarRocks</code> every frame, alongside
-      <code>updateShip</code> from lesson 3.
+      (Lesson 9 adds a <code>state.phase !== 'playing'</code> guard at the
+      top of <code>fireBullet()</code>, once there's a game-over state
+      worth respecting &mdash; not needed yet.)
     </p>
+
+    <h2>Tap to fire, hold to thrust</h2>
+    <p>
+      Lesson 3's thrust key handler engaged thrust the instant the key
+      went down. That's wrong once the same key needs to fire on a quick
+      tap: pressing and immediately releasing shouldn't feel like it
+      thrusted for a single frame. The fix is a short timer &mdash; if the
+      key is still down after <code>HOLD_THRESHOLD_MS</code>, <em>then</em>
+      it counts as a hold and thrust engages; if it comes back up before
+      that, it was a tap, and it fires instead.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">var HOLD_THRESHOLD_MS = 190;
+var kbHoldTimer = null;
+var kbHoldEngaged = false;
+
+document.addEventListener('keydown', function (e) {
+  if (isThrustKey(e.code)) e.preventDefault();
+  if (e.repeat) return; // ignore the OS's auto-repeat keydown spam
+  if (isLeftKey(e.code)) state.input.left = true;
+  else if (isRightKey(e.code)) state.input.right = true;
+  else if (isThrustKey(e.code)) {
+    kbHoldEngaged = false;
+    kbHoldTimer = setTimeout(function () {
+      kbHoldEngaged = true;
+      state.input.thrust = true;
+    }, HOLD_THRESHOLD_MS);
+  }
+});
+
+document.addEventListener('keyup', function (e) {
+  if (isLeftKey(e.code)) state.input.left = false;
+  else if (isRightKey(e.code)) state.input.right = false;
+  else if (isThrustKey(e.code)) {
+    clearTimeout(kbHoldTimer);
+    if (kbHoldEngaged) {
+      state.input.thrust = false;
+    } else {
+      fireBullet();
+    }
+    kbHoldEngaged = false;
+  }
+});</code></pre>
+    </div>
+    <p>
+      <code>e.repeat</code> matters here too: holding a key down makes the
+      browser fire repeated <code>keydown</code> events while it's held,
+      which would otherwise restart the hold-timer over and over and
+      never let it reach <code>HOLD_THRESHOLD_MS</code>. Bailing out on
+      repeats means the timer is only ever started once, by the real
+      initial press.
+    </p>
+    <p>
+      Rendering bullets is the simplest draw function in the game &mdash;
+      just a small filled circle through <code>worldToScreen()</code>,
+      same as every other world object:
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">function drawBullet(b) {
+  var p = worldToScreen(b.x, b.y);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, BULLET_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_BULLET;
+  ctx.fill();
+}</code></pre>
+    </div>
 
     <h2>Try it</h2>
-    <p>Fly around for a while. New rocks keep appearing ahead of you no matter which direction you go, and old ones behind you quietly disappear.</p>
+    <p>Tap Space/W/Up quickly to fire; hold it down to thrust instead. Bullets vanish after about a second either way &mdash; they don't hurt the rocks yet, that's next lesson.</p>
     <div class="demo-block">
-      <div class="demo-frame-wrap"><iframe src="../checkpoints/05-rocks-in-an-endless-field.html" loading="lazy" title="Checkpoint 5 live demo"></iframe></div>
+      <div class="demo-frame-wrap"><iframe src="../checkpoints/06-shooting.html" loading="lazy" title="Checkpoint 6 live demo"></iframe></div>
       <div class="demo-links">
-        <a href="../checkpoints/05-rocks-in-an-endless-field.html" target="_blank" rel="noopener">Open in a new tab</a>
+        <a href="../checkpoints/06-shooting.html" target="_blank" rel="noopener">Open in a new tab</a>
         <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
       </div>
     </div>
 
     <h2>Full source so far</h2>
     <details class="source-disclosure">
-      <summary>checkpoints/05-rocks-in-an-endless-field.html</summary>
+      <summary>checkpoints/06-shooting.html</summary>
       <div class="code-panel">
         <pre><code class="language-html">&lt;!DOCTYPE html&gt;
 &lt;html lang=&quot;en&quot;&gt;
 &lt;head&gt;
 &lt;meta charset=&quot;UTF-8&quot;&gt;
 &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot;&gt;
-&lt;title&gt;Checkpoint 5 &amp;mdash; Rocks in an Endless Field&lt;/title&gt;
+&lt;title&gt;Checkpoint 6 &amp;mdash; Shooting&lt;/title&gt;
 &lt;style&gt;
   :root {
     --bg-1: #0f172a;
@@ -197,7 +187,7 @@ function updateRocks(dt) {
   &lt;div class=&quot;canvas-wrap&quot; id=&quot;canvasWrap&quot;&gt;
     &lt;canvas id=&quot;gameCanvas&quot;&gt;&lt;/canvas&gt;
   &lt;/div&gt;
-  &lt;div class=&quot;note&quot;&gt;Checkpoint 5: a real field of drifting rocks that spawns ahead of you and despawns far behind.&lt;/div&gt;
+  &lt;div class=&quot;note&quot;&gt;Checkpoint 6: tap Space/W/Up to fire, hold it to thrust instead &amp;mdash; rocks don&#x27;t react to bullets yet.&lt;/div&gt;
 
 &lt;script&gt;
 (function () {
@@ -205,12 +195,16 @@ function updateRocks(dt) {
 
   // ---- Constants ----------------------------------------------------
   var SHIP_RADIUS = 12;
+  var BULLET_RADIUS = 3;
   var THRUST_ACCEL = 220;
   var MAX_SPEED = 260;
   var DAMPING_PER_SECOND = 0.5;
   var TURN_RATE = 3.2; // radians/sec
+  var BULLET_SPEED = 480;
+  var BULLET_LIFETIME = 0.9; // seconds
   var MAX_DT = 0.05;
   var SPAWN_CHECK_INTERVAL = 0.5; // seconds
+  var HOLD_THRESHOLD_MS = 190;
 
   var ROCK_SIZES = {
     large:  { radius: 46, speedRange: [30, 70],   score: 20,  child: &#x27;medium&#x27; },
@@ -219,6 +213,7 @@ function updateRocks(dt) {
   };
 
   var COLOR_SHIP = &#x27;#e2e8f0&#x27;;
+  var COLOR_BULLET = &#x27;#22c55e&#x27;;
   var COLOR_FLAME = &#x27;#f97316&#x27;;
   var COLOR_STAR = &#x27;rgba(148, 163, 184, 0.5)&#x27;;
   var COLOR_ROCK_STROKE = &#x27;#334155&#x27;;
@@ -238,6 +233,7 @@ function updateRocks(dt) {
       radius: SHIP_RADIUS
     },
     rocks: [],
+    bullets: [],
     nextRockId: 1,
     input: { left: false, right: false, thrust: false },
     spawn: { timer: 0 },
@@ -285,22 +281,52 @@ function updateRocks(dt) {
     resizeTimer = setTimeout(resizeCanvas, 150);
   }
 
+  // ---- Firing ------------------------------------------------------
+  function fireBullet() {
+    var heading = state.ship.heading;
+    state.bullets.push({
+      x: state.ship.x + Math.cos(heading) * state.ship.radius,
+      y: state.ship.y + Math.sin(heading) * state.ship.radius,
+      vx: Math.cos(heading) * BULLET_SPEED,
+      vy: Math.sin(heading) * BULLET_SPEED,
+      ttl: BULLET_LIFETIME
+    });
+  }
+
   // ---- Input: keyboard ------------------------------------------------------
   function isLeftKey(code) { return code === &#x27;ArrowLeft&#x27; || code === &#x27;KeyA&#x27;; }
   function isRightKey(code) { return code === &#x27;ArrowRight&#x27; || code === &#x27;KeyD&#x27;; }
   function isThrustKey(code) { return code === &#x27;Space&#x27; || code === &#x27;ArrowUp&#x27; || code === &#x27;KeyW&#x27;; }
 
+  var kbHoldTimer = null;
+  var kbHoldEngaged = false;
+
   document.addEventListener(&#x27;keydown&#x27;, function (e) {
     if (isThrustKey(e.code)) e.preventDefault();
+    if (e.repeat) return;
     if (isLeftKey(e.code)) state.input.left = true;
     else if (isRightKey(e.code)) state.input.right = true;
-    else if (isThrustKey(e.code)) state.input.thrust = true;
+    else if (isThrustKey(e.code)) {
+      kbHoldEngaged = false;
+      kbHoldTimer = setTimeout(function () {
+        kbHoldEngaged = true;
+        state.input.thrust = true;
+      }, HOLD_THRESHOLD_MS);
+    }
   });
 
   document.addEventListener(&#x27;keyup&#x27;, function (e) {
     if (isLeftKey(e.code)) state.input.left = false;
     else if (isRightKey(e.code)) state.input.right = false;
-    else if (isThrustKey(e.code)) state.input.thrust = false;
+    else if (isThrustKey(e.code)) {
+      clearTimeout(kbHoldTimer);
+      if (kbHoldEngaged) {
+        state.input.thrust = false;
+      } else {
+        fireBullet();
+      }
+      kbHoldEngaged = false;
+    }
   });
 
   // ---- Math helpers ------------------------------------------------------
@@ -417,6 +443,16 @@ function updateRocks(dt) {
     }
   }
 
+  function updateBullets(dt) {
+    for (var i = state.bullets.length - 1; i &gt;= 0; i--) {
+      var b = state.bullets[i];
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.ttl -= dt;
+      if (b.ttl &lt;= 0) state.bullets.splice(i, 1);
+    }
+  }
+
   // ---- Rendering ------------------------------------------------------
   function drawBackground() {
     ctx.fillStyle = COLOR_STAR;
@@ -448,6 +484,14 @@ function updateRocks(dt) {
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
+  }
+
+  function drawBullet(b) {
+    var p = worldToScreen(b.x, b.y);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = COLOR_BULLET;
+    ctx.fill();
   }
 
   function drawShip() {
@@ -484,6 +528,7 @@ function updateRocks(dt) {
     ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
     drawBackground();
     for (var i = 0; i &lt; state.rocks.length; i++) drawRock(state.rocks[i]);
+    for (var j = 0; j &lt; state.bullets.length; j++) drawBullet(state.bullets[j]);
     drawShip();
   }
 
@@ -491,6 +536,7 @@ function updateRocks(dt) {
   function update(dt) {
     updateShip(dt);
     updateRocks(dt);
+    updateBullets(dt);
     trySpawnRocks(dt);
     despawnFarRocks();
     state.difficulty.elapsed += dt;
@@ -522,8 +568,8 @@ function updateRocks(dt) {
     </details>
 
     <div class="lesson-nav">
-      <a href="04-the-camera-trick.html"><span class="nav-label">Prev</span>&lsaquo; 4. The Camera Trick</a>
-      <a class="next" href="06-shooting.html"><span class="nav-label">Next</span>6. Shooting &rsaquo;</a>
+      <a href="05-rocks-in-an-endless-field.html"><span class="nav-label">Prev</span>&lsaquo; 5. Rocks in an Endless Field</a>
+      <a class="next" href="07-collisions.html"><span class="nav-label">Next</span>7. Collisions &rsaquo;</a>
     </div>
 
     <footer class="page-footer"><a href="../index.html">Back to lesson list</a></footer>
