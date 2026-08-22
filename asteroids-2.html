@@ -132,9 +132,11 @@
   .warp-icon {
     position: relative;
     z-index: 1;
-    font-size: 0.65rem;
-    font-weight: 800;
-    letter-spacing: 0.5px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    pointer-events: none;
   }
 
   .warp-ring {
@@ -192,7 +194,12 @@
   }
   .zone:active, .zone.active { background: rgba(38, 52, 73, 0.9); transform: scale(0.97); }
   .zone-mid { gap: 8px; }
+  /* Rendered via ::before generated content, not a real text node - CSS
+     generated content isn't part of the DOM Selection API, so it can't
+     be the target of a double-tap word-selection/magnifier gesture the
+     way a real text child could. */
   .zone-caption { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+  .zone-caption::before { content: "tap fire \00B7 hold thrust"; }
 
   /* Pure CSS shapes, zero text/image content - a mobile browser's
      double-tap-then-hold word-selection gesture (which shows a
@@ -269,14 +276,14 @@
 
   <button type="button" class="warp-btn" id="warpBtn" aria-label="Hyperspace warp">
     <svg class="warp-ring" viewBox="0 0 60 60"><circle id="warpRingCircle" cx="30" cy="30" r="27"></circle></svg>
-    <span class="warp-icon">WARP</span>
+    <span class="warp-icon" aria-hidden="true"></span>
   </button>
 
   <div class="control-bar" id="controlBar">
     <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left"><span class="zone-shape arrow-left" aria-hidden="true"></span></button>
     <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire or hold to thrust">
       <span class="zone-shape fire-dot" aria-hidden="true"></span>
-      <span class="zone-caption">tap fire &middot; hold thrust</span>
+      <span class="zone-caption" aria-hidden="true"></span>
     </button>
     <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right"><span class="zone-shape arrow-right" aria-hidden="true"></span></button>
   </div>
