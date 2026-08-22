@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>5. Rocks in an Endless Field &mdash; Build Asteroids</title>
+<link rel="stylesheet" href="../assets/tutorial.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/highlight.min.js"></script>
+</head>
+<body>
+  <div class="page">
+    <div class="crumbs"><a href="../index.html">&larr; Build Asteroids</a></div>
+    <span class="lesson-kicker">Core &middot; Lesson 5 of 12</span>
+    <h1>Rocks in an Endless Field</h1>
+    <div class="subtitle">
+This game doesn't wrap rocks around screen edges the way the original arcade cabinet did &mdash; there are no edges, since the world is unbounded and the camera just follows the ship (lesson 4). Instead, rocks spawn in a ring just outside what's visible and get cleaned up once they're far enough behind you that they'd never be seen again. This lesson replaces last lesson's single parked rock with that real system.
+    </div>
+
+    <h2>Seeding the field</h2>
+    <p>
+      When the game starts, <code>seedRocks()</code> scatters six large
+      rocks at random angles around the ship, each already moving in a
+      random direction. Scattering them between 60% of the visible
+      radius and half the despawn radius keeps the very first moment from
+      either dropping a rock right on top of you or spawning one so far
+      out it's invisible.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">function randRange(range) { return range[0] + Math.random() * (range[1] - range[0]); }
+
+function visibleRadius() {
+  return Math.sqrt(state.canvasCssW * state.canvasCssW + state.canvasCssH * state.canvasCssH) / 2;
+}
+function despawnRadius() { return visibleRadius() * 2.5; }
+
+function seedRocks() {
+  var minDist = visibleRadius() * 0.6;
+  var maxDist = despawnRadius() * 0.5;
+  for (var i = 0; i < 6; i++) {
+    var angle = Math.random() * Math.PI * 2;
+    var dist = minDist + Math.random() * (maxDist - minDist);
+    var x = state.ship.x + Math.cos(angle) * dist;
+    var y = state.ship.y + Math.sin(angle) * dist;
+    var dirAngle = Math.random() * Math.PI * 2;
+    var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
+    state.rocks.push(createRock('large', x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
+  }
+}</code></pre>
+    </div>
+    <p>
+      <code>visibleRadius()</code> is the radius of a circle just big
+      enough to cover the whole canvas from its center &mdash; the
+      Pythagorean diagonal, halved. Everything about spawning and
+      despawning is expressed relative to it, so it automatically adapts
+      to whatever size screen it's running on.
+    </p>
+
+    <h2>Spawning ahead, forever</h2>
+    <p>
+      Every half second (<code>SPAWN_CHECK_INTERVAL</code>), if the rock
+      count is under a target that slowly ramps up over time, one more
+      large rock spawns in a ring just past the edge of what's visible
+      (<code>spawnRingRadius()</code>), aimed roughly &mdash; not exactly,
+      there's some randomness in the angle &mdash; back toward the ship.
+      That inward aim is what makes new rocks feel like a real threat
+      instead of drifting past uselessly off in some random direction.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">var SPAWN_CHECK_INTERVAL = 0.5; // seconds
+
+function spawnRingRadius() { return visibleRadius() + 80; }
+function targetRockCount() { return Math.min(6 + Math.floor(state.difficulty.elapsed / 30), 14); }
+function speedMultiplier() { return 1 + Math.min(state.difficulty.elapsed / 60, 1) * 0.5; }
+
+function trySpawnRocks(dt) {
+  state.spawn.timer -= dt;
+  if (state.spawn.timer > 0) return;
+  state.spawn.timer = SPAWN_CHECK_INTERVAL;
+  if (state.rocks.length >= targetRockCount()) return;
+
+  var angle = Math.random() * Math.PI * 2;
+  var dist = spawnRingRadius();
+  var x = state.ship.x + Math.cos(angle) * dist;
+  var y = state.ship.y + Math.sin(angle) * dist;
+  var inward = angle + Math.PI + (Math.random() - 0.5) * 1.0;
+  var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
+  state.rocks.push(createRock('large', x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
+}</code></pre>
+    </div>
+    <p>
+      <code>targetRockCount()</code> and <code>speedMultiplier()</code>
+      both read <code>state.difficulty.elapsed</code> &mdash; total seconds
+      played &mdash; so the field slowly gets denser and faster the longer
+      you survive, capping out rather than spiraling out of control
+      forever.
+    </p>
+
+    <h2>Cleaning up behind you</h2>
+    <p>
+      Without some cleanup, a rock spawned five minutes ago and drifting
+      the opposite direction from the ship would still be sitting in the
+      array, updated every frame, forever. <code>despawnFarRocks()</code>
+      just removes anything that's drifted out past
+      <code>despawnRadius()</code> &mdash; far enough that it could never
+      be on screen again regardless of where the ship goes next.
+    </p>
+    <div class="code-panel">
+      <div class="code-panel-label">JavaScript</div>
+      <pre><code class="language-javascript">function despawnFarRocks() {
+  var dr = despawnRadius();
+  for (var i = state.rocks.length - 1; i >= 0; i--) {
+    var rk = state.rocks[i];
+    var dx = rk.x - state.ship.x, dy = rk.y - state.ship.y;
+    if (dx * dx + dy * dy > dr * dr) state.rocks.splice(i, 1);
+  }
+}
+
+function updateRocks(dt) {
+  for (var i = 0; i < state.rocks.length; i++) {
+    var rk = state.rocks[i];
+    rk.x += rk.vx * dt;
+    rk.y += rk.vy * dt;
+    rk.rotation += rk.rotationSpeed * dt;
+  }
+}</code></pre>
+    </div>
+    <p>
+      The loop counts backward specifically so <code>splice()</code>
+      removing an element mid-loop doesn't skip the next one &mdash; a
+      classic array-mutation-during-iteration bug avoided by iterating in
+      reverse. <code>update(dt)</code> now calls
+      <code>updateRocks</code>, <code>trySpawnRocks</code>, and
+      <code>despawnFarRocks</code> every frame, alongside
+      <code>updateShip</code> from lesson 3.
+    </p>
+
+    <h2>Try it</h2>
+    <p>Fly around for a while. New rocks keep appearing ahead of you no matter which direction you go, and old ones behind you quietly disappear.</p>
+    <div class="demo-block">
+      <div class="demo-frame-wrap"><iframe src="../checkpoints/05-rocks-in-an-endless-field.html" loading="lazy" title="Checkpoint 5 live demo"></iframe></div>
+      <div class="demo-links">
+        <a href="../checkpoints/05-rocks-in-an-endless-field.html" target="_blank" rel="noopener">Open in a new tab</a>
+        <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
+      </div>
+    </div>
+
+    <h2>Full source so far</h2>
+    <details class="source-disclosure">
+      <summary>checkpoints/05-rocks-in-an-endless-field.html</summary>
+      <div class="code-panel">
+        <pre><code class="language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;UTF-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot;&gt;
+&lt;title&gt;Checkpoint 5 &amp;mdash; Rocks in an Endless Field&lt;/title&gt;
+&lt;style&gt;
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--muted);
+    font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+  }
+  .canvas-wrap {
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 3 / 4;
+    position: relative;
+    background: var(--board);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+  #gameCanvas { display: block; width: 100%; height: 100%; }
+  .note { font-size: 0.8rem; text-align: center; }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;div class=&quot;canvas-wrap&quot; id=&quot;canvasWrap&quot;&gt;
+    &lt;canvas id=&quot;gameCanvas&quot;&gt;&lt;/canvas&gt;
+  &lt;/div&gt;
+  &lt;div class=&quot;note&quot;&gt;Checkpoint 5: a real field of drifting rocks that spawns ahead of you and despawns far behind.&lt;/div&gt;
+
+&lt;script&gt;
+(function () {
+  &quot;use strict&quot;;
+
+  // ---- Constants ----------------------------------------------------
+  var SHIP_RADIUS = 12;
+  var THRUST_ACCEL = 220;
+  var MAX_SPEED = 260;
+  var DAMPING_PER_SECOND = 0.5;
+  var TURN_RATE = 3.2; // radians/sec
+  var MAX_DT = 0.05;
+  var SPAWN_CHECK_INTERVAL = 0.5; // seconds
+
+  var ROCK_SIZES = {
+    large:  { radius: 46, speedRange: [30, 70],   score: 20,  child: &#x27;medium&#x27; },
+    medium: { radius: 27, speedRange: [50, 100],  score: 50,  child: &#x27;small&#x27; },
+    small:  { radius: 15, speedRange: [80, 140],  score: 100, child: null }
+  };
+
+  var COLOR_SHIP = &#x27;#e2e8f0&#x27;;
+  var COLOR_FLAME = &#x27;#f97316&#x27;;
+  var COLOR_STAR = &#x27;rgba(148, 163, 184, 0.5)&#x27;;
+  var COLOR_ROCK_STROKE = &#x27;#334155&#x27;;
+  var COLOR_ROCK_FILL = &#x27;rgba(148, 163, 184, 0.18)&#x27;;
+
+  // ---- DOM ------------------------------------------------------------
+  var canvasWrap = document.getElementById(&#x27;canvasWrap&#x27;);
+  var canvas = document.getElementById(&#x27;gameCanvas&#x27;);
+  var ctx = canvas.getContext(&#x27;2d&#x27;);
+
+  // ---- State ------------------------------------------------------------
+  var state = {
+    ship: {
+      x: 0, y: 0, vx: 0, vy: 0,
+      heading: -Math.PI / 2,
+      thrusting: false,
+      radius: SHIP_RADIUS
+    },
+    rocks: [],
+    nextRockId: 1,
+    input: { left: false, right: false, thrust: false },
+    spawn: { timer: 0 },
+    difficulty: { elapsed: 0 },
+    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+    timing: { lastFrameTime: 0 }
+  };
+  window.__astDebugState = state;
+
+  var stars = [];
+
+  // ---- Canvas sizing ------------------------------------------------------
+  function resizeCanvas() {
+    var rect = canvasWrap.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.round(rect.width);
+    var h = Math.round(rect.height);
+    if (w === state.canvasCssW &amp;&amp; h === state.canvasCssH &amp;&amp; dpr === state.canvasDpr) return;
+    state.canvasCssW = w;
+    state.canvasCssH = h;
+    state.canvasDpr = dpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + &#x27;px&#x27;;
+    canvas.style.height = h + &#x27;px&#x27;;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    generateStars();
+  }
+
+  function generateStars() {
+    stars = [];
+    var count = Math.round((state.canvasCssW * state.canvasCssH) / 4000);
+    for (var i = 0; i &lt; count; i++) {
+      stars.push({
+        x: Math.random() * state.canvasCssW,
+        y: Math.random() * state.canvasCssH,
+        r: Math.random() * 1.2 + 0.3
+      });
+    }
+  }
+
+  var resizeTimer = null;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resizeCanvas, 150);
+  }
+
+  // ---- Input: keyboard ------------------------------------------------------
+  function isLeftKey(code) { return code === &#x27;ArrowLeft&#x27; || code === &#x27;KeyA&#x27;; }
+  function isRightKey(code) { return code === &#x27;ArrowRight&#x27; || code === &#x27;KeyD&#x27;; }
+  function isThrustKey(code) { return code === &#x27;Space&#x27; || code === &#x27;ArrowUp&#x27; || code === &#x27;KeyW&#x27;; }
+
+  document.addEventListener(&#x27;keydown&#x27;, function (e) {
+    if (isThrustKey(e.code)) e.preventDefault();
+    if (isLeftKey(e.code)) state.input.left = true;
+    else if (isRightKey(e.code)) state.input.right = true;
+    else if (isThrustKey(e.code)) state.input.thrust = true;
+  });
+
+  document.addEventListener(&#x27;keyup&#x27;, function (e) {
+    if (isLeftKey(e.code)) state.input.left = false;
+    else if (isRightKey(e.code)) state.input.right = false;
+    else if (isThrustKey(e.code)) state.input.thrust = false;
+  });
+
+  // ---- Math helpers ------------------------------------------------------
+  function randRange(range) { return range[0] + Math.random() * (range[1] - range[0]); }
+
+  function visibleRadius() {
+    return Math.sqrt(state.canvasCssW * state.canvasCssW + state.canvasCssH * state.canvasCssH) / 2;
+  }
+  function spawnRingRadius() { return visibleRadius() + 80; }
+  function despawnRadius() { return visibleRadius() * 2.5; }
+  function targetRockCount() { return Math.min(6 + Math.floor(state.difficulty.elapsed / 30), 14); }
+  function speedMultiplier() { return 1 + Math.min(state.difficulty.elapsed / 60, 1) * 0.5; }
+
+  function worldToScreen(wx, wy) {
+    return {
+      x: wx - state.ship.x + state.canvasCssW / 2,
+      y: wy - state.ship.y + state.canvasCssH / 2
+    };
+  }
+
+  // ---- Rocks ------------------------------------------------------
+  function makeRockShape() {
+    var points = [];
+    var n = 10 + Math.floor(Math.random() * 4);
+    for (var i = 0; i &lt; n; i++) {
+      points.push({
+        angle: (i / n) * Math.PI * 2,
+        r: 0.75 + Math.random() * 0.5
+      });
+    }
+    return points;
+  }
+
+  function createRock(size, x, y, vx, vy) {
+    return {
+      id: state.nextRockId++,
+      x: x, y: y, vx: vx, vy: vy,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 1.6,
+      size: size,
+      radius: ROCK_SIZES[size].radius,
+      shapePoints: makeRockShape()
+    };
+  }
+
+  // ---- Rock spawn / despawn ------------------------------------------------------
+  function seedRocks() {
+    var minDist = visibleRadius() * 0.6;
+    var maxDist = despawnRadius() * 0.5;
+    for (var i = 0; i &lt; 6; i++) {
+      var angle = Math.random() * Math.PI * 2;
+      var dist = minDist + Math.random() * (maxDist - minDist);
+      var x = state.ship.x + Math.cos(angle) * dist;
+      var y = state.ship.y + Math.sin(angle) * dist;
+      var dirAngle = Math.random() * Math.PI * 2;
+      var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
+      state.rocks.push(createRock(&#x27;large&#x27;, x, y, Math.cos(dirAngle) * speed, Math.sin(dirAngle) * speed));
+    }
+  }
+
+  function trySpawnRocks(dt) {
+    state.spawn.timer -= dt;
+    if (state.spawn.timer &gt; 0) return;
+    state.spawn.timer = SPAWN_CHECK_INTERVAL;
+    if (state.rocks.length &gt;= targetRockCount()) return;
+
+    var angle = Math.random() * Math.PI * 2;
+    var dist = spawnRingRadius();
+    var x = state.ship.x + Math.cos(angle) * dist;
+    var y = state.ship.y + Math.sin(angle) * dist;
+    var inward = angle + Math.PI + (Math.random() - 0.5) * 1.0;
+    var speed = randRange(ROCK_SIZES.large.speedRange) * speedMultiplier();
+    state.rocks.push(createRock(&#x27;large&#x27;, x, y, Math.cos(inward) * speed, Math.sin(inward) * speed));
+  }
+
+  function despawnFarRocks() {
+    var dr = despawnRadius();
+    for (var i = state.rocks.length - 1; i &gt;= 0; i--) {
+      var rk = state.rocks[i];
+      var dx = rk.x - state.ship.x, dy = rk.y - state.ship.y;
+      if (dx * dx + dy * dy &gt; dr * dr) state.rocks.splice(i, 1);
+    }
+  }
+
+  // ---- Physics update ------------------------------------------------------
+  function updateShip(dt) {
+    var ship = state.ship;
+    if (state.input.left) ship.heading -= TURN_RATE * dt;
+    if (state.input.right) ship.heading += TURN_RATE * dt;
+    ship.thrusting = state.input.thrust;
+    if (ship.thrusting) {
+      ship.vx += Math.cos(ship.heading) * THRUST_ACCEL * dt;
+      ship.vy += Math.sin(ship.heading) * THRUST_ACCEL * dt;
+    }
+    var damp = Math.pow(1 - DAMPING_PER_SECOND, dt);
+    ship.vx *= damp;
+    ship.vy *= damp;
+    var speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+    if (speed &gt; MAX_SPEED) {
+      var scale = MAX_SPEED / speed;
+      ship.vx *= scale;
+      ship.vy *= scale;
+    }
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
+  }
+
+  function updateRocks(dt) {
+    for (var i = 0; i &lt; state.rocks.length; i++) {
+      var rk = state.rocks[i];
+      rk.x += rk.vx * dt;
+      rk.y += rk.vy * dt;
+      rk.rotation += rk.rotationSpeed * dt;
+    }
+  }
+
+  // ---- Rendering ------------------------------------------------------
+  function drawBackground() {
+    ctx.fillStyle = COLOR_STAR;
+    for (var i = 0; i &lt; stars.length; i++) {
+      var s = stars[i];
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawRock(rock) {
+    var p = worldToScreen(rock.x, rock.y);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(rock.rotation);
+    ctx.beginPath();
+    for (var i = 0; i &lt; rock.shapePoints.length; i++) {
+      var pt = rock.shapePoints[i];
+      var rad = rock.radius * pt.r;
+      var px = Math.cos(pt.angle) * rad;
+      var py = Math.sin(pt.angle) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = COLOR_ROCK_FILL;
+    ctx.fill();
+    ctx.strokeStyle = COLOR_ROCK_STROKE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawShip() {
+    var cx = state.canvasCssW / 2, cy = state.canvasCssH / 2;
+    var r = state.ship.radius;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(state.ship.heading);
+
+    if (state.ship.thrusting) {
+      var flameLen = r * (0.8 + Math.random() * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.35, r * 0.4);
+      ctx.lineTo(-r * 0.35 - flameLen, 0);
+      ctx.lineTo(-r * 0.35, -r * 0.4);
+      ctx.closePath();
+      ctx.fillStyle = COLOR_FLAME;
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r * 0.7, r * 0.7);
+    ctx.lineTo(-r * 0.35, 0);
+    ctx.lineTo(-r * 0.7, -r * 0.7);
+    ctx.closePath();
+    ctx.strokeStyle = COLOR_SHIP;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
+    drawBackground();
+    for (var i = 0; i &lt; state.rocks.length; i++) drawRock(state.rocks[i]);
+    drawShip();
+  }
+
+  // ---- Game loop ------------------------------------------------------
+  function update(dt) {
+    updateShip(dt);
+    updateRocks(dt);
+    trySpawnRocks(dt);
+    despawnFarRocks();
+    state.difficulty.elapsed += dt;
+  }
+
+  var rafId = null;
+  function frame(ts) {
+    rafId = requestAnimationFrame(frame);
+    if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
+    var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
+    state.timing.lastFrameTime = ts;
+    update(dt);
+    render();
+  }
+
+  window.addEventListener(&#x27;resize&#x27;, onResize);
+  window.addEventListener(&#x27;orientationchange&#x27;, onResize);
+
+  // ---- Init ------------------------------------------------------
+  resizeCanvas();
+  seedRocks();
+  rafId = requestAnimationFrame(frame);
+})();
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+      </div>
+    </details>
+
+    <div class="lesson-nav">
+      <a href="04-the-camera-trick.html"><span class="nav-label">Prev</span>&lsaquo; 4. The Camera Trick</a>
+      <span class="next placeholder" style="text-align:right; padding: 12px 14px; font-size: 0.85rem;">
+        <span class="nav-label">Next</span>6. Shooting &mdash; coming soon
+      </span>
+    </div>
+
+    <footer class="page-footer"><a href="../index.html">Back to lesson list</a></footer>
+  </div>
+<script>
+  document.querySelectorAll('pre code').forEach(function (el) { hljs.highlightElement(el); });
+</script>
+</body>
+</html>
