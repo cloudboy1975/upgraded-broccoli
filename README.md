@@ -58,8 +58,6 @@ hyperspace warp v1 deliberately left out, built on the
 [Phaser 3](https://phaser.io/) game framework and a real edge-to-edge
 full-screen layout.
 
-> &#128295; **Temporary preview (this branch, pre-merge):** [Open the branch preview](https://htmlpreview.github.io/?https://github.com/cloudboy1975/upgraded-broccoli/blob/claude/tic-tac-toe-browser-game-tex1j7/asteroids-2.html) &mdash; the link below goes live once this PR merges to `main`. Remove this line after merging.
-
 - [Open the game](https://cloudboy1975.github.io/upgraded-broccoli/asteroids-2.html)
 - Built on Phaser 3 (vendored locally as `phaser.min.js` &mdash; still zero
   build step, and it keeps the game working fully offline, true to "download

@@ -210,12 +210,7 @@
   }
   .zone:active, .zone.active { background: rgba(38, 52, 73, 0.9); transform: scale(0.97); }
   .zone-mid { gap: 8px; }
-  /* Rendered via ::before generated content, not a real text node - CSS
-     generated content isn't part of the DOM Selection API, so it can't
-     be the target of a double-tap word-selection/magnifier gesture the
-     way a real text child could. */
   .zone-caption { font-size: 0.62rem; font-weight: 600; color: var(--muted); }
-  .zone-caption::before { content: "tap fire \00B7 hold thrust"; }
 
   /* Pure CSS shapes, zero text/image content - a mobile browser's
      double-tap-then-hold word-selection gesture (which shows a
@@ -280,7 +275,7 @@
 <body>
   <div id="gameRoot"></div>
 
-  <div class="build-tag">build 2026-08-22 08:31 UTC</div>
+  <div class="build-tag">build 2026-08-22 20:42 UTC</div>
 
   <div class="hud-bar" id="hudBar">
     <a class="back-link" href="index.html">&larr; All</a>
@@ -301,7 +296,7 @@
     <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Turn left"><span class="zone-shape arrow-left" aria-hidden="true"></span></button>
     <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire or hold to thrust">
       <span class="zone-shape fire-dot" aria-hidden="true"></span>
-      <span class="zone-caption" aria-hidden="true"></span>
+      <span class="zone-caption" aria-hidden="true">tap fire &middot; hold thrust</span>
     </button>
     <button type="button" class="zone zone-right" id="zoneRight" aria-label="Turn right"><span class="zone-shape arrow-right" aria-hidden="true"></span></button>
   </div>
