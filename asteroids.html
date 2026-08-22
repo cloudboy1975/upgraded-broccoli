@@ -781,7 +781,13 @@
     }
 
     el.addEventListener('pointerdown', function (e) {
-      if (activeId !== null) return;
+      // A pointerdown while activeId is already set means either a stale
+      // session (the previous touch never got a pointerup/pointercancel -
+      // exactly the "stuck button" case) or a second finger on the same
+      // zone. Either way, release whatever's recorded and start fresh
+      // rather than silently ignoring the new press - that silent-ignore
+      // was why tapping a stuck button didn't fix it.
+      hardRelease();
       activeId = e.pointerId;
       try { el.setPointerCapture(activeId); } catch (err) {}
       el.classList.add('active');
@@ -825,7 +831,9 @@
     }
 
     zoneMid.addEventListener('pointerdown', function (e) {
-      if (activeId !== null) return;
+      // See bindHoldZone above: release any stale/stuck session instead of
+      // silently ignoring the new press.
+      hardRelease();
       activeId = e.pointerId;
       try { zoneMid.setPointerCapture(activeId); } catch (err) {}
       downX = e.clientX; downY = e.clientY;
