@@ -130,8 +130,8 @@ code:not(pre code) {
   background: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: 14px;
-  overflow-y: auto; /* fallback for a viewport too short to fit the demo at all - never squish it instead */
-  height: 760px; /* tall enough for the fullest checkpoint (status bar + canvas + control bar + buttons) at typical widths without compressing the canvas's aspect ratio */
+  overflow-y: auto; /* fallback if a viewport is too short even for the measured height below - scroll rather than squish or crop */
+  height: 460px; /* placeholder before JS measures this lesson's actual checkpoint and sets a precise height - avoids a layout jump on slow connections */
   max-height: 85vh;
 }
 .demo-frame-wrap iframe {

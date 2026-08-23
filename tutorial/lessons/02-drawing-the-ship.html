@@ -138,7 +138,7 @@ function drawBackground() {
     <h2>Try it</h2>
     <p>A stationary ship over a starfield. It'll start moving in the next lesson.</p>
     <div class="demo-block">
-      <div class="demo-frame-wrap"><iframe id="demoFrame" src="../checkpoints/02-drawing-the-ship.html" loading="lazy" title="Checkpoint 2 live demo"></iframe></div>
+      <div class="demo-frame-wrap" id="demoFrameWrap"><iframe id="demoFrame" src="../checkpoints/02-drawing-the-ship.html" loading="lazy" title="Checkpoint 2 live demo"></iframe></div>
       <div class="demo-links">
         <a href="../checkpoints/02-drawing-the-ship.html" target="_blank" rel="noopener">Open in a new tab</a>
         <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
@@ -334,27 +334,52 @@ function drawBackground() {
   document.querySelectorAll('pre code').forEach(function (el) { hljs.highlightElement(el); });
 </script>
 <script>
-  // Every checkpoint's body uses `min-height: 100dvh` so it fills the
-  // screen correctly when opened as a real standalone page - but some
-  // mobile browsers resolve dvh units inside an iframe against the
-  // outer page's viewport instead of the iframe's own, making the
-  // embedded demo think it has far more vertical space than its actual
-  // box and leaving a large empty gap below the game. Neutralizing just
-  // that min-height once the iframe loads fixes the embedded case
-  // without touching the checkpoint file itself (height: 100% on the
-  // same elements resolves correctly either way, so this doesn't affect
-  // the checkpoint's own centering logic - just removes the dvh forcing).
+  // Each checkpoint's own body uses `min-height: 100dvh` and centers its
+  // content vertically - correct for opening it as a real standalone
+  // page, but meaningless once it's embedded in a demo box of a size we
+  // chose. Rather than guess one fixed pixel height that fits every
+  // lesson (too tall for a short one leaves a dead gap below the game;
+  // too short for a tall one squishes the canvas out of its aspect
+  // ratio - both happened), measure this lesson's actual checkpoint
+  // content once it loads and size the demo box to exactly that.
   (function () {
     var demoFrame = document.getElementById('demoFrame');
-    if (!demoFrame) return;
-    function fixEmbeddedHeight() {
+    var demoFrameWrap = document.getElementById('demoFrameWrap');
+    if (!demoFrame || !demoFrameWrap) return;
+
+    function sizeToContent() {
       try {
-        var body = demoFrame.contentDocument && demoFrame.contentDocument.body;
-        if (body) body.style.minHeight = '0';
-      } catch (e) { /* not same-origin yet (e.g. a local file:// preview) */ }
+        var doc = demoFrame.contentDocument;
+        var body = doc && doc.body;
+        if (!body) return;
+        body.style.minHeight = '0'; // stop the checkpoint's own full-viewport centering from inflating this measurement
+        var kids = Array.prototype.slice.call(body.children);
+        var minTop = Infinity, maxBottom = -Infinity;
+        kids.forEach(function (k) {
+          var r = k.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) return; // e.g. an inline <script> tag
+          minTop = Math.min(minTop, r.top);
+          maxBottom = Math.max(maxBottom, r.bottom);
+        });
+        if (!isFinite(minTop)) return;
+        var contentHeight = maxBottom - minTop;
+        var bodyStyle = doc.defaultView.getComputedStyle(body);
+        var vPadding = parseFloat(bodyStyle.paddingTop || 0) + parseFloat(bodyStyle.paddingBottom || 0);
+        demoFrameWrap.style.height = Math.ceil(contentHeight + vPadding) + 'px';
+      } catch (e) { /* not same-origin yet (e.g. a local file:// preview) - keep the CSS placeholder height */ }
     }
-    demoFrame.addEventListener('load', fixEmbeddedHeight);
-    fixEmbeddedHeight(); // in case it's already loaded (e.g. served from cache)
+
+    var resizeTimer = null;
+    function scheduleResize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(sizeToContent, 150);
+    }
+
+    demoFrame.addEventListener('load', function () {
+      sizeToContent();
+      window.addEventListener('resize', scheduleResize);
+    });
+    sizeToContent(); // in case it's already loaded (e.g. served from cache)
   })();
 </script>
 
