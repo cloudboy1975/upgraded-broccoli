@@ -130,9 +130,9 @@ code:not(pre code) {
   background: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: 14px;
-  overflow: hidden;
-  height: 520px;
-  max-height: 70vh;
+  overflow-y: auto; /* fallback for a viewport too short to fit the demo at all - never squish it instead */
+  height: 760px; /* tall enough for the fullest checkpoint (status bar + canvas + control bar + buttons) at typical widths without compressing the canvas's aspect ratio */
+  max-height: 85vh;
 }
 .demo-frame-wrap iframe {
   width: 100%;
@@ -148,6 +148,41 @@ code:not(pre code) {
 }
 .demo-links a { color: var(--accent); text-decoration: none; }
 .demo-links a:hover { text-decoration: underline; }
+
+/* ---- No-keyboard demo helper (lessons before touch controls exist) ---- */
+/* Simulates the taught keyboard input from on-screen buttons so the demo
+   is still usable on a phone before lesson 11 introduces real touch
+   controls inside the checkpoint itself. Not part of the taught code -
+   see the JS at the bottom of lessons that include this block. */
+.mobile-tap-controls {
+  display: flex;
+  gap: 8px;
+}
+.tap-key {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: var(--card);
+  color: var(--text);
+  border-radius: 14px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 0.1s, transform 0.08s;
+}
+.tap-key:active, .tap-key.active { background: #263449; transform: scale(0.97); }
+.mobile-tap-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0;
+}
 
 /* ---- Full source disclosure -------------------------------------------- */
 

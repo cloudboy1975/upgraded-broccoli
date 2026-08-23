@@ -101,6 +101,13 @@ function resetBest() {
         <a href="../checkpoints/10-high-scores.html" target="_blank" rel="noopener">Open in a new tab</a>
         <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
       </div>
+      <div class="mobile-tap-controls">
+        <button type="button" class="tap-key" data-code="ArrowLeft" aria-label="Turn left">&#9664;</button>
+        <button type="button" class="tap-key" data-code="Space" aria-label="Tap to fire, hold to thrust">&#9650;</button>
+        <button type="button" class="tap-key" data-code="ArrowRight" aria-label="Turn right">&#9654;</button>
+      </div>
+      <p class="mobile-tap-note">No keyboard? Tap and hold these to simulate one &mdash;
+        real touch controls arrive for good in lesson 11.</p>
     </div>
 
     <h2>Full source so far</h2>
@@ -208,6 +215,7 @@ function resetBest() {
     width: 100%;
     max-width: 420px;
     aspect-ratio: 3 / 4;
+    flex-shrink: 0;
     position: relative;
     background: var(--board);
     border-radius: 20px;
@@ -787,6 +795,31 @@ function resetBest() {
   </div>
 <script>
   document.querySelectorAll('pre code').forEach(function (el) { hljs.highlightElement(el); });
+</script>
+<script>
+  (function () {
+    var iframe = document.querySelector('.demo-frame-wrap iframe');
+    document.querySelectorAll('.tap-key').forEach(function (btn) {
+      var code = btn.getAttribute('data-code');
+      function send(type) {
+        try {
+          iframe.contentWindow.document.dispatchEvent(
+            new KeyboardEvent(type, { code: code, bubbles: true, cancelable: true })
+          );
+        } catch (e) { /* iframe not same-origin yet (e.g. a local file:// preview) */ }
+      }
+      btn.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        btn.classList.add('active');
+        send('keydown');
+      });
+      function release() { btn.classList.remove('active'); send('keyup'); }
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointercancel', release);
+      btn.addEventListener('pointerleave', release);
+      btn.addEventListener('lostpointercapture', release);
+    });
+  })();
 </script>
 </body>
 </html>

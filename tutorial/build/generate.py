@@ -50,6 +50,57 @@ def render_nav_slot(side, lesson):
     )
 
 
+def render_mobile_helper(lesson):
+    """For lessons whose checkpoint is keyboard-only (before lesson 11 adds
+    real touch controls), a small on-screen button row that simulates the
+    taught keys from a tap. Not part of the taught code - it lives in the
+    lesson page template, not the checkpoint file, so it never appears in
+    a "full source so far" disclosure."""
+    if not lesson.get("keyboardOnly"):
+        return ""
+    return (
+        '      <div class="mobile-tap-controls">\n'
+        '        <button type="button" class="tap-key" data-code="ArrowLeft" aria-label="Turn left">&#9664;</button>\n'
+        '        <button type="button" class="tap-key" data-code="Space" aria-label="Tap to fire, hold to thrust">&#9650;</button>\n'
+        '        <button type="button" class="tap-key" data-code="ArrowRight" aria-label="Turn right">&#9654;</button>\n'
+        '      </div>\n'
+        '      <p class="mobile-tap-note">No keyboard? Tap and hold these to simulate one &mdash;\n'
+        '        real touch controls arrive for good in lesson 11.</p>'
+    )
+
+
+def render_mobile_helper_script(lesson):
+    if not lesson.get("keyboardOnly"):
+        return ""
+    return (
+        "<script>\n"
+        "  (function () {\n"
+        "    var iframe = document.querySelector('.demo-frame-wrap iframe');\n"
+        "    document.querySelectorAll('.tap-key').forEach(function (btn) {\n"
+        "      var code = btn.getAttribute('data-code');\n"
+        "      function send(type) {\n"
+        "        try {\n"
+        "          iframe.contentWindow.document.dispatchEvent(\n"
+        "            new KeyboardEvent(type, { code: code, bubbles: true, cancelable: true })\n"
+        "          );\n"
+        "        } catch (e) { /* iframe not same-origin yet (e.g. a local file:// preview) */ }\n"
+        "      }\n"
+        "      btn.addEventListener('pointerdown', function (e) {\n"
+        "        e.preventDefault();\n"
+        "        btn.classList.add('active');\n"
+        "        send('keydown');\n"
+        "      });\n"
+        "      function release() { btn.classList.remove('active'); send('keyup'); }\n"
+        "      btn.addEventListener('pointerup', release);\n"
+        "      btn.addEventListener('pointercancel', release);\n"
+        "      btn.addEventListener('pointerleave', release);\n"
+        "      btn.addEventListener('lostpointercapture', release);\n"
+        "    });\n"
+        "  })();\n"
+        "</script>"
+    )
+
+
 def render_lesson(lesson):
     checkpoint_path = os.path.join(TUTORIAL_DIR, "checkpoints", lesson["id"] + ".html")
     with open(checkpoint_path) as f:
@@ -73,6 +124,8 @@ def render_lesson(lesson):
     out = out.replace("__FULL_SOURCE__", full_source)
     out = out.replace("__NAV_PREV__", render_nav_slot("prev", lesson))
     out = out.replace("__NAV_NEXT__", render_nav_slot("next", lesson))
+    out = out.replace("__MOBILE_HELPER__", render_mobile_helper(lesson))
+    out = out.replace("__MOBILE_HELPER_SCRIPT__", render_mobile_helper_script(lesson))
     return out
 
 

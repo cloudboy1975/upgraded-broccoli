@@ -192,6 +192,7 @@ document.addEventListener('touchmove', function (e) {
         <a href="../checkpoints/12-mobile-hardening.html" target="_blank" rel="noopener">Open in a new tab</a>
         <span>&middot; a real, downloadable file &mdash; save it and double-click to run offline.</span>
       </div>
+
     </div>
 
     <h2>Full source so far</h2>
@@ -360,6 +361,7 @@ document.addEventListener('touchmove', function (e) {
     width: 100%;
     max-width: 420px;
     aspect-ratio: 3 / 4;
+    flex-shrink: 0;
     position: relative;
     background: var(--board);
     border-radius: 20px;
@@ -1157,5 +1159,6 @@ document.addEventListener('touchmove', function (e) {
 <script>
   document.querySelectorAll('pre code').forEach(function (el) { hljs.highlightElement(el); });
 </script>
+
 </body>
 </html>
