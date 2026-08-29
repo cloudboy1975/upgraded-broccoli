@@ -325,7 +325,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 08:00 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 08:20 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -713,28 +713,55 @@
     heldZoneResets.push(hardRelease);
   }
 
-  // One-thumb thumbstick zone: wherever the thumb first touches down
-  // becomes the stick's neutral center (the "rest" point) for that press -
-  // direction is then just displacement from that fixed anchor, sampled
-  // continuously on every pointermove, not a comparison against the last
-  // sample. Hold off-center and the ship keeps strafing in that direction
-  // for as long as you hold it there, exactly like a real analog stick
-  // held at an angle - no delta-tracking, no idle decay timer. Lifting the
-  // thumb clears everything; the next press re-anchors wherever it lands.
-  var THUMBSTICK_THRESHOLD_PX = 14; // tight - a small, deliberate displacement is enough to register
+  // One-thumb thumbstick zone, hybrid model: wherever the thumb first
+  // touches down becomes the stick's neutral center for that press - no
+  // direction is committed until displacement from that anchor crosses
+  // THUMBSTICK_THRESHOLD_PX, and holding off-center keeps strafing
+  // indefinitely (no idle decay), exactly like a real stick held at an
+  // angle. But unlike a fixed-for-the-whole-press anchor, reversing is
+  // locally responsive: once a direction is committed, the zone tracks
+  // the furthest point reached in that direction (the "peak"); falling
+  // back from that peak by more than the threshold is a confirmed
+  // reversal, and the peak itself becomes the new anchor - so flipping
+  // direction only costs a small pullback from wherever you currently
+  // are, not a trip back through the original press point. Releasing
+  // clears everything; the next press re-anchors wherever it lands.
+  var THUMBSTICK_THRESHOLD_PX = 14; // tight - a small, deliberate displacement is enough to register or reverse
 
   function bindThumbstickZone(el, anchorEl, thumbEl, setLeft, setRight) {
     var activeId = null;
     var watchdogTimer = null;
-    var restX = 0;
+    var anchorX = 0;   // current reference point - the press-down spot, or the last reversal's peak
+    var peakX = 0;      // furthest point reached from anchorX in the active direction
+    var activeDir = null; // 'left' | 'right' | null
     suppressCallout(el);
 
-    function updateDirection(clientX) {
-      var offset = clientX - restX;
-      if (offset > THUMBSTICK_THRESHOLD_PX) { setRight(true); setLeft(false); }
-      else if (offset < -THUMBSTICK_THRESHOLD_PX) { setLeft(true); setRight(false); }
-      else { setRight(false); setLeft(false); }
+    function commit(dir) {
+      activeDir = dir;
+      setLeft(dir === 'left');
+      setRight(dir === 'right');
       composeInput();
+    }
+
+    function updateDirection(clientX) {
+      if (activeDir === null) {
+        var offset = clientX - anchorX;
+        if (offset > THUMBSTICK_THRESHOLD_PX) { peakX = clientX; commit('right'); }
+        else if (offset < -THUMBSTICK_THRESHOLD_PX) { peakX = clientX; commit('left'); }
+        // else stay neutral - anchorX unchanged, still the original press-down spot
+      } else if (activeDir === 'right') {
+        if (clientX > peakX) peakX = clientX; // track the new peak
+        if (peakX - clientX > THUMBSTICK_THRESHOLD_PX) { // pulled back from the peak - reversal
+          anchorX = peakX; peakX = clientX;
+          commit('left');
+        }
+      } else { // activeDir === 'left'
+        if (clientX < peakX) peakX = clientX;
+        if (clientX - peakX > THUMBSTICK_THRESHOLD_PX) {
+          anchorX = peakX; peakX = clientX;
+          commit('right');
+        }
+      }
     }
 
     function hardRelease() {
@@ -744,6 +771,7 @@
       el.classList.remove('active');
       anchorEl.classList.remove('visible');
       thumbEl.classList.remove('visible');
+      activeDir = null;
       setLeft(false);
       setRight(false);
       composeInput();
@@ -763,11 +791,13 @@
       el.classList.add('active');
       anchorEl.classList.add('visible');
       thumbEl.classList.add('visible');
-      restX = e.clientX; // this touch becomes the stick's center, for this press only
+      anchorX = e.clientX; // this touch becomes the stick's center, for this press only
+      peakX = e.clientX;
+      activeDir = null;
       var rect = el.getBoundingClientRect();
       anchorEl.style.left = clamp(e.clientX - rect.left, 20, rect.width - 20) + 'px';
       positionThumb(e.clientX);
-      updateDirection(e.clientX); // starts neutral - offset is 0 at the anchor itself
+      setLeft(false); setRight(false); composeInput(); // starts neutral - offset is 0 at the anchor itself
       clearTimeout(watchdogTimer);
       watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
     });
