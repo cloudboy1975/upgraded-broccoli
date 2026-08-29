@@ -237,7 +237,7 @@
   <div class="app">
     <a class="back-link" href="index.html">&larr; All games</a>
     <h1>Head-On</h1>
-    <div class="subtitle">You stay put &mdash; strafing moves the corridor, not the ship</div>
+    <div class="subtitle">Dodge the divers, shoot the formation</div>
 
     <div class="status-bar">
       <div class="status-text">
@@ -271,7 +271,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 05:10 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 06:20 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -282,37 +282,46 @@
   // ---- Constants ------------------------------------------------------
   var HIGH_SCORE_KEY = 'headon-highscore-v1';
 
-  // Fixed logical resolution, matching .canvas-wrap's 3:4 CSS aspect ratio
-  // exactly - Phaser's Scale.FIT mode scales this uniformly to whatever
-  // device the game runs on, so every world-unit constant below always
-  // renders at the same proportion of the screen on any device. This is
-  // what actually fixes the corridor-walls-crowding-the-edges problem: no
-  // more hand-rolled per-device scale math, the Scale Manager owns it.
+  // Fixed logical resolution, matching .canvas-wrap's 3:4 CSS aspect ratio -
+  // Phaser's Scale.FIT mode scales this uniformly to whatever device the
+  // game runs on.
   var GAME_WIDTH = 360;
   var GAME_HEIGHT = 480;
 
   var SHIP_RADIUS = 13;
-  var SHIP_Y = Math.round(GAME_HEIGHT * 0.82); // ship's fixed vertical screen position
-  var STRAFE_SPEED = 190; // world-units/sec at full hold
+  var SHIP_Y = Math.round(GAME_HEIGHT * 0.86); // ship's fixed vertical position, near the bottom
+  var STRAFE_SPEED = 260; // world-units/sec at full hold - the ship now visibly moves, so it needs to cover the full width briskly
   var STRAFE_SMOOTH = 16; // per-second lerp rate toward target velocity - snappy, not drifty
-  var CORRIDOR_HALF_WIDTH = 110; // corridor spans 61% of GAME_WIDTH, consistent on every device
 
   var BULLET_RADIUS = 3;
   var BULLET_SPEED = 420;
-  var BULLET_LIFETIME = 1.1; // seconds
+  var BULLET_LIFETIME = 1.2; // seconds
   var FIRE_COOLDOWN_MS = 220;
 
   var RESPAWN_INVULN_MS = 1500;
   var MAX_DT = 0.05;
 
-  var ENEMY_SPAWN_Y = -420; // world Y enemies enter at (far ahead of the ship)
-  var ENEMY_DESPAWN_Y = 70; // world Y past which a missed enemy is gone for good
-  var SPAWN_INTERVAL_START = 1.15;
-  var SPAWN_INTERVAL_MIN = 0.5;
+  // Galaga-style formation: a grid held near the top of the screen. Each
+  // row is a distinct dive pattern, furthest-back row is the hardest -
+  // straight/swoop/zigzag are unchanged from earlier prototypes, just
+  // re-purposed as "how this row dives" instead of "how a random spawn
+  // approaches".
+  var FORMATION_ROWS = 3;
+  var FORMATION_COLS = 5;
+  var FORMATION_ROW_Y = [78, 120, 162]; // top to bottom
+  var FORMATION_COL_SPACING = 58;
+  var FORMATION_ROW_TYPES = ['zigzag', 'swoop', 'straight']; // top row = hardest/furthest, bottom row = easiest/closest
+  var IDLE_BOB_AMPLITUDE = 5;
+  var IDLE_BOB_FREQ = 1.6;
 
-  // Three dive patterns, each with a distinct shape/color so they're
-  // readable at a glance - straight is the baseline threat, swoop and
-  // zigzag are progressively harder to predict and worth more.
+  var DIVE_INTERVAL_START = 1.7; // seconds between dive waves
+  var DIVE_INTERVAL_MIN = 0.9;
+  var DIVE_RAMP_SECONDS = 45; // time to ramp from START to MIN
+  var DIVE_TWO_AT_ONCE_AFTER = 25; // seconds elapsed before waves can send 2 divers at once
+  var WAVE_CLEAR_PAUSE = 1.4; // pause before the next full formation spawns
+
+  var ENEMY_DESPAWN_Y = GAME_HEIGHT - 8; // a diver past this has flown by uncaught - gone, no penalty
+
   var ENEMY_TYPES = {
     straight: { radius: 14, speed: 95,  score: 50,  color: 0x22c55e },
     swoop:    { radius: 14, speed: 112, score: 80,  color: 0x38bdf8 },
@@ -323,11 +332,9 @@
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
   var COLOR_STAR = 0x94a3b8;
-  var COLOR_WALL = 0x38bdf8;
   var COLOR_BG = 0x1e293b;
 
   // ---- Helpers ------------------------------------------------------
-  function randRange(range) { return range[0] + Math.random() * (range[1] - range[0]); }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
   function loadHighScore() {
@@ -362,8 +369,7 @@
   MainScene.prototype.buildTextures = function () {
     var self = this;
 
-    // Ship: triangle outline, nose up - matches the original vanilla-canvas
-    // draw exactly, just baked into a texture instead of redrawn per frame.
+    // Ship: triangle outline, nose up.
     (function () {
       var r = SHIP_RADIUS;
       var size = r * 2 + 4;
@@ -381,9 +387,8 @@
       g.destroy();
     })();
 
-    // Enemy textures, one per dive pattern - same shapes as the original:
-    // triangle pointing down (straight), diamond (swoop), square (zigzag,
-    // rotated at runtime via sprite.rotation for the wobble flourish).
+    // Enemy textures, one per dive pattern: triangle (straight), diamond
+    // (swoop), square (zigzag, rotated at runtime via sprite.rotation).
     Object.keys(ENEMY_TYPES).forEach(function (type) {
       var cfg = ENEMY_TYPES[type];
       var r = cfg.radius;
@@ -425,62 +430,172 @@
   };
 
   MainScene.prototype.initState = function () {
-    // Kept as plain, engine-agnostic data (not Phaser game objects) so the
-    // shape matches the original vanilla-canvas prototype's debug/test
-    // contract exactly - each bullet/enemy just grows a `.sprite` handle
-    // for rendering alongside its physics data.
     this.state = {
       phase: 'playing', // 'playing' | 'gameover'
       ship: {
-        x: 0, vx: 0,
+        x: GAME_WIDTH / 2, vx: 0,
         invulnerableUntil: 0,
         radius: SHIP_RADIUS
       },
       bullets: [],
-      enemies: [],
+      formation: [], // grid slots - see spawnFormation()
       lives: 3,
       score: 0,
       highScore: loadHighScore(),
-      nextEnemyId: 1,
+      wave: 1,
+      diveTimer: DIVE_INTERVAL_START,
+      waveClearTimer: 0, // > 0 while waiting to spawn the next formation
       input: { left: false, right: false, fire: false },
-      spawn: { timer: SPAWN_INTERVAL_START },
       fireCooldown: 0,
-      difficulty: { elapsed: 0 }
+      difficulty: { elapsed: 0 },
+      clock: 0 // free-running seconds, drives the idle formation bob
     };
   };
 
   MainScene.prototype.buildWorld = function () {
     this.cameras.main.setBackgroundColor(COLOR_BG);
 
-    // Corridor walls: drawn once in world space. Camera scroll (driven by
-    // the ship's world x every frame) shifts their apparent screen position
-    // automatically - no per-frame redraw needed, unlike the raw-canvas
-    // version this replaced.
-    var wallsG = this.add.graphics();
-    wallsG.lineStyle(3, COLOR_WALL, 0.35);
-    wallsG.beginPath();
-    wallsG.moveTo(-CORRIDOR_HALF_WIDTH, 0); wallsG.lineTo(-CORRIDOR_HALF_WIDTH, GAME_HEIGHT);
-    wallsG.moveTo(CORRIDOR_HALF_WIDTH, 0); wallsG.lineTo(CORRIDOR_HALF_WIDTH, GAME_HEIGHT);
-    wallsG.strokePath();
-
-    // Stars: redrawn each frame since they drift and wrap independently of
-    // gameplay, purely for a "flying forward" cue. Also ordinary world
-    // objects, so they parallax correctly with strafing via camera scroll.
+    // Fixed starfield - no camera trick anymore, so this is just ordinary
+    // ambient background motion, independent of the ship entirely.
     this.starsGfx = this.add.graphics();
     this.stars = [];
     var count = Math.round((GAME_WIDTH * GAME_HEIGHT) / 3500);
     for (var i = 0; i < count; i++) {
       this.stars.push({
-        x: (Math.random() - 0.5) * GAME_WIDTH * 2.2,
-        y: ENEMY_SPAWN_Y - Math.random() * 400,
-        speed: 60 + Math.random() * 90,
+        x: Math.random() * GAME_WIDTH,
+        y: Math.random() * GAME_HEIGHT,
+        speed: 40 + Math.random() * 70,
         r: Math.random() * 1.3 + 0.4
       });
     }
 
-    this.shipSprite = this.add.sprite(0, SHIP_Y, 'shipTex');
-    this.cameras.main.scrollX = -GAME_WIDTH / 2; // ship starts at world x=0, centered
+    this.shipSprite = this.add.sprite(GAME_WIDTH / 2, SHIP_Y, 'shipTex');
+    this.spawnFormation();
   };
+
+  // ---- Formation ------------------------------------------------------
+  MainScene.prototype.formationGridX = function (col) {
+    var totalWidth = (FORMATION_COLS - 1) * FORMATION_COL_SPACING;
+    return (GAME_WIDTH - totalWidth) / 2 + col * FORMATION_COL_SPACING;
+  };
+
+  MainScene.prototype.spawnFormation = function () {
+    var state = this.state;
+    state.formation.forEach(function (slot) { if (slot.sprite) slot.sprite.destroy(); });
+    state.formation = [];
+    for (var row = 0; row < FORMATION_ROWS; row++) {
+      var type = FORMATION_ROW_TYPES[row];
+      var cfg = ENEMY_TYPES[type];
+      for (var col = 0; col < FORMATION_COLS; col++) {
+        var baseX = this.formationGridX(col);
+        var baseY = FORMATION_ROW_Y[row];
+        var slot = {
+          row: row, col: col,
+          baseX: baseX, baseY: baseY,
+          x: baseX, y: baseY,
+          alive: true, diving: false,
+          age: 0, phase: Math.random() * Math.PI * 2,
+          spawnX: baseX,
+          type: type, radius: cfg.radius, color: cfg.color, score: cfg.score
+        };
+        slot.sprite = this.add.sprite(baseX, baseY, ENEMY_TEX[type]);
+        state.formation.push(slot);
+      }
+    }
+  };
+
+  MainScene.prototype.diveInterval = function () {
+    var t = Math.min(this.state.difficulty.elapsed / DIVE_RAMP_SECONDS, 1);
+    return DIVE_INTERVAL_START + (DIVE_INTERVAL_MIN - DIVE_INTERVAL_START) * t;
+  };
+
+  MainScene.prototype.diveWaveSize = function () {
+    return this.state.difficulty.elapsed > DIVE_TWO_AT_ONCE_AFTER ? 2 : 1;
+  };
+
+  MainScene.prototype.tryTriggerDive = function (dt) {
+    var state = this.state;
+    if (state.waveClearTimer > 0) return; // formation's empty, waiting for the next wave
+    state.diveTimer -= dt;
+    if (state.diveTimer > 0) return;
+    state.diveTimer = this.diveInterval();
+
+    var idle = state.formation.filter(function (s) { return s.alive && !s.diving; });
+    if (idle.length === 0) return;
+    var count = Math.min(this.diveWaveSize(), idle.length);
+    for (var i = 0; i < count; i++) {
+      var pick = idle.splice(Math.floor(Math.random() * idle.length), 1)[0];
+      pick.diving = true;
+      pick.age = 0;
+      pick.spawnX = pick.x; // dive formulas anchor to wherever it was (mid-bob) when it broke formation
+      pick.phase = Math.random() * Math.PI * 2;
+    }
+  };
+
+  function updateIdleBob(state) {
+    state.formation.forEach(function (slot) {
+      if (!slot.alive || slot.diving) return;
+      slot.x = slot.baseX + Math.sin(state.clock * IDLE_BOB_FREQ + slot.phase) * IDLE_BOB_AMPLITUDE;
+      slot.y = slot.baseY;
+      slot.sprite.x = slot.x;
+      slot.sprite.y = slot.y;
+    });
+  }
+
+  // Same three dive-pattern formulas as earlier prototypes, just anchored
+  // to a formation slot's break-off point instead of an off-screen spawn.
+  function updateDiver(slot, dt, shipX) {
+    slot.age += dt;
+    var cfg = ENEMY_TYPES[slot.type];
+    slot.y += cfg.speed * dt;
+
+    if (slot.type === 'straight') {
+      // A light, constant pull toward the ship's current x - reads as a
+      // simple bee-line dive, not a hard homing missile.
+      slot.x += (shipX - slot.x) * 0.5 * dt;
+    } else if (slot.type === 'swoop') {
+      // Curves from its break-off point toward the ship over ~2.2s, with a
+      // sine wobble riding on top - the classic Galaga S-curve dive-bomb.
+      var t = Math.min(slot.age / 2.2, 1);
+      slot.x = slot.spawnX + (shipX - slot.spawnX) * t + Math.sin(slot.age * 3.1 + slot.phase) * 46;
+    } else if (slot.type === 'zigzag') {
+      // Fast, sharp lateral oscillation, anchored to its break-off point -
+      // erratic and hard to predict, doesn't chase the ship at all.
+      slot.x = slot.spawnX + Math.sin(slot.age * 8.4 + slot.phase) * 78;
+    }
+
+    slot.sprite.x = slot.x;
+    slot.sprite.y = slot.y;
+    if (slot.type === 'zigzag') slot.sprite.rotation = Math.sin(slot.age * 8.4 + slot.phase) * 0.4;
+  }
+
+  function updateDivers(state, dt) {
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      if (!slot.alive || !slot.diving) continue;
+      updateDiver(slot, dt, state.ship.x);
+      if (slot.y > ENEMY_DESPAWN_Y) {
+        slot.sprite.destroy();
+        slot.alive = false;
+      }
+    }
+  }
+
+  MainScene.prototype.checkWaveClear = function (dt) {
+    var state = this.state;
+    var anyAlive = state.formation.some(function (s) { return s.alive; });
+    if (anyAlive) { state.waveClearTimer = 0; return; }
+    if (state.waveClearTimer <= 0) state.waveClearTimer = WAVE_CLEAR_PAUSE;
+    state.waveClearTimer -= dt;
+    if (state.waveClearTimer <= 0) {
+      state.wave++;
+      state.diveTimer = this.diveInterval();
+      this.spawnFormation();
+      state.waveClearTimer = 0;
+    }
+  };
+
+  function isInvulnerable(state) { return performance.now() < state.ship.invulnerableUntil; }
 
   // ---- Input: composition ------------------------------------------------------
   var touchLeft = false, touchRight = false, touchFire = false;
@@ -610,87 +725,12 @@
     var state = this.state;
     var b = {
       x: state.ship.x,
-      y: -state.ship.radius,
+      y: SHIP_Y - state.ship.radius,
       vy: -BULLET_SPEED,
       ttl: BULLET_LIFETIME
     };
     b.sprite = this.add.sprite(b.x, b.y, 'bulletTex');
     state.bullets.push(b);
-  };
-
-  // ---- Enemies: three dive patterns ------------------------------------------------------
-  MainScene.prototype.createEnemy = function (type) {
-    var state = this.state;
-    var cfg = ENEMY_TYPES[type];
-    var spawnX;
-    if (type === 'swoop') {
-      // Enters from a hard edge, well outside the corridor - the swoop
-      // then carries it inward.
-      spawnX = (Math.random() < 0.5 ? -1 : 1) * (CORRIDOR_HALF_WIDTH * 1.4);
-    } else {
-      spawnX = randRange([-CORRIDOR_HALF_WIDTH * 0.85, CORRIDOR_HALF_WIDTH * 0.85]);
-    }
-    var en = {
-      id: state.nextEnemyId++,
-      type: type,
-      spawnX: spawnX,
-      x: spawnX,
-      y: ENEMY_SPAWN_Y,
-      age: 0,
-      phase: Math.random() * Math.PI * 2,
-      radius: cfg.radius,
-      color: cfg.color,
-      score: cfg.score
-    };
-    en.sprite = this.add.sprite(en.x, en.y, ENEMY_TEX[type]);
-    return en;
-  };
-
-  function updateEnemy(en, dt) {
-    en.age += dt;
-    var cfg = ENEMY_TYPES[en.type];
-    en.y += cfg.speed * dt;
-
-    if (en.type === 'straight') {
-      // A light, constant pull toward the ship's current x - reads as a
-      // simple bee-line dive, not a hard homing missile.
-      en.x += (mainScene.state.ship.x - en.x) * 0.5 * dt;
-    } else if (en.type === 'swoop') {
-      // The dive's center drifts from the entry edge toward the corridor
-      // center over ~2.2s, with a sine wobble riding on top - the classic
-      // Galaga S-curve dive-bomb.
-      var t = Math.min(en.age / 2.2, 1);
-      var center = en.spawnX * (1 - t);
-      en.x = center + Math.sin(en.age * 3.1 + en.phase) * 46;
-    } else if (en.type === 'zigzag') {
-      // Fast, sharp lateral oscillation - erratic and hard to predict.
-      en.x = en.spawnX + Math.sin(en.age * 8.4 + en.phase) * 78;
-    }
-
-    en.sprite.x = en.x;
-    en.sprite.y = en.y;
-    if (en.type === 'zigzag') en.sprite.rotation = Math.sin(en.age * 8.4 + en.phase) * 0.4;
-  }
-
-  function isInvulnerable(state) { return performance.now() < state.ship.invulnerableUntil; }
-
-  // ---- Spawning ------------------------------------------------------
-  function spawnInterval(state) {
-    return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_START - state.difficulty.elapsed / 40);
-  }
-
-  MainScene.prototype.trySpawnEnemy = function (dt) {
-    var state = this.state;
-    state.spawn.timer -= dt;
-    if (state.spawn.timer > 0) return;
-    state.spawn.timer = spawnInterval(state);
-    // Zigzag and swoop become more common as difficulty ramps, but
-    // straight divers never stop showing up.
-    var roll = Math.random();
-    var zigzagChance = Math.min(0.15 + state.difficulty.elapsed / 200, 0.4);
-    var swoopChance = Math.min(0.25 + state.difficulty.elapsed / 250, 0.4);
-    var type = roll < zigzagChance ? 'zigzag' : (roll < zigzagChance + swoopChance ? 'swoop' : 'straight');
-    state.enemies.push(this.createEnemy(type));
   };
 
   // ---- Physics update ------------------------------------------------------
@@ -701,7 +741,7 @@
     if (state.input.right) targetVx += STRAFE_SPEED;
     ship.vx += (targetVx - ship.vx) * Math.min(1, STRAFE_SMOOTH * dt);
     ship.x += ship.vx * dt;
-    ship.x = clamp(ship.x, -CORRIDOR_HALF_WIDTH + ship.radius, CORRIDOR_HALF_WIDTH - ship.radius);
+    ship.x = clamp(ship.x, ship.radius, GAME_WIDTH - ship.radius);
   }
 
   function updateBullets(state, dt) {
@@ -710,15 +750,7 @@
       b.y += b.vy * dt;
       b.ttl -= dt;
       b.sprite.y = b.y;
-      if (b.ttl <= 0) { b.sprite.destroy(); state.bullets.splice(i, 1); }
-    }
-  }
-
-  function updateEnemies(state, dt) {
-    for (var i = state.enemies.length - 1; i >= 0; i--) {
-      var en = state.enemies[i];
-      updateEnemy(en, dt);
-      if (en.y > ENEMY_DESPAWN_Y) { en.sprite.destroy(); state.enemies.splice(i, 1); }
+      if (b.ttl <= 0 || b.y < -10) { b.sprite.destroy(); state.bullets.splice(i, 1); }
     }
   }
 
@@ -733,28 +765,36 @@
 
   MainScene.prototype.handleCollisions = function () {
     var state = this.state;
+
+    // Bullets can hit any live formation member, whether it's still idle
+    // in formation or already mid-dive - classic Galaga lets you snipe the
+    // formation itself, not just incoming divers.
     for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
       var b = state.bullets[bi];
-      for (var ei = state.enemies.length - 1; ei >= 0; ei--) {
-        var en = state.enemies[ei];
-        var dx = b.x - en.x, dy = b.y - en.y;
-        var rr = en.radius + BULLET_RADIUS;
+      for (var si = 0; si < state.formation.length; si++) {
+        var slot = state.formation[si];
+        if (!slot.alive) continue;
+        var dx = b.x - slot.x, dy = b.y - slot.y;
+        var rr = slot.radius + BULLET_RADIUS;
         if (dx * dx + dy * dy <= rr * rr) {
           b.sprite.destroy(); state.bullets.splice(bi, 1);
-          en.sprite.destroy(); state.enemies.splice(ei, 1);
-          this.addScore(en.score);
+          slot.sprite.destroy(); slot.alive = false;
+          this.addScore(slot.score);
           break;
         }
       }
     }
 
+    // The ship can only be hit by an active diver - idle formation members
+    // stay up near the top, out of reach.
     if (!isInvulnerable(state)) {
-      for (var i = state.enemies.length - 1; i >= 0; i--) {
-        var e = state.enemies[i];
-        var sx = e.x - state.ship.x, sy = e.y - 0;
+      for (var i = 0; i < state.formation.length; i++) {
+        var e = state.formation[i];
+        if (!e.alive || !e.diving) continue;
+        var sx = e.x - state.ship.x, sy = e.y - SHIP_Y;
         var sr = state.ship.radius + e.radius;
         if (sx * sx + sy * sy <= sr * sr) {
-          e.sprite.destroy(); state.enemies.splice(i, 1);
+          e.sprite.destroy(); e.alive = false;
           this.shipHit();
           break;
         }
@@ -815,24 +855,23 @@
   // ---- Reset / restart ------------------------------------------------------
   MainScene.prototype.resetGame = function () {
     var state = this.state;
-    state.enemies.forEach(function (en) { en.sprite.destroy(); });
     state.bullets.forEach(function (b) { b.sprite.destroy(); });
-    state.enemies = [];
     state.bullets = [];
 
     state.phase = 'playing';
-    state.ship.x = 0;
+    state.ship.x = GAME_WIDTH / 2;
     state.ship.vx = 0;
     state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
     state.lives = 3;
     state.score = 0;
-    state.nextEnemyId = 1;
-    state.spawn.timer = SPAWN_INTERVAL_START;
+    state.wave = 1;
+    state.diveTimer = DIVE_INTERVAL_START;
+    state.waveClearTimer = 0;
     state.fireCooldown = 0;
     state.difficulty.elapsed = 0;
 
-    this.shipSprite.x = 0;
-    this.cameras.main.scrollX = -GAME_WIDTH / 2;
+    this.shipSprite.x = state.ship.x;
+    this.spawnFormation();
 
     document.getElementById('gameOverOverlay').classList.remove('visible');
     this.renderHud();
@@ -846,18 +885,15 @@
     for (var i = 0; i < this.stars.length; i++) {
       var s = this.stars[i];
       s.y += s.speed * dt;
-      if (s.y > ENEMY_DESPAWN_Y + 40) {
-        s.y = ENEMY_SPAWN_Y - Math.random() * 200;
-        s.x = (Math.random() - 0.5) * GAME_WIDTH * 2.2;
+      if (s.y > GAME_HEIGHT + 4) {
+        s.y = -4;
+        s.x = Math.random() * GAME_WIDTH;
       }
       g.fillCircle(s.x, s.y, s.r);
     }
   };
 
   MainScene.prototype.exposeDebugHooks = function () {
-    // Same shape as the original vanilla-canvas prototype's debug hook -
-    // state.ship/bullets/enemies are still plain data, just each grows a
-    // `.sprite` handle now for rendering.
     window.__headOnDebugState = this.state;
     window.__headOnDebug = { scene: this };
   };
@@ -868,18 +904,20 @@
     var dt = Math.min(delta / 1000, MAX_DT);
 
     if (state.phase === 'playing') {
+      state.clock += dt;
       updateShip(state, dt);
       updateBullets(state, dt);
-      updateEnemies(state, dt);
+      updateIdleBob(state);
+      updateDivers(state, dt);
       this.updateFiring(dt);
-      this.trySpawnEnemy(dt);
+      this.tryTriggerDive(dt);
       this.handleCollisions();
+      this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
     }
 
     this.updateBackground(dt);
     this.shipSprite.x = state.ship.x;
-    this.cameras.main.scrollX = state.ship.x - GAME_WIDTH / 2;
 
     var invuln = isInvulnerable(state);
     this.shipSprite.setVisible(!invuln || Math.floor(performance.now() / 100) % 2 !== 0);
