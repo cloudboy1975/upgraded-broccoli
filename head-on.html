@@ -220,6 +220,27 @@
     overflow: hidden;
   }
 
+  /* Thumbstick metaphor: .slide-anchor marks the fixed point where the
+     thumb first touched down (the stick's neutral center, set once per
+     press and never moving); .slide-thumb is the floating knob that
+     tracks the live finger position. The gap between them is the
+     displacement that drives direction - visually the same relationship
+     as a real analog stick held at an angle from center. */
+  .slide-anchor {
+    position: absolute;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: rgba(226, 232, 240, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .slide-anchor.visible { opacity: 1; }
+
   .slide-thumb {
     position: absolute;
     top: 50%;
@@ -232,7 +253,7 @@
     border: 2px solid rgba(226, 232, 240, 0.4);
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.12s;
+    transition: opacity 0.12s, left 0.05s;
   }
   .slide-thumb.visible { opacity: 1; }
 
@@ -292,6 +313,7 @@
     <div class="control-bar" id="controlBar">
       <button type="button" class="zone zone-slide" id="zoneSlide" aria-label="Rest your thumb and slide to strafe">
         <span class="zone-shape arrow-left" aria-hidden="true"></span>
+        <span class="slide-anchor" id="slideAnchor" aria-hidden="true"></span>
         <span class="slide-thumb" id="slideThumb" aria-hidden="true"></span>
         <span class="zone-shape arrow-right" aria-hidden="true"></span>
       </button>
@@ -303,7 +325,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 07:30 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 08:00 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -691,27 +713,27 @@
     heldZoneResets.push(hardRelease);
   }
 
-  // One-thumb slide zone: rest your thumb anywhere in the wide zone, then
-  // slide it - direction comes from the delta between samples, not from
-  // which half of the zone you're touching. Every pointermove is a fresh
-  // sample; once consecutive movement since the last registered direction
-  // change crosses SLIDE_THRESHOLD_PX, that becomes the new direction and
-  // the reference point advances - so small jitter doesn't flip direction,
-  // but a real slide (even a slow one - undershoot accumulates toward the
-  // threshold rather than resetting each sample) registers quickly.
-  var SLIDE_THRESHOLD_PX = 4;
-  var SLIDE_STOP_IDLE_MS = 90; // holding the thumb still (no qualifying move) this long stops the ship
+  // One-thumb thumbstick zone: wherever the thumb first touches down
+  // becomes the stick's neutral center (the "rest" point) for that press -
+  // direction is then just displacement from that fixed anchor, sampled
+  // continuously on every pointermove, not a comparison against the last
+  // sample. Hold off-center and the ship keeps strafing in that direction
+  // for as long as you hold it there, exactly like a real analog stick
+  // held at an angle - no delta-tracking, no idle decay timer. Lifting the
+  // thumb clears everything; the next press re-anchors wherever it lands.
+  var THUMBSTICK_THRESHOLD_PX = 14; // tight - a small, deliberate displacement is enough to register
 
-  function bindSlideZone(el, thumbEl, setLeft, setRight) {
+  function bindThumbstickZone(el, anchorEl, thumbEl, setLeft, setRight) {
     var activeId = null;
     var watchdogTimer = null;
-    var idleTimer = null;
-    var lastX = 0;
+    var restX = 0;
     suppressCallout(el);
 
-    function clearDirection() {
-      setLeft(false);
-      setRight(false);
+    function updateDirection(clientX) {
+      var offset = clientX - restX;
+      if (offset > THUMBSTICK_THRESHOLD_PX) { setRight(true); setLeft(false); }
+      else if (offset < -THUMBSTICK_THRESHOLD_PX) { setLeft(true); setRight(false); }
+      else { setRight(false); setLeft(false); }
       composeInput();
     }
 
@@ -719,15 +741,12 @@
       if (activeId === null) return;
       activeId = null;
       clearTimeout(watchdogTimer);
-      clearTimeout(idleTimer);
       el.classList.remove('active');
+      anchorEl.classList.remove('visible');
       thumbEl.classList.remove('visible');
-      clearDirection();
-    }
-
-    function scheduleIdleStop() {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(clearDirection, SLIDE_STOP_IDLE_MS);
+      setLeft(false);
+      setRight(false);
+      composeInput();
     }
 
     function positionThumb(clientX) {
@@ -742,9 +761,13 @@
       activeId = e.pointerId;
       try { el.setPointerCapture(activeId); } catch (err) {}
       el.classList.add('active');
+      anchorEl.classList.add('visible');
       thumbEl.classList.add('visible');
-      lastX = e.clientX;
+      restX = e.clientX; // this touch becomes the stick's center, for this press only
+      var rect = el.getBoundingClientRect();
+      anchorEl.style.left = clamp(e.clientX - rect.left, 20, rect.width - 20) + 'px';
       positionThumb(e.clientX);
+      updateDirection(e.clientX); // starts neutral - offset is 0 at the anchor itself
       clearTimeout(watchdogTimer);
       watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
     });
@@ -752,18 +775,7 @@
     el.addEventListener('pointermove', function (e) {
       if (e.pointerId !== activeId) return;
       positionThumb(e.clientX);
-      var delta = e.clientX - lastX;
-      if (delta >= SLIDE_THRESHOLD_PX) {
-        setRight(true); setLeft(false);
-        composeInput();
-        lastX = e.clientX;
-        scheduleIdleStop();
-      } else if (delta <= -SLIDE_THRESHOLD_PX) {
-        setLeft(true); setRight(false);
-        composeInput();
-        lastX = e.clientX;
-        scheduleIdleStop();
-      }
+      updateDirection(e.clientX);
     });
 
     function release(e) {
@@ -778,10 +790,11 @@
   }
 
   var zoneSlide = document.getElementById('zoneSlide');
+  var slideAnchor = document.getElementById('slideAnchor');
   var slideThumb = document.getElementById('slideThumb');
   var zoneMid = document.getElementById('zoneMid');
   var controlBar = document.getElementById('controlBar');
-  bindSlideZone(zoneSlide, slideThumb, function (v) { touchLeft = v; }, function (v) { touchRight = v; });
+  bindThumbstickZone(zoneSlide, slideAnchor, slideThumb, function (v) { touchLeft = v; }, function (v) { touchRight = v; });
   bindHoldZone(zoneMid, function (v) { touchFire = v; });
 
   // ---- Input: keyboard ------------------------------------------------------
