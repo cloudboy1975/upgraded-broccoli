@@ -271,7 +271,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 06:20 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 06:45 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -321,6 +321,13 @@
   var WAVE_CLEAR_PAUSE = 1.4; // pause before the next full formation spawns
 
   var ENEMY_DESPAWN_Y = GAME_HEIGHT - 8; // a diver past this has flown by uncaught - gone, no penalty
+
+  // Zigzag's oscillation, tuned down from an early pass that swung ±78
+  // units at 8.4 rad/s - wide and fast enough to read as random rather
+  // than a dodgeable pattern. Slower and narrower still reads as the
+  // hardest row, just legible instead of erratic.
+  var ZIGZAG_FREQ = 5.2;
+  var ZIGZAG_AMPLITUDE = 50;
 
   var ENEMY_TYPES = {
     straight: { radius: 14, speed: 95,  score: 50,  color: 0x22c55e },
@@ -561,12 +568,12 @@
     } else if (slot.type === 'zigzag') {
       // Fast, sharp lateral oscillation, anchored to its break-off point -
       // erratic and hard to predict, doesn't chase the ship at all.
-      slot.x = slot.spawnX + Math.sin(slot.age * 8.4 + slot.phase) * 78;
+      slot.x = slot.spawnX + Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * ZIGZAG_AMPLITUDE;
     }
 
     slot.sprite.x = slot.x;
     slot.sprite.y = slot.y;
-    if (slot.type === 'zigzag') slot.sprite.rotation = Math.sin(slot.age * 8.4 + slot.phase) * 0.4;
+    if (slot.type === 'zigzag') slot.sprite.rotation = Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * 0.4;
   }
 
   function updateDivers(state, dt) {
