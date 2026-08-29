@@ -267,7 +267,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 01:20 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 04:05 UTC</footer>
   </div>
 
 <script>
@@ -349,7 +349,7 @@
     spawn: { timer: SPAWN_INTERVAL_START },
     fireCooldown: 0,
     difficulty: { elapsed: 0 },
-    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1, worldScale: 1,
     timing: { lastFrameTime: 0 }
   };
   // Read-only debug hook for smoke-testing (harmless at runtime).
@@ -370,6 +370,17 @@
   }
 
   // ---- Canvas sizing ------------------------------------------------------
+  // The corridor is a fixed 300 world-units wide (2 * CORRIDOR_HALF_WIDTH),
+  // but devices render this canvas at wildly different CSS widths - a
+  // narrow phone gets far fewer pixels than the ~420px this was tuned
+  // against. Mapping world units 1:1 to screen pixels meant the corridor
+  // walls crowded right up against the edges on narrow screens, which
+  // fights the "you're centered, the world moves" illusion instead of
+  // selling it. worldScale keeps the corridor a consistent proportion of
+  // whatever canvas width the device actually has - physics stays in
+  // world units untouched (same strafe speed/feel everywhere), only the
+  // on-screen size changes.
+  var CORRIDOR_SCREEN_FRACTION = 0.62; // corridor spans this fraction of canvas width
   function resizeCanvas() {
     var rect = canvasWrap.getBoundingClientRect();
     var dpr = window.devicePixelRatio || 1;
@@ -379,6 +390,7 @@
     state.canvasCssW = w;
     state.canvasCssH = h;
     state.canvasDpr = dpr;
+    state.worldScale = (w * CORRIDOR_SCREEN_FRACTION) / (CORRIDOR_HALF_WIDTH * 2);
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     canvas.style.width = w + 'px';
@@ -416,8 +428,8 @@
   // corridor instead of a free-rotating field.
   function worldToScreen(wx, wy) {
     return {
-      x: wx - state.ship.x + state.canvasCssW / 2,
-      y: state.canvasCssH * SHIP_SCREEN_Y_FRACTION + wy
+      x: (wx - state.ship.x) * state.worldScale + state.canvasCssW / 2,
+      y: state.canvasCssH * SHIP_SCREEN_Y_FRACTION + wy * state.worldScale
     };
   }
 
@@ -762,32 +774,33 @@
   function drawBullet(b) {
     var p = worldToScreen(b.x, b.y);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, BULLET_RADIUS * state.worldScale, 0, Math.PI * 2);
     ctx.fillStyle = COLOR_BULLET;
     ctx.fill();
   }
 
   function drawEnemy(en) {
     var p = worldToScreen(en.x, en.y);
+    var r = en.radius * state.worldScale;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.fillStyle = en.color;
     ctx.beginPath();
     if (en.type === 'straight') {
       // Triangle pointing down (toward the ship).
-      ctx.moveTo(0, en.radius);
-      ctx.lineTo(-en.radius, -en.radius * 0.7);
-      ctx.lineTo(en.radius, -en.radius * 0.7);
+      ctx.moveTo(0, r);
+      ctx.lineTo(-r, -r * 0.7);
+      ctx.lineTo(r, -r * 0.7);
     } else if (en.type === 'swoop') {
       // Diamond.
-      ctx.moveTo(0, -en.radius);
-      ctx.lineTo(en.radius, 0);
-      ctx.lineTo(0, en.radius);
-      ctx.lineTo(-en.radius, 0);
+      ctx.moveTo(0, -r);
+      ctx.lineTo(r, 0);
+      ctx.lineTo(0, r);
+      ctx.lineTo(-r, 0);
     } else {
       // Zigzag: a square, slightly rotated with its own phase for flair.
       ctx.rotate(Math.sin(en.age * 8.4 + en.phase) * 0.4);
-      ctx.rect(-en.radius * 0.8, -en.radius * 0.8, en.radius * 1.6, en.radius * 1.6);
+      ctx.rect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6);
     }
     ctx.closePath();
     ctx.fill();
@@ -798,7 +811,7 @@
     if (isInvulnerable() && Math.floor(performance.now() / 100) % 2 === 0) return;
     var cx = state.canvasCssW / 2;
     var cy = state.canvasCssH * SHIP_SCREEN_Y_FRACTION;
-    var r = state.ship.radius;
+    var r = state.ship.radius * state.worldScale;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.beginPath();
