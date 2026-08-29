@@ -207,6 +207,35 @@
     background: var(--accent);
   }
 
+  /* One-thumb slide zone: replaces the separate left/right buttons with a
+     single wide surface spanning their combined real estate. Row layout
+     with the two arrows pushed to opposite edges hints "slide between
+     these" rather than "tap either side". */
+  .zone-slide {
+    flex: 2;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 0 22px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .slide-thumb {
+    position: absolute;
+    top: 50%;
+    width: 34px;
+    height: 34px;
+    margin-left: -17px;
+    margin-top: -17px;
+    border-radius: 50%;
+    background: rgba(226, 232, 240, 0.16);
+    border: 2px solid rgba(226, 232, 240, 0.4);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .slide-thumb.visible { opacity: 1; }
+
   .controls { display: flex; gap: 10px; width: 100%; }
 
   .btn {
@@ -261,8 +290,11 @@
     </div>
 
     <div class="control-bar" id="controlBar">
-      <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Strafe left"><span class="zone-shape arrow-left" aria-hidden="true"></span></button>
-      <button type="button" class="zone zone-right" id="zoneRight" aria-label="Strafe right"><span class="zone-shape arrow-right" aria-hidden="true"></span></button>
+      <button type="button" class="zone zone-slide" id="zoneSlide" aria-label="Rest your thumb and slide to strafe">
+        <span class="zone-shape arrow-left" aria-hidden="true"></span>
+        <span class="slide-thumb" id="slideThumb" aria-hidden="true"></span>
+        <span class="zone-shape arrow-right" aria-hidden="true"></span>
+      </button>
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
@@ -271,7 +303,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 07:00 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 07:30 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -622,9 +654,7 @@
     el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
   }
 
-  // Left, right, and fire are all just "held or not" - no tap-vs-hold
-  // distinction needed anywhere now that fire has no secondary hold
-  // behavior, so one binder covers all three zones.
+  // Fire is just "held or not" - one binder covers it.
   function bindHoldZone(el, setFlag) {
     var activeId = null;
     var watchdogTimer = null;
@@ -661,12 +691,97 @@
     heldZoneResets.push(hardRelease);
   }
 
-  var zoneLeft = document.getElementById('zoneLeft');
+  // One-thumb slide zone: rest your thumb anywhere in the wide zone, then
+  // slide it - direction comes from the delta between samples, not from
+  // which half of the zone you're touching. Every pointermove is a fresh
+  // sample; once consecutive movement since the last registered direction
+  // change crosses SLIDE_THRESHOLD_PX, that becomes the new direction and
+  // the reference point advances - so small jitter doesn't flip direction,
+  // but a real slide (even a slow one - undershoot accumulates toward the
+  // threshold rather than resetting each sample) registers quickly.
+  var SLIDE_THRESHOLD_PX = 4;
+  var SLIDE_STOP_IDLE_MS = 90; // holding the thumb still (no qualifying move) this long stops the ship
+
+  function bindSlideZone(el, thumbEl, setLeft, setRight) {
+    var activeId = null;
+    var watchdogTimer = null;
+    var idleTimer = null;
+    var lastX = 0;
+    suppressCallout(el);
+
+    function clearDirection() {
+      setLeft(false);
+      setRight(false);
+      composeInput();
+    }
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      clearTimeout(idleTimer);
+      el.classList.remove('active');
+      thumbEl.classList.remove('visible');
+      clearDirection();
+    }
+
+    function scheduleIdleStop() {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(clearDirection, SLIDE_STOP_IDLE_MS);
+    }
+
+    function positionThumb(clientX) {
+      var rect = el.getBoundingClientRect();
+      var localX = clamp(clientX - rect.left, 20, rect.width - 20);
+      thumbEl.style.left = localX + 'px';
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      hardRelease(); // release any stale/stuck session instead of ignoring the new press
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      thumbEl.classList.add('visible');
+      lastX = e.clientX;
+      positionThumb(e.clientX);
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+
+    el.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== activeId) return;
+      positionThumb(e.clientX);
+      var delta = e.clientX - lastX;
+      if (delta >= SLIDE_THRESHOLD_PX) {
+        setRight(true); setLeft(false);
+        composeInput();
+        lastX = e.clientX;
+        scheduleIdleStop();
+      } else if (delta <= -SLIDE_THRESHOLD_PX) {
+        setLeft(true); setRight(false);
+        composeInput();
+        lastX = e.clientX;
+        scheduleIdleStop();
+      }
+    });
+
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  }
+
+  var zoneSlide = document.getElementById('zoneSlide');
+  var slideThumb = document.getElementById('slideThumb');
   var zoneMid = document.getElementById('zoneMid');
-  var zoneRight = document.getElementById('zoneRight');
   var controlBar = document.getElementById('controlBar');
-  bindHoldZone(zoneLeft, function (v) { touchLeft = v; });
-  bindHoldZone(zoneRight, function (v) { touchRight = v; });
+  bindSlideZone(zoneSlide, slideThumb, function (v) { touchLeft = v; }, function (v) { touchRight = v; });
   bindHoldZone(zoneMid, function (v) { touchFire = v; });
 
   // ---- Input: keyboard ------------------------------------------------------
