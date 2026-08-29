@@ -325,7 +325,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 08:20 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 08:35 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -716,17 +716,26 @@
   // One-thumb thumbstick zone, hybrid model: wherever the thumb first
   // touches down becomes the stick's neutral center for that press - no
   // direction is committed until displacement from that anchor crosses
-  // THUMBSTICK_THRESHOLD_PX, and holding off-center keeps strafing
+  // THUMBSTICK_COMMIT_THRESHOLD_PX, and holding off-center keeps strafing
   // indefinitely (no idle decay), exactly like a real stick held at an
   // angle. But unlike a fixed-for-the-whole-press anchor, reversing is
   // locally responsive: once a direction is committed, the zone tracks
   // the furthest point reached in that direction (the "peak"); falling
-  // back from that peak by more than the threshold is a confirmed
-  // reversal, and the peak itself becomes the new anchor - so flipping
-  // direction only costs a small pullback from wherever you currently
-  // are, not a trip back through the original press point. Releasing
-  // clears everything; the next press re-anchors wherever it lands.
-  var THUMBSTICK_THRESHOLD_PX = 14; // tight - a small, deliberate displacement is enough to register or reverse
+  // back from that peak by more than THUMBSTICK_REVERSAL_THRESHOLD_PX is
+  // a confirmed reversal, and the peak itself becomes the new anchor - so
+  // flipping direction only costs a small pullback from wherever you
+  // currently are, not a trip back through the original press point.
+  // Releasing clears everything; the next press re-anchors wherever it
+  // lands.
+  //
+  // Two different thresholds, not one shared value: committing an initial
+  // direction from a truly resting thumb wants some deliberate motion (so
+  // just resting doesn't accidentally start strafing), but once you're
+  // already steering, changing your mind should feel instant - as tight
+  // as the very first delta-based prototype's 4px felt, not the larger
+  // distance needed to leave neutral in the first place.
+  var THUMBSTICK_COMMIT_THRESHOLD_PX = 14;   // neutral -> a direction, from the press-down anchor
+  var THUMBSTICK_REVERSAL_THRESHOLD_PX = 4;  // already steering -> the opposite direction, from the peak
 
   function bindThumbstickZone(el, anchorEl, thumbEl, setLeft, setRight) {
     var activeId = null;
@@ -746,18 +755,18 @@
     function updateDirection(clientX) {
       if (activeDir === null) {
         var offset = clientX - anchorX;
-        if (offset > THUMBSTICK_THRESHOLD_PX) { peakX = clientX; commit('right'); }
-        else if (offset < -THUMBSTICK_THRESHOLD_PX) { peakX = clientX; commit('left'); }
+        if (offset > THUMBSTICK_COMMIT_THRESHOLD_PX) { peakX = clientX; commit('right'); }
+        else if (offset < -THUMBSTICK_COMMIT_THRESHOLD_PX) { peakX = clientX; commit('left'); }
         // else stay neutral - anchorX unchanged, still the original press-down spot
       } else if (activeDir === 'right') {
         if (clientX > peakX) peakX = clientX; // track the new peak
-        if (peakX - clientX > THUMBSTICK_THRESHOLD_PX) { // pulled back from the peak - reversal
+        if (peakX - clientX > THUMBSTICK_REVERSAL_THRESHOLD_PX) { // pulled back from the peak - reversal
           anchorX = peakX; peakX = clientX;
           commit('left');
         }
       } else { // activeDir === 'left'
         if (clientX < peakX) peakX = clientX;
-        if (clientX - peakX > THUMBSTICK_THRESHOLD_PX) {
+        if (clientX - peakX > THUMBSTICK_REVERSAL_THRESHOLD_PX) {
           anchorX = peakX; peakX = clientX;
           commit('right');
         }
