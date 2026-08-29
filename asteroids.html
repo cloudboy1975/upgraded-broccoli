@@ -276,7 +276,7 @@
       <button class="btn secondary" id="resetBestBtn">Reset Best</button>
     </div>
 
-    <footer>Open this file directly in any browser &mdash; no install needed. &middot; <a href="index.html">More games</a> &middot; build 2026-08-22 20:42 UTC</footer>
+    <footer>Open this file directly in any browser &mdash; no install needed. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 00:51 UTC</footer>
   </div>
 
 <script>
@@ -676,7 +676,15 @@
     ctx.rotate(state.ship.heading);
 
     if (state.ship.thrusting) {
-      var flameLen = r * (0.8 + Math.random() * 0.5);
+      // A smooth, deterministic flicker (three overlapping sine waves at
+      // different frequencies) instead of a fresh independent random
+      // value every single frame - the old version reads as jitter since
+      // it can jump the full range between two consecutive frames with
+      // no continuity; this stays in the same [0.8r, 1.3r] range but
+      // varies continuously, so it still looks alive without shaking.
+      var t = performance.now() / 1000;
+      var wobble = (Math.sin(t * 23) + Math.sin(t * 11.3 + 1.7) + Math.sin(t * 31.9 + 4.2)) / 3;
+      var flameLen = r * (1.05 + wobble * 0.25);
       ctx.beginPath();
       ctx.moveTo(-r * 0.35, r * 0.4);
       ctx.lineTo(-r * 0.35 - flameLen, 0);
