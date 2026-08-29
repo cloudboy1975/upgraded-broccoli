@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Head-On (prototype)</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --bg-2: #1e293b;
+    --board: #1e293b;
+    --cell: #0f172a;
+    --line: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #22c55e;
+    --danger: #ef4444;
+    --swoop: #38bdf8;
+    --zigzag: #f472b6;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  body {
+    min-height: 100dvh;
+    background: radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .back-link {
+    align-self: flex-start;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 0;
+  }
+  .back-link:hover { color: var(--text); }
+
+  h1 {
+    font-size: clamp(1.4rem, 6vw, 2rem);
+    margin: 0;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: -6px 0 4px;
+    text-align: center;
+  }
+
+  .status-bar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-2);
+    border-radius: 16px;
+    padding: 12px 16px;
+    gap: 10px;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .status-text {
+    font-size: clamp(0.9rem, 3.8vw, 1.05rem);
+    font-weight: 600;
+    min-height: 1.4em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .turn-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .turn-dot.playing { background: var(--accent); }
+  .turn-dot.gameover { background: var(--danger); }
+
+  .scoreboard { display: flex; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+
+  .score-pill {
+    background: var(--cell);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    min-width: 44px;
+  }
+  .score-pill b { display: block; font-size: 1rem; color: var(--text); }
+
+  .canvas-wrap {
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 3 / 4;
+    position: relative;
+    background: var(--board);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    touch-action: none;
+  }
+
+  #gameCanvas { display: block; width: 100%; height: 100%; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.85);
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay.visible { display: flex; }
+  .overlay-title { font-size: 1.4rem; font-weight: 800; }
+  .overlay-score, .overlay-best { color: var(--muted); font-size: 0.95rem; }
+  .overlay-score b, .overlay-best b { color: var(--text); }
+  .overlay-btn { margin-top: 10px; min-width: 140px; flex: none; }
+
+  .control-bar {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+    touch-action: none;
+  }
+
+  .zone {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: var(--bg-2);
+    color: var(--text);
+    border-radius: 16px;
+    height: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    transition: background 0.1s, transform 0.08s;
+  }
+  .zone:active, .zone.active { background: #263449; transform: scale(0.97); }
+
+  .zone-shape { display: block; pointer-events: none; }
+  .zone-shape.arrow-left {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-right: 18px solid var(--text);
+  }
+  .zone-shape.arrow-right {
+    width: 0; height: 0;
+    border-top: 13px solid transparent;
+    border-bottom: 13px solid transparent;
+    border-left: 18px solid var(--text);
+  }
+  .zone-shape.fire-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .controls { display: flex; gap: 10px; width: 100%; }
+
+  .btn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 13px 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--accent); color: #052e16; }
+  .btn.secondary { background: var(--bg-2); color: var(--text); }
+  .btn:hover { filter: brightness(1.1); }
+
+  footer {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="app">
+    <a class="back-link" href="index.html">&larr; All games</a>
+    <h1>Head-On</h1>
+    <div class="subtitle">You stay put &mdash; strafing moves the corridor, not the ship</div>
+
+    <div class="status-bar">
+      <div class="status-text">
+        <span class="turn-dot playing" id="phaseDot"></span>
+        <span id="statusLabel">Playing</span>
+      </div>
+      <div class="scoreboard">
+        <div class="score-pill">Score<b id="scoreVal">0</b></div>
+        <div class="score-pill">Lives<b id="livesVal">3</b></div>
+        <div class="score-pill">Best<b id="bestVal">0</b></div>
+      </div>
+    </div>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="gameCanvas"></canvas>
+      <div class="overlay" id="gameOverOverlay">
+        <div class="overlay-title">Game Over</div>
+        <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
+        <div class="overlay-best">Best: <b id="overlayBest">0</b></div>
+        <button type="button" class="btn primary overlay-btn" id="overlayRestartBtn">Restart</button>
+      </div>
+    </div>
+
+    <div class="control-bar" id="controlBar">
+      <button type="button" class="zone zone-left" id="zoneLeft" aria-label="Strafe left"><span class="zone-shape arrow-left" aria-hidden="true"></span></button>
+      <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
+      <button type="button" class="zone zone-right" id="zoneRight" aria-label="Strafe right"><span class="zone-shape arrow-right" aria-hidden="true"></span></button>
+    </div>
+
+    <div class="controls">
+      <button class="btn primary" id="restartBtn">Restart</button>
+      <button class="btn secondary" id="resetBestBtn">Reset Best</button>
+    </div>
+
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 01:20 UTC</footer>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Constants ------------------------------------------------------
+  var HIGH_SCORE_KEY = 'headon-highscore-v1';
+
+  var SHIP_RADIUS = 13;
+  var SHIP_SCREEN_Y_FRACTION = 0.82; // ship is drawn fixed at 82% down the canvas
+  var STRAFE_SPEED = 240; // px/sec at full hold
+  var STRAFE_SMOOTH = 16; // per-second lerp rate toward target velocity - snappy, not drifty
+  var CORRIDOR_HALF_WIDTH = 150; // world units the ship can strafe within
+
+  var BULLET_RADIUS = 3;
+  var BULLET_SPEED = 520;
+  var BULLET_LIFETIME = 1.1; // seconds
+  var FIRE_COOLDOWN_MS = 220;
+
+  var RESPAWN_INVULN_MS = 1500;
+  var MAX_DT = 0.05;
+
+  var ENEMY_SPAWN_Y = -560; // world Y enemies enter at (far ahead of the ship)
+  var ENEMY_DESPAWN_Y = 90; // world Y past which a missed enemy is gone for good
+  var SPAWN_INTERVAL_START = 1.15;
+  var SPAWN_INTERVAL_MIN = 0.5;
+
+  // Three dive patterns, each with a distinct shape/color so they're
+  // readable at a glance - straight is the baseline threat, swoop and
+  // zigzag are progressively harder to predict and worth more.
+  var ENEMY_TYPES = {
+    straight: { radius: 14, speed: 120, score: 50,  color: '#22c55e' },
+    swoop:    { radius: 14, speed: 145, score: 80,  color: '#38bdf8' },
+    zigzag:   { radius: 12, speed: 165, score: 120, color: '#f472b6' }
+  };
+  var ENEMY_TYPE_KEYS = ['straight', 'swoop', 'zigzag'];
+
+  var COLOR_SHIP = '#e2e8f0';
+  var COLOR_BULLET = '#22c55e';
+  var COLOR_STAR = 'rgba(148, 163, 184, 0.55)';
+  var COLOR_WALL = 'rgba(56, 189, 248, 0.35)';
+
+  // ---- DOM --------------------------------------------------------------
+  var canvasWrap = document.getElementById('canvasWrap');
+  var canvas = document.getElementById('gameCanvas');
+  var ctx = canvas.getContext('2d');
+  var overlayEl = document.getElementById('gameOverOverlay');
+  var overlayScoreEl = document.getElementById('overlayScore');
+  var overlayBestEl = document.getElementById('overlayBest');
+  var overlayRestartBtn = document.getElementById('overlayRestartBtn');
+  var restartBtn = document.getElementById('restartBtn');
+  var resetBestBtn = document.getElementById('resetBestBtn');
+  var phaseDotEl = document.getElementById('phaseDot');
+  var statusLabelEl = document.getElementById('statusLabel');
+  var scoreValEl = document.getElementById('scoreVal');
+  var livesValEl = document.getElementById('livesVal');
+  var bestValEl = document.getElementById('bestVal');
+  var controlBar = document.getElementById('controlBar');
+  var zoneLeft = document.getElementById('zoneLeft');
+  var zoneMid = document.getElementById('zoneMid');
+  var zoneRight = document.getElementById('zoneRight');
+
+  // ---- State --------------------------------------------------------------
+  var state = {
+    phase: 'playing', // 'playing' | 'gameover'
+    ship: {
+      x: 0, vx: 0,
+      invulnerableUntil: 0,
+      radius: SHIP_RADIUS
+    },
+    bullets: [],
+    enemies: [],
+    lives: 3,
+    score: 0,
+    highScore: 0,
+    nextEnemyId: 1,
+    input: { left: false, right: false, fire: false },
+    spawn: { timer: SPAWN_INTERVAL_START },
+    fireCooldown: 0,
+    difficulty: { elapsed: 0 },
+    canvasCssW: 0, canvasCssH: 0, canvasDpr: 1,
+    timing: { lastFrameTime: 0 }
+  };
+  // Read-only debug hook for smoke-testing (harmless at runtime).
+  window.__headOnDebugState = state;
+
+  var stars = [];
+
+  // ---- Persistence ------------------------------------------------------
+  function loadHighScore() {
+    try {
+      var raw = localStorage.getItem(HIGH_SCORE_KEY);
+      var n = parseInt(raw, 10);
+      state.highScore = (isFinite(n) && n > 0) ? n : 0;
+    } catch (e) { /* ignore storage errors */ }
+  }
+  function saveHighScore() {
+    try { localStorage.setItem(HIGH_SCORE_KEY, String(state.highScore)); } catch (e) {}
+  }
+
+  // ---- Canvas sizing ------------------------------------------------------
+  function resizeCanvas() {
+    var rect = canvasWrap.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.round(rect.width);
+    var h = Math.round(rect.height);
+    if (w === state.canvasCssW && h === state.canvasCssH && dpr === state.canvasDpr) return;
+    state.canvasCssW = w;
+    state.canvasCssH = h;
+    state.canvasDpr = dpr;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    generateStars();
+  }
+
+  function generateStars() {
+    stars = [];
+    var count = Math.round((state.canvasCssW * state.canvasCssH) / 3500);
+    for (var i = 0; i < count; i++) {
+      stars.push({
+        // Stars live in world space too, so they parallax correctly with
+        // strafing - they just also drift toward the ship on their own,
+        // independent of gameplay, purely for a "flying forward" cue.
+        x: (Math.random() - 0.5) * state.canvasCssW * 2.2,
+        y: ENEMY_SPAWN_Y - Math.random() * 400,
+        speed: 60 + Math.random() * 90,
+        r: Math.random() * 1.3 + 0.4
+      });
+    }
+  }
+
+  var resizeTimer = null;
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resizeCanvas, 150);
+  }
+
+  // ---- World <-> screen ------------------------------------------------------
+  // The whole experiment: the ship never actually moves on screen. Every
+  // other world object is offset by how far the ship has strafed, same
+  // camera trick as Asteroids - just applied to a fixed forward-facing
+  // corridor instead of a free-rotating field.
+  function worldToScreen(wx, wy) {
+    return {
+      x: wx - state.ship.x + state.canvasCssW / 2,
+      y: state.canvasCssH * SHIP_SCREEN_Y_FRACTION + wy
+    };
+  }
+
+  // ---- Input: composition ------------------------------------------------------
+  var touchLeft = false, touchRight = false, touchFire = false;
+  var kbLeft = false, kbRight = false, kbFire = false;
+  var HOLD_WATCHDOG_MS = 12000;
+
+  function composeInput() {
+    state.input.left = touchLeft || kbLeft;
+    state.input.right = touchRight || kbRight;
+    state.input.fire = touchFire || kbFire;
+  }
+
+  var heldZoneResets = [];
+
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
+  // Left, right, and fire are all just "held or not" - no tap-vs-hold
+  // distinction needed anywhere now that fire has no secondary hold
+  // behavior, so one binder covers all three zones.
+  function bindHoldZone(el, setFlag) {
+    var activeId = null;
+    var watchdogTimer = null;
+    suppressCallout(el);
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+      setFlag(false);
+      composeInput();
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      hardRelease(); // release any stale/stuck session instead of ignoring the new press
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      setFlag(true);
+      composeInput();
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  }
+
+  bindHoldZone(zoneLeft, function (v) { touchLeft = v; });
+  bindHoldZone(zoneRight, function (v) { touchRight = v; });
+  bindHoldZone(zoneMid, function (v) { touchFire = v; });
+
+  // ---- Input: keyboard ------------------------------------------------------
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isFireKey(code) { return code === 'Space' || code === 'ArrowUp' || code === 'KeyW'; }
+
+  document.addEventListener('keydown', function (e) {
+    if (isFireKey(e.code)) e.preventDefault();
+    if (isLeftKey(e.code)) { kbLeft = true; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = true; composeInput(); }
+    else if (isFireKey(e.code)) { kbFire = true; composeInput(); }
+  });
+  document.addEventListener('keyup', function (e) {
+    if (isLeftKey(e.code)) { kbLeft = false; composeInput(); }
+    else if (isRightKey(e.code)) { kbRight = false; composeInput(); }
+    else if (isFireKey(e.code)) { kbFire = false; composeInput(); }
+  });
+
+  function forceReleaseKeyboard() {
+    if (kbLeft || kbRight || kbFire) {
+      kbLeft = false; kbRight = false; kbFire = false;
+      composeInput();
+    }
+  }
+  function forceReleaseAllInput() {
+    heldZoneResets.forEach(function (fn) { fn(); });
+    forceReleaseKeyboard();
+  }
+  window.addEventListener('blur', forceReleaseAllInput);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      forceReleaseAllInput();
+    } else {
+      state.timing.lastFrameTime = 0;
+      if (!rafId) rafId = requestAnimationFrame(frame);
+    }
+  });
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
+
+  // Same pinch-zoom safety net as the other games in this collection.
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var zoomResetTimer = null;
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+    function scheduleZoomCheck() {
+      clearTimeout(zoomResetTimer);
+      zoomResetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+  })();
+
+  // ---- Math helpers ------------------------------------------------------
+  function randRange(range) { return range[0] + Math.random() * (range[1] - range[0]); }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ---- Firing ------------------------------------------------------
+  function fireBullet() {
+    state.bullets.push({
+      x: state.ship.x,
+      y: -state.ship.radius,
+      vy: -BULLET_SPEED,
+      ttl: BULLET_LIFETIME
+    });
+  }
+
+  // ---- Enemies: three dive patterns ------------------------------------------------------
+  function createEnemy(type) {
+    var cfg = ENEMY_TYPES[type];
+    var spawnX;
+    if (type === 'swoop') {
+      // Enters from a hard edge, well outside the corridor - the swoop
+      // then carries it inward.
+      spawnX = (Math.random() < 0.5 ? -1 : 1) * (CORRIDOR_HALF_WIDTH * 1.4);
+    } else {
+      spawnX = randRange([-CORRIDOR_HALF_WIDTH * 0.85, CORRIDOR_HALF_WIDTH * 0.85]);
+    }
+    return {
+      id: state.nextEnemyId++,
+      type: type,
+      spawnX: spawnX,
+      x: spawnX,
+      y: ENEMY_SPAWN_Y,
+      age: 0,
+      phase: Math.random() * Math.PI * 2,
+      radius: cfg.radius,
+      color: cfg.color,
+      score: cfg.score
+    };
+  }
+
+  function updateEnemy(en, dt) {
+    en.age += dt;
+    var cfg = ENEMY_TYPES[en.type];
+    en.y += cfg.speed * dt;
+
+    if (en.type === 'straight') {
+      // A light, constant pull toward the ship's current x - reads as a
+      // simple bee-line dive, not a hard homing missile.
+      en.x += (state.ship.x - en.x) * 0.5 * dt;
+    } else if (en.type === 'swoop') {
+      // The dive's center drifts from the entry edge toward the corridor
+      // center over ~2.2s, with a sine wobble riding on top - the classic
+      // Galaga S-curve dive-bomb.
+      var t = Math.min(en.age / 2.2, 1);
+      var center = en.spawnX * (1 - t);
+      en.x = center + Math.sin(en.age * 3.1 + en.phase) * 46;
+    } else if (en.type === 'zigzag') {
+      // Fast, sharp lateral oscillation - erratic and hard to predict.
+      en.x = en.spawnX + Math.sin(en.age * 8.4 + en.phase) * 78;
+    }
+  }
+
+  function isInvulnerable() { return performance.now() < state.ship.invulnerableUntil; }
+
+  // ---- Spawning ------------------------------------------------------
+  function spawnInterval() {
+    return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_START - state.difficulty.elapsed / 40);
+  }
+
+  function trySpawnEnemy(dt) {
+    state.spawn.timer -= dt;
+    if (state.spawn.timer > 0) return;
+    state.spawn.timer = spawnInterval();
+    // Zigzag and swoop become more common as difficulty ramps, but
+    // straight divers never stop showing up.
+    var roll = Math.random();
+    var zigzagChance = Math.min(0.15 + state.difficulty.elapsed / 200, 0.4);
+    var swoopChance = Math.min(0.25 + state.difficulty.elapsed / 250, 0.4);
+    var type = roll < zigzagChance ? 'zigzag' : (roll < zigzagChance + swoopChance ? 'swoop' : 'straight');
+    state.enemies.push(createEnemy(type));
+  }
+
+  // ---- Physics update ------------------------------------------------------
+  function updateShip(dt) {
+    var ship = state.ship;
+    var targetVx = 0;
+    if (state.input.left) targetVx -= STRAFE_SPEED;
+    if (state.input.right) targetVx += STRAFE_SPEED;
+    ship.vx += (targetVx - ship.vx) * Math.min(1, STRAFE_SMOOTH * dt);
+    ship.x += ship.vx * dt;
+    ship.x = clamp(ship.x, -CORRIDOR_HALF_WIDTH + ship.radius, CORRIDOR_HALF_WIDTH - ship.radius);
+  }
+
+  function updateBullets(dt) {
+    for (var i = state.bullets.length - 1; i >= 0; i--) {
+      var b = state.bullets[i];
+      b.y += b.vy * dt;
+      b.ttl -= dt;
+      if (b.ttl <= 0) state.bullets.splice(i, 1);
+    }
+  }
+
+  function updateEnemies(dt) {
+    for (var i = state.enemies.length - 1; i >= 0; i--) {
+      var en = state.enemies[i];
+      updateEnemy(en, dt);
+      if (en.y > ENEMY_DESPAWN_Y) state.enemies.splice(i, 1);
+    }
+  }
+
+  function updateFiring(dt) {
+    state.fireCooldown -= dt * 1000;
+    if (state.input.fire && state.fireCooldown <= 0 && state.phase === 'playing') {
+      fireBullet();
+      state.fireCooldown = FIRE_COOLDOWN_MS;
+    }
+  }
+
+  function handleCollisions() {
+    for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
+      var b = state.bullets[bi];
+      for (var ei = state.enemies.length - 1; ei >= 0; ei--) {
+        var en = state.enemies[ei];
+        var dx = b.x - en.x, dy = b.y - en.y;
+        var rr = en.radius + BULLET_RADIUS;
+        if (dx * dx + dy * dy <= rr * rr) {
+          state.bullets.splice(bi, 1);
+          state.enemies.splice(ei, 1);
+          addScore(en.score);
+          break;
+        }
+      }
+    }
+
+    if (!isInvulnerable()) {
+      for (var i = state.enemies.length - 1; i >= 0; i--) {
+        var e = state.enemies[i];
+        var sx = e.x - state.ship.x, sy = e.y - 0;
+        var sr = state.ship.radius + e.radius;
+        if (sx * sx + sy * sy <= sr * sr) {
+          state.enemies.splice(i, 1);
+          shipHit();
+          break;
+        }
+      }
+    }
+  }
+
+  function addScore(n) {
+    state.score += n;
+    if (state.score > state.highScore) {
+      state.highScore = state.score;
+      saveHighScore();
+    }
+    renderHud();
+  }
+
+  function shipHit() {
+    state.lives--;
+    if (state.lives <= 0) {
+      state.lives = 0;
+      endGame();
+    } else {
+      respawnShip();
+    }
+    renderHud();
+  }
+
+  function respawnShip() {
+    state.ship.vx = 0;
+    state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+  }
+
+  function endGame() {
+    state.phase = 'gameover';
+    overlayScoreEl.textContent = state.score;
+    overlayBestEl.textContent = state.highScore;
+    overlayEl.classList.add('visible');
+  }
+
+  function resetBest() {
+    state.highScore = 0;
+    saveHighScore();
+    renderHud();
+  }
+
+  // ---- Rendering ------------------------------------------------------
+  function drawBackground(dt) {
+    ctx.fillStyle = COLOR_STAR;
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      s.y += s.speed * dt;
+      if (s.y > ENEMY_DESPAWN_Y + 40) {
+        s.y = ENEMY_SPAWN_Y - Math.random() * 200;
+        s.x = (Math.random() - 0.5) * state.canvasCssW * 2.2;
+      }
+      var p = worldToScreen(s.x, s.y);
+      if (p.x < -5 || p.x > state.canvasCssW + 5) continue;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawCorridorWalls() {
+    var left = worldToScreen(-CORRIDOR_HALF_WIDTH, 0).x;
+    var right = worldToScreen(CORRIDOR_HALF_WIDTH, 0).x;
+    ctx.strokeStyle = COLOR_WALL;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(left, 0); ctx.lineTo(left, state.canvasCssH);
+    ctx.moveTo(right, 0); ctx.lineTo(right, state.canvasCssH);
+    ctx.stroke();
+  }
+
+  function drawBullet(b) {
+    var p = worldToScreen(b.x, b.y);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = COLOR_BULLET;
+    ctx.fill();
+  }
+
+  function drawEnemy(en) {
+    var p = worldToScreen(en.x, en.y);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.fillStyle = en.color;
+    ctx.beginPath();
+    if (en.type === 'straight') {
+      // Triangle pointing down (toward the ship).
+      ctx.moveTo(0, en.radius);
+      ctx.lineTo(-en.radius, -en.radius * 0.7);
+      ctx.lineTo(en.radius, -en.radius * 0.7);
+    } else if (en.type === 'swoop') {
+      // Diamond.
+      ctx.moveTo(0, -en.radius);
+      ctx.lineTo(en.radius, 0);
+      ctx.lineTo(0, en.radius);
+      ctx.lineTo(-en.radius, 0);
+    } else {
+      // Zigzag: a square, slightly rotated with its own phase for flair.
+      ctx.rotate(Math.sin(en.age * 8.4 + en.phase) * 0.4);
+      ctx.rect(-en.radius * 0.8, -en.radius * 0.8, en.radius * 1.6, en.radius * 1.6);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawShip() {
+    if (isInvulnerable() && Math.floor(performance.now() / 100) % 2 === 0) return;
+    var cx = state.canvasCssW / 2;
+    var cy = state.canvasCssH * SHIP_SCREEN_Y_FRACTION;
+    var r = state.ship.radius;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.75, r * 0.7);
+    ctx.lineTo(0, r * 0.35);
+    ctx.lineTo(-r * 0.75, r * 0.7);
+    ctx.closePath();
+    ctx.strokeStyle = COLOR_SHIP;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function render(dt) {
+    ctx.clearRect(0, 0, state.canvasCssW, state.canvasCssH);
+    drawBackground(dt);
+    drawCorridorWalls();
+    for (var i = 0; i < state.enemies.length; i++) drawEnemy(state.enemies[i]);
+    for (var j = 0; j < state.bullets.length; j++) drawBullet(state.bullets[j]);
+    drawShip();
+  }
+
+  // ---- HUD ------------------------------------------------------
+  function renderHud() {
+    scoreValEl.textContent = state.score;
+    livesValEl.textContent = state.lives;
+    bestValEl.textContent = state.highScore;
+    phaseDotEl.className = 'turn-dot ' + (state.phase === 'playing' ? 'playing' : 'gameover');
+    statusLabelEl.textContent = state.phase === 'playing' ? 'Playing' : 'Game Over';
+  }
+
+  // ---- Reset / restart ------------------------------------------------------
+  function resetGame() {
+    state.phase = 'playing';
+    state.ship.x = 0;
+    state.ship.vx = 0;
+    state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+    state.bullets = [];
+    state.enemies = [];
+    state.lives = 3;
+    state.score = 0;
+    state.nextEnemyId = 1;
+    state.spawn.timer = SPAWN_INTERVAL_START;
+    state.fireCooldown = 0;
+    state.difficulty.elapsed = 0;
+    state.timing.lastFrameTime = 0;
+    overlayEl.classList.remove('visible');
+    renderHud();
+  }
+
+  // ---- Game loop ------------------------------------------------------
+  function update(dt) {
+    updateShip(dt);
+    updateBullets(dt);
+    updateEnemies(dt);
+    updateFiring(dt);
+    trySpawnEnemy(dt);
+    handleCollisions();
+    state.difficulty.elapsed += dt;
+  }
+
+  var rafId = null;
+  function frame(ts) {
+    rafId = requestAnimationFrame(frame);
+    if (!state.timing.lastFrameTime) { state.timing.lastFrameTime = ts; return; }
+    var dt = Math.min((ts - state.timing.lastFrameTime) / 1000, MAX_DT);
+    state.timing.lastFrameTime = ts;
+    if (state.phase === 'playing') update(dt);
+    render(dt);
+  }
+
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+  restartBtn.addEventListener('click', resetGame);
+  overlayRestartBtn.addEventListener('click', resetGame);
+  resetBestBtn.addEventListener('click', resetBest);
+
+  // ---- Init ------------------------------------------------------
+  resizeCanvas();
+  loadHighScore();
+  resetGame();
+  rafId = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
