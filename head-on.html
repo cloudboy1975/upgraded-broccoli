@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 07:20 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 15:30 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -408,12 +408,14 @@
   var STRIP_FALL_SPEED = 130;
   var STRIP_SPAWN_INTERVAL = 3.0; // seconds between strips, independent of the wave/dive timers
   var STRIP_ALPHA = 0.45;
-  // How far the ship may drift from a strip's center and still count as
-  // "covering" it - checked every frame the strip is passing, not just at
-  // one instant, so clipping an edge and drifting off doesn't count.
-  // Simplified to a flat tolerance rather than exact-rect containment for
-  // ease of prototyping; can be tightened once this is playtested.
-  var STRIP_ALIGN_TOLERANCE = 7;
+  // How far the ship's center may be from a strip's center and still count
+  // as touching it - the ship's radius plus half the strip's width, i.e.
+  // real overlap between the two, not near-perfect centering. Feedback
+  // after the first pass ("too hard to get completely under the strip")
+  // relaxed this from requiring near-full containment to just contact -
+  // checked every frame the strip is passing, not just at one instant, so
+  // clipping it once and then drifting away still doesn't count.
+  var STRIP_TOUCH_RANGE = SHIP_RADIUS + STRIP_WIDTH / 2;
 
   // The collected-color dots orbit the SHIP (not an enemy) - reusing the
   // core's orbiting-dot look for now, one dot per distinct color banked,
@@ -1248,11 +1250,12 @@
       s.sprite.y = s.y;
 
       // While the strip overlaps the ship's y-band, it has to stay aligned
-      // for the WHOLE pass, not just at one instant - drifting off at any
+      // for the WHOLE pass, not just at one instant - losing contact at any
       // point marks it missed, even if the ship wanders back under it
-      // later. That's "touch the whole strip", not just clip an edge.
+      // later. That's "touching it the whole time", not just clipping it
+      // once.
       var overlappingBand = (s.y + STRIP_HEIGHT / 2 > SHIP_Y - SHIP_RADIUS) && (s.y - STRIP_HEIGHT / 2 < SHIP_Y + SHIP_RADIUS);
-      if (overlappingBand && Math.abs(state.ship.x - s.x) > STRIP_ALIGN_TOLERANCE) {
+      if (overlappingBand && Math.abs(state.ship.x - s.x) > STRIP_TOUCH_RANGE) {
         s.missed = true;
       }
 
