@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 15:30 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 16:10 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -417,6 +417,15 @@
   // clipping it once and then drifting away still doesn't count.
   var STRIP_TOUCH_RANGE = SHIP_RADIUS + STRIP_WIDTH / 2;
 
+  // As a strip passes, the ship fills with its color proportionately to
+  // how far through the pass it is - moment-to-moment feedback for "stay
+  // under it", not just a pass/fail check at the end. On success the fill
+  // (now full) fades back out as the orbiting dot appears, reading as a
+  // handoff; on a miss, whatever partial fill it had reached freezes for
+  // an instant, then fades the same way - visible proof of how close it
+  // was, with no dot to show for it.
+  var SHIP_FILL_FADE_DURATION = 0.4; // seconds
+
   // The collected-color dots orbit the SHIP (not an enemy) - reusing the
   // core's orbiting-dot look for now, one dot per distinct color banked,
   // so having two or three visibly reads as "more charged" with no new art.
@@ -486,6 +495,26 @@
       g.closePath();
       g.strokePath();
       g.generateTexture('shipTex', size, size);
+      g.destroy();
+    })();
+
+    // Ship fill: same silhouette, solid instead of outlined, in white so
+    // it can be tinted per strip color and masked to reveal proportionately
+    // - the powerup-strip progress effect. Layered underneath shipTex.
+    (function () {
+      var r = SHIP_RADIUS;
+      var size = r * 2 + 4;
+      var cx = size / 2, cy = size / 2;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0xffffff, 1);
+      g.beginPath();
+      g.moveTo(cx, cy - r);
+      g.lineTo(cx + r * 0.75, cy + r * 0.7);
+      g.lineTo(cx, cy + r * 0.35);
+      g.lineTo(cx - r * 0.75, cy + r * 0.7);
+      g.closePath();
+      g.fillPath();
+      g.generateTexture('shipFillTex', size, size);
       g.destroy();
     })();
 
@@ -576,6 +605,7 @@
       starburstFx: null, // visual-only expanding ring when the core is shot directly
       strips: [], // falling colored powerup strips - see spawnStrip()/updateStrips()
       stripTimer: STRIP_SPAWN_INTERVAL,
+      shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       powerup: { colors: [], dots: [], angle: 0 }, // banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
       lives: 3,
       score: 0,
@@ -608,6 +638,15 @@
         r: Math.random() * 1.3 + 0.4
       });
     }
+
+    // The ship-fill effect: a colored, masked copy of the ship sits UNDER
+    // the outline (added first, so the outline draws on top of it) and
+    // starts hidden - updateShipFill() reveals and tints it as a strip
+    // passes through.
+    this.shipFillSprite = this.add.sprite(GAME_WIDTH / 2, SHIP_Y, 'shipFillTex');
+    this.shipFillSprite.setVisible(false);
+    this.shipFillMaskGfx = this.make.graphics();
+    this.shipFillSprite.setMask(this.shipFillMaskGfx.createGeometryMask());
 
     this.shipSprite = this.add.sprite(GAME_WIDTH / 2, SHIP_Y, 'shipTex');
     this.spawnFormation();
@@ -1244,29 +1283,85 @@
       this.spawnStrip();
     }
 
+    var bandEnterY = SHIP_Y - SHIP_RADIUS - STRIP_HEIGHT / 2; // strip's y when its leading edge first reaches the ship
+    var bandExitY = SHIP_Y + SHIP_RADIUS + STRIP_HEIGHT / 2;  // strip's y once it's fully cleared the ship
+
     for (var i = state.strips.length - 1; i >= 0; i--) {
       var s = state.strips[i];
       s.y += STRIP_FALL_SPEED * dt;
       s.sprite.y = s.y;
 
-      // While the strip overlaps the ship's y-band, it has to stay aligned
-      // for the WHOLE pass, not just at one instant - losing contact at any
-      // point marks it missed, even if the ship wanders back under it
-      // later. That's "touching it the whole time", not just clipping it
-      // once.
-      var overlappingBand = (s.y + STRIP_HEIGHT / 2 > SHIP_Y - SHIP_RADIUS) && (s.y - STRIP_HEIGHT / 2 < SHIP_Y + SHIP_RADIUS);
-      if (overlappingBand && Math.abs(state.ship.x - s.x) > STRIP_TOUCH_RANGE) {
-        s.missed = true;
+      // While the strip overlaps the ship's y-band, it has to stay in
+      // contact for the WHOLE pass, not just at one instant - losing
+      // contact at any point marks it missed, even if the ship wanders
+      // back under it later. That's "touching it the whole time", not
+      // just clipping it once.
+      var overlappingBand = s.y > bandEnterY && s.y < bandExitY;
+      if (overlappingBand && !s.missed) {
+        if (Math.abs(state.ship.x - s.x) <= STRIP_TOUCH_RANGE) {
+          // Fill the ship proportionately with how far through the pass
+          // the strip is - visible, moment-to-moment feedback for "stay
+          // under it", not just a pass/fail check at the end.
+          var progress = clamp((s.y - bandEnterY) / (bandExitY - bandEnterY), 0, 1);
+          state.shipFill.mode = 'filling';
+          state.shipFill.color = s.colorKey;
+          state.shipFill.level = progress;
+        } else {
+          // Contact lost mid-pass - freeze whatever fill it had reached
+          // and let it fade back out; no color banked, no orbiting dot.
+          s.missed = true;
+          state.shipFill.mode = 'fading';
+        }
       }
 
       if (s.y - STRIP_HEIGHT / 2 > SHIP_Y + SHIP_RADIUS) {
-        // Fully passed the ship's band - collect only if it stayed aligned
-        // the entire way through.
-        if (!s.missed) this.collectColor(s.colorKey);
+        // Fully passed the ship's band - collect only if it stayed in
+        // contact the entire way through.
+        if (!s.missed) {
+          this.collectColor(s.colorKey);
+          // Held it the whole way - the ship's fully colored right now;
+          // fading it back out is what visually hands the color off to
+          // the orbiting dot collectColor() just spawned.
+          state.shipFill.mode = 'fading';
+          state.shipFill.level = 1;
+        }
         s.sprite.destroy();
         state.strips.splice(i, 1);
       }
     }
+  };
+
+  MainScene.prototype.updateShipFill = function (dt) {
+    var state = this.state;
+    var fill = state.shipFill;
+    if (fill.mode === 'fading') {
+      fill.level -= dt / SHIP_FILL_FADE_DURATION;
+      if (fill.level <= 0) {
+        fill.level = 0;
+        fill.mode = 'idle';
+        fill.color = null;
+      }
+    }
+
+    var sprite = this.shipFillSprite;
+    if (fill.mode === 'idle' || !fill.color || fill.level <= 0) {
+      sprite.setVisible(false);
+      this.shipFillMaskGfx.clear();
+      return;
+    }
+
+    sprite.setVisible(true);
+    sprite.setTint(STRIP_COLORS[fill.color]);
+    sprite.x = state.ship.x;
+    sprite.y = SHIP_Y;
+
+    // Reveals the filled silhouette from top to bottom as the level grows,
+    // mirroring the direction the strip itself travels through the ship.
+    var size = SHIP_RADIUS * 2 + 4; // matches shipFillTex's generated size
+    var maskGfx = this.shipFillMaskGfx;
+    maskGfx.clear();
+    maskGfx.fillStyle(0xffffff);
+    maskGfx.fillRect(sprite.x - size / 2, sprite.y - size / 2, size, size * fill.level);
   };
 
   // Banks a distinct color (duplicates are a no-op - no stacking the same
@@ -1382,6 +1477,11 @@
     state.strips.forEach(function (s) { s.sprite.destroy(); });
     state.strips = [];
     state.stripTimer = STRIP_SPAWN_INTERVAL;
+    state.shipFill.level = 0;
+    state.shipFill.color = null;
+    state.shipFill.mode = 'idle';
+    this.shipFillSprite.setVisible(false);
+    this.shipFillMaskGfx.clear();
     this.clearPowerup();
 
     state.phase = 'playing';
@@ -1443,6 +1543,7 @@
       this.updateCore(dt);
       this.updateStarburstFx(dt);
       this.updateStrips(dt);
+      this.updateShipFill(dt);
       this.updatePowerupDots(dt);
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
