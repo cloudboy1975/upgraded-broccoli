@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 17:35 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 18:10 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -439,6 +439,25 @@
   // deliberately per direct feedback ("I didn't even realize we had hold
   // for rapid fire - that can go in favor of hold for this").
   var FIRE_LONG_PRESS_MS = 450;
+
+  // A second kind of powerup: a short, self-contained pod that falls with
+  // a small ball already revolving around it. Touch is enough to collect
+  // it safely - one instant of contact, no "whole pass" requirement like
+  // the color strips - and it acts like the other powerups (their actual
+  // effect is still undefined, so for now it just banks a random color,
+  // same payoff as catching a strip). But shoot the pod instead of
+  // touching it and the ball breaks loose, flying straight at wherever
+  // the ship was at that moment - a real threat you have to dodge, not a
+  // bonus, same spirit as the enemy's own flying core.
+  var ORB_RADIUS = 11;
+  var ORB_BALL_RADIUS = 4;
+  var ORB_BALL_ORBIT_RADIUS = 16;
+  var ORB_BALL_ORBIT_SPEED = 5; // rad/sec - a touch faster than the enemy core's orbit, reads as more agitated
+  var ORB_FALL_SPEED = 110;
+  var ORB_SPAWN_INTERVAL = 7.0; // seconds - rarer than the color strips
+  var ORB_BALL_HAZARD_SPEED = 260; // straight-line speed once released
+  var ORB_BALL_HAZARD_LIFETIME = 2.5; // seconds before an unclaimed released ball fizzles
+  var COLOR_ORB = 0xa78bfa; // violet - visually distinct from the RGB strips and the enemy core's red
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
@@ -589,6 +608,25 @@
       g.generateTexture('powerupDotTex_' + key, d, d);
       g.destroy();
     });
+
+    // Orb pod: a short, solid violet disc, plus its own small orbiting
+    // ball - the second powerup type.
+    (function () {
+      var d = ORB_RADIUS * 2;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_ORB, 1);
+      g.fillCircle(ORB_RADIUS, ORB_RADIUS, ORB_RADIUS);
+      g.generateTexture('orbTex', d, d);
+      g.destroy();
+    })();
+    (function () {
+      var d = ORB_BALL_RADIUS * 2;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_ORB, 1);
+      g.fillCircle(ORB_BALL_RADIUS, ORB_BALL_RADIUS, ORB_BALL_RADIUS);
+      g.generateTexture('orbBallTex', d, d);
+      g.destroy();
+    })();
   };
 
   MainScene.prototype.initState = function () {
@@ -607,6 +645,9 @@
       stripTimer: STRIP_SPAWN_INTERVAL,
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       powerup: { colors: [], dots: [], angle: 0 }, // banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
+      orbs: [], // falling touch-to-collect pods with an orbiting ball - see spawnOrb()/updateOrbs()
+      orbTimer: ORB_SPAWN_INTERVAL,
+      orbHazards: [], // balls released by shooting an orb instead of collecting it - see releaseOrbHazard()/updateOrbHazards()
       lives: 3,
       score: 0,
       highScore: loadHighScore(),
@@ -1115,6 +1156,24 @@
         }
       }
 
+      // Shooting an orb pod (instead of touching it) is what turns it
+      // dangerous - its ball breaks loose and comes straight at the ship.
+      var hitOrb = false;
+      for (var oi = 0; oi < state.orbs.length; oi++) {
+        var orbHit = state.orbs[oi];
+        var odx = b.x - orbHit.x, ody = b.y - orbHit.y;
+        var orr = ORB_RADIUS + BULLET_RADIUS;
+        if (odx * odx + ody * ody <= orr * orr) {
+          b.sprite.destroy(); state.bullets.splice(bi, 1);
+          this.releaseOrbHazard(orbHit);
+          orbHit.hostSprite.destroy();
+          state.orbs.splice(oi, 1);
+          hitOrb = true;
+          break;
+        }
+      }
+      if (hitOrb) continue;
+
       for (var si = 0; si < state.formation.length; si++) {
         var slot = state.formation[si];
         if (!slot.alive) continue;
@@ -1426,6 +1485,110 @@
     }
   };
 
+  // ---- Orb pods (second powerup type) ------------------------------------------------------
+  MainScene.prototype.spawnOrb = function () {
+    var margin = ORB_RADIUS + 4;
+    var x = margin + Math.random() * (GAME_WIDTH - margin * 2);
+    this.state.orbs.push({
+      x: x, y: -ORB_RADIUS,
+      angle: Math.random() * Math.PI * 2,
+      hostSprite: this.add.sprite(x, -ORB_RADIUS, 'orbTex'),
+      ballSprite: this.add.sprite(x, -ORB_RADIUS, 'orbBallTex')
+    });
+  };
+
+  // Acts like the other powerups - whose actual effect isn't decided yet -
+  // so for now this is the same payoff as successfully catching a color
+  // strip: banks one random color.
+  MainScene.prototype.collectOrb = function () {
+    var colorKey = STRIP_COLOR_KEYS[Math.floor(Math.random() * STRIP_COLOR_KEYS.length)];
+    this.collectColor(colorKey);
+  };
+
+  MainScene.prototype.updateOrbs = function (dt) {
+    var state = this.state;
+    state.orbTimer -= dt;
+    if (state.orbTimer <= 0) {
+      state.orbTimer = ORB_SPAWN_INTERVAL;
+      this.spawnOrb();
+    }
+
+    for (var i = state.orbs.length - 1; i >= 0; i--) {
+      var orb = state.orbs[i];
+      orb.y += ORB_FALL_SPEED * dt;
+      orb.angle += ORB_BALL_ORBIT_SPEED * dt;
+      orb.hostSprite.x = orb.x; orb.hostSprite.y = orb.y;
+      orb.ballSprite.x = orb.x + Math.cos(orb.angle) * ORB_BALL_ORBIT_RADIUS;
+      orb.ballSprite.y = orb.y + Math.sin(orb.angle) * ORB_BALL_ORBIT_RADIUS;
+
+      // Touching the pod is enough to collect it safely - a single
+      // instant of contact, unlike the color strips' whole-pass
+      // requirement.
+      var sdx = orb.x - state.ship.x, sdy = orb.y - SHIP_Y;
+      var srr = ORB_RADIUS + state.ship.radius;
+      if (sdx * sdx + sdy * sdy <= srr * srr) {
+        this.collectOrb();
+        orb.hostSprite.destroy();
+        orb.ballSprite.destroy();
+        state.orbs.splice(i, 1);
+        continue;
+      }
+
+      if (orb.y - ORB_RADIUS > GAME_HEIGHT + 10) {
+        // Missed - just gone, same as an unclaimed strip, no side effects.
+        orb.hostSprite.destroy();
+        orb.ballSprite.destroy();
+        state.orbs.splice(i, 1);
+      }
+    }
+  };
+
+  // Shooting the pod (instead of touching it) detaches its ball and sends
+  // it straight at wherever the ship was at that moment - a fixed
+  // trajectory, not a live homing missile (same reasoning as the enemy
+  // swoop dive: aiming at a frozen point gives a real dodge window, aiming
+  // at the ship's live position doesn't). The ball sprite itself is
+  // reused, not recreated - it's the same object, just untethered now.
+  MainScene.prototype.releaseOrbHazard = function (orb) {
+    var state = this.state;
+    var dx = state.ship.x - orb.ballSprite.x, dy = SHIP_Y - orb.ballSprite.y;
+    var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    state.orbHazards.push({
+      x: orb.ballSprite.x, y: orb.ballSprite.y,
+      vx: (dx / dist) * ORB_BALL_HAZARD_SPEED,
+      vy: (dy / dist) * ORB_BALL_HAZARD_SPEED,
+      age: 0,
+      sprite: orb.ballSprite
+    });
+  };
+
+  MainScene.prototype.updateOrbHazards = function (dt) {
+    var state = this.state;
+    for (var i = state.orbHazards.length - 1; i >= 0; i--) {
+      var h = state.orbHazards[i];
+      h.age += dt;
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      h.sprite.x = h.x; h.sprite.y = h.y;
+
+      if (!isInvulnerable(state)) {
+        var hdx = h.x - state.ship.x, hdy = h.y - SHIP_Y;
+        var hrr = ORB_BALL_RADIUS + state.ship.radius;
+        if (hdx * hdx + hdy * hdy <= hrr * hrr) {
+          h.sprite.destroy();
+          state.orbHazards.splice(i, 1);
+          this.shipHit();
+          continue;
+        }
+      }
+
+      if (h.age > ORB_BALL_HAZARD_LIFETIME || h.x < -20 || h.x > GAME_WIDTH + 20 || h.y < -20 || h.y > GAME_HEIGHT + 20) {
+        h.sprite.destroy();
+        state.orbHazards.splice(i, 1);
+      }
+    }
+  };
+
   // v1: whatever's banked just flies off like ordinary ammo, colored per
   // dot, sharing the normal bullet collision path entirely. Tier-specific
   // effects (what one, two, or three colors actually DO) are a later step
@@ -1519,6 +1682,11 @@
     this.shipFillSprite.setVisible(false);
     this.shipFillMaskGfx.clear();
     this.clearPowerup();
+    state.orbs.forEach(function (o) { o.hostSprite.destroy(); o.ballSprite.destroy(); });
+    state.orbs = [];
+    state.orbTimer = ORB_SPAWN_INTERVAL;
+    state.orbHazards.forEach(function (h) { h.sprite.destroy(); });
+    state.orbHazards = [];
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -1581,6 +1749,8 @@
       this.updateStrips(dt);
       this.updateShipFill(dt);
       this.updatePowerupDots(dt);
+      this.updateOrbs(dt);
+      this.updateOrbHazards(dt);
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
     }
