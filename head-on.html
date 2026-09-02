@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 18:45 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 19:10 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -406,7 +406,6 @@
   var STRIP_WIDTH = 20; // 60 was too long/thin - a third shorter, a few px wider
   var STRIP_HEIGHT = 40;
   var STRIP_FALL_SPEED = 130;
-  var STRIP_SPAWN_INTERVAL = 4.5; // seconds between strips - was 3.0, felt a little too frequent
   var STRIP_ALPHA = 0.45;
   // How far the ship's center may be from a strip's center and still count
   // as touching it - the ship's radius plus half the strip's width, i.e.
@@ -451,16 +450,23 @@
   // the pod instead of touching it and the ball breaks loose, flying
   // straight at wherever the ship was at that moment - a real threat you
   // have to dodge, not a bonus, same spirit as the enemy's own flying
-  // core. At most one exists on screen at a time - the next one doesn't
-  // spawn until the current one is gone (collected, shot, or missed).
+  // core.
   var ORB_RADIUS = 11;
   var ORB_BALL_RADIUS = 4;
   var ORB_BALL_ORBIT_RADIUS = 16;
   var ORB_BALL_ORBIT_SPEED = 5; // rad/sec - a touch faster than the enemy core's orbit, reads as more agitated
   var ORB_FALL_SPEED = 110;
-  var ORB_SPAWN_INTERVAL = 7.0; // seconds - rarer than the color strips
   var ORB_BALL_HAZARD_SPEED = 260; // straight-line speed once released
   var ORB_BALL_HAZARD_LIFETIME = 2.5; // seconds before an unclaimed released ball fizzles
+
+  // Strips and orbs share ONE spawn timer and cadence, not two independent
+  // ones - each time it fires, it spawns EITHER a strip OR an orb (a coin
+  // flip), never both. Two separate timers meant they could show up on
+  // screen together regardless of how rare either was individually, which
+  // read as busy/cluttered; a shared timer guarantees only one kind of
+  // falling powerup exists per spawn, at the same overall cadence the
+  // strips already had.
+  var POWERUP_SPAWN_INTERVAL = 4.5; // seconds - was STRIP_SPAWN_INTERVAL's cadence, now shared
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
@@ -655,12 +661,11 @@
       core: null, // the orbiting/released red dot bonus - see spawnFormation()/updateCore()
       starburstFx: null, // visual-only expanding ring when the core is shot directly
       strips: [], // falling colored powerup strips - see spawnStrip()/updateStrips()
-      stripTimer: STRIP_SPAWN_INTERVAL,
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       powerup: { colors: [], dots: [], angle: 0 }, // banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
       orbs: [], // falling touch-to-collect pods with an orbiting ball - see spawnOrb()/updateOrbs()
-      orbTimer: ORB_SPAWN_INTERVAL,
       orbHazards: [], // balls released by shooting an orb instead of collecting it - see releaseOrbHazard()/updateOrbHazards()
+      powerupSpawnTimer: POWERUP_SPAWN_INTERVAL, // shared between strips and orbs - see updatePowerupSpawns()
       lives: 3,
       score: 0,
       highScore: loadHighScore(),
@@ -1371,6 +1376,20 @@
   };
 
   // ---- Powerup strips ------------------------------------------------------
+  // Strips and orbs share one timer and cadence - each firing spawns
+  // EITHER a strip OR an orb, never both, so the two never show up
+  // together just because their own independent timers happened to line
+  // up. spawnStrip()/spawnOrb() themselves stay untouched; this only owns
+  // the shared "when" and "which one".
+  MainScene.prototype.updatePowerupSpawns = function (dt) {
+    var state = this.state;
+    state.powerupSpawnTimer -= dt;
+    if (state.powerupSpawnTimer <= 0) {
+      state.powerupSpawnTimer = POWERUP_SPAWN_INTERVAL;
+      if (Math.random() < 0.5) this.spawnStrip(); else this.spawnOrb();
+    }
+  };
+
   MainScene.prototype.spawnStrip = function () {
     var colorKey = STRIP_COLOR_KEYS[Math.floor(Math.random() * STRIP_COLOR_KEYS.length)];
     var margin = STRIP_WIDTH / 2 + 4;
@@ -1385,12 +1404,6 @@
 
   MainScene.prototype.updateStrips = function (dt) {
     var state = this.state;
-    state.stripTimer -= dt;
-    if (state.stripTimer <= 0) {
-      state.stripTimer = STRIP_SPAWN_INTERVAL;
-      this.spawnStrip();
-    }
-
     var bandEnterY = SHIP_Y - SHIP_RADIUS - STRIP_HEIGHT / 2; // strip's y when its leading edge first reaches the ship
     var bandExitY = SHIP_Y + SHIP_RADIUS + STRIP_HEIGHT / 2;  // strip's y once it's fully cleared the ship
 
@@ -1521,13 +1534,6 @@
 
   MainScene.prototype.updateOrbs = function (dt) {
     var state = this.state;
-    state.orbTimer -= dt;
-    // At most one orb exists on screen at a time - the next one waits
-    // until the current one is fully gone, rather than piling up.
-    if (state.orbTimer <= 0 && state.orbs.length === 0) {
-      state.orbTimer = ORB_SPAWN_INTERVAL;
-      this.spawnOrb();
-    }
 
     for (var i = state.orbs.length - 1; i >= 0; i--) {
       var orb = state.orbs[i];
@@ -1691,7 +1697,6 @@
     state.starburstFx = null;
     state.strips.forEach(function (s) { s.sprite.destroy(); });
     state.strips = [];
-    state.stripTimer = STRIP_SPAWN_INTERVAL;
     state.shipFill.level = 0;
     state.shipFill.color = null;
     state.shipFill.mode = 'idle';
@@ -1700,9 +1705,9 @@
     this.clearPowerup();
     state.orbs.forEach(function (o) { o.hostSprite.destroy(); o.ballSprite.destroy(); });
     state.orbs = [];
-    state.orbTimer = ORB_SPAWN_INTERVAL;
     state.orbHazards.forEach(function (h) { h.sprite.destroy(); });
     state.orbHazards = [];
+    state.powerupSpawnTimer = POWERUP_SPAWN_INTERVAL;
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -1762,6 +1767,7 @@
       this.handleCollisions();
       this.updateCore(dt);
       this.updateStarburstFx(dt);
+      this.updatePowerupSpawns(dt);
       this.updateStrips(dt);
       this.updateShipFill(dt);
       this.updatePowerupDots(dt);
