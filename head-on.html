@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 18:25 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 18:45 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -441,14 +441,18 @@
   var FIRE_LONG_PRESS_MS = 450;
 
   // A second kind of powerup: a short, self-contained pod that falls with
-  // a small ball already revolving around it. Touch is enough to collect
-  // it safely - one instant of contact, no "whole pass" requirement like
-  // the color strips - and it acts like the other powerups (their actual
-  // effect is still undefined, so for now it just banks a random color,
-  // same payoff as catching a strip). But shoot the pod instead of
-  // touching it and the ball breaks loose, flying straight at wherever
-  // the ship was at that moment - a real threat you have to dodge, not a
-  // bonus, same spirit as the enemy's own flying core.
+  // a small ball already revolving around it, in the same red/green/blue
+  // palette as the color strips (one color, assigned at spawn) - visually
+  // part of the same family, differing only in mechanic. Touch is enough
+  // to collect it safely - one instant of contact, no "whole pass"
+  // requirement like the strips - and it acts like the other powerups
+  // (their actual effect is still undefined, so for now it just banks its
+  // own color, same payoff as catching a strip of that color). But shoot
+  // the pod instead of touching it and the ball breaks loose, flying
+  // straight at wherever the ship was at that moment - a real threat you
+  // have to dodge, not a bonus, same spirit as the enemy's own flying
+  // core. At most one exists on screen at a time - the next one doesn't
+  // spawn until the current one is gone (collected, shot, or missed).
   var ORB_RADIUS = 11;
   var ORB_BALL_RADIUS = 4;
   var ORB_BALL_ORBIT_RADIUS = 16;
@@ -457,7 +461,6 @@
   var ORB_SPAWN_INTERVAL = 7.0; // seconds - rarer than the color strips
   var ORB_BALL_HAZARD_SPEED = 260; // straight-line speed once released
   var ORB_BALL_HAZARD_LIFETIME = 2.5; // seconds before an unclaimed released ball fizzles
-  var COLOR_ORB = 0xa78bfa; // violet - visually distinct from the RGB strips and the enemy core's red
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
@@ -609,15 +612,16 @@
       g.destroy();
     });
 
-    // Orb pod: a small translucent violet diamond (matching the color
-    // strips' translucency), plus its own small solid orbiting ball - the
-    // second powerup type.
-    (function () {
+    // Orb pod: a small translucent diamond (same palette and translucency
+    // as the color strips - one texture per color, assigned at spawn like
+    // a strip), plus its own small solid orbiting ball in that same color.
+    // The second powerup type, differing from the strips in mechanic only.
+    STRIP_COLOR_KEYS.forEach(function (key) {
       var r = ORB_RADIUS;
       var size = r * 2 + 4;
       var cx = size / 2, cy = size / 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(COLOR_ORB, STRIP_ALPHA);
+      g.fillStyle(STRIP_COLORS[key], STRIP_ALPHA);
       g.beginPath();
       g.moveTo(cx, cy - r);
       g.lineTo(cx + r, cy);
@@ -625,17 +629,17 @@
       g.lineTo(cx - r, cy);
       g.closePath();
       g.fillPath();
-      g.generateTexture('orbTex', size, size);
+      g.generateTexture('orbTex_' + key, size, size);
       g.destroy();
-    })();
-    (function () {
+    });
+    STRIP_COLOR_KEYS.forEach(function (key) {
       var d = ORB_BALL_RADIUS * 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(COLOR_ORB, 1);
+      g.fillStyle(STRIP_COLORS[key], 1);
       g.fillCircle(ORB_BALL_RADIUS, ORB_BALL_RADIUS, ORB_BALL_RADIUS);
-      g.generateTexture('orbBallTex', d, d);
+      g.generateTexture('orbBallTex_' + key, d, d);
       g.destroy();
-    })();
+    });
   };
 
   MainScene.prototype.initState = function () {
@@ -1496,28 +1500,31 @@
 
   // ---- Orb pods (second powerup type) ------------------------------------------------------
   MainScene.prototype.spawnOrb = function () {
+    var colorKey = STRIP_COLOR_KEYS[Math.floor(Math.random() * STRIP_COLOR_KEYS.length)];
     var margin = ORB_RADIUS + 4;
     var x = margin + Math.random() * (GAME_WIDTH - margin * 2);
     this.state.orbs.push({
+      colorKey: colorKey,
       x: x, y: -ORB_RADIUS,
       angle: Math.random() * Math.PI * 2,
-      hostSprite: this.add.sprite(x, -ORB_RADIUS, 'orbTex'),
-      ballSprite: this.add.sprite(x, -ORB_RADIUS, 'orbBallTex')
+      hostSprite: this.add.sprite(x, -ORB_RADIUS, 'orbTex_' + colorKey),
+      ballSprite: this.add.sprite(x, -ORB_RADIUS, 'orbBallTex_' + colorKey)
     });
   };
 
   // Acts like the other powerups - whose actual effect isn't decided yet -
   // so for now this is the same payoff as successfully catching a color
-  // strip: banks one random color.
-  MainScene.prototype.collectOrb = function () {
-    var colorKey = STRIP_COLOR_KEYS[Math.floor(Math.random() * STRIP_COLOR_KEYS.length)];
-    this.collectColor(colorKey);
+  // strip: banks the orb's own color.
+  MainScene.prototype.collectOrb = function (orb) {
+    this.collectColor(orb.colorKey);
   };
 
   MainScene.prototype.updateOrbs = function (dt) {
     var state = this.state;
     state.orbTimer -= dt;
-    if (state.orbTimer <= 0) {
+    // At most one orb exists on screen at a time - the next one waits
+    // until the current one is fully gone, rather than piling up.
+    if (state.orbTimer <= 0 && state.orbs.length === 0) {
       state.orbTimer = ORB_SPAWN_INTERVAL;
       this.spawnOrb();
     }
@@ -1536,7 +1543,7 @@
       var sdx = orb.x - state.ship.x, sdy = orb.y - SHIP_Y;
       var srr = ORB_RADIUS + state.ship.radius;
       if (sdx * sdx + sdy * sdy <= srr * srr) {
-        this.collectOrb();
+        this.collectOrb(orb);
         orb.hostSprite.destroy();
         orb.ballSprite.destroy();
         state.orbs.splice(i, 1);
