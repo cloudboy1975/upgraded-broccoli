@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 17:15 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 17:35 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -1238,6 +1238,23 @@
       if (dx * dx + dy * dy <= rr * rr) {
         slot.sprite.destroy(); slot.alive = false;
         this.addScore(slot.score);
+        core.sprite.destroy();
+        state.core = null;
+        return;
+      }
+    }
+
+    // A flying core also wipes out a powerup strip it crosses - same
+    // rect-touch test the ship uses to collect one, just centered on the
+    // core instead. No color, no shipFill effect, just gone; the core is
+    // consumed on the hit, same as chaining into an enemy.
+    for (var si = 0; si < state.strips.length; si++) {
+      var strip = state.strips[si];
+      var withinY = Math.abs(core.y - strip.y) <= CORE_RADIUS + STRIP_HEIGHT / 2;
+      var withinX = Math.abs(core.x - strip.x) <= CORE_RADIUS + STRIP_WIDTH / 2;
+      if (withinY && withinX) {
+        strip.sprite.destroy();
+        state.strips.splice(si, 1);
         core.sprite.destroy();
         state.core = null;
         return;
