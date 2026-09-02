@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 10:15 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 10:45 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -373,6 +373,20 @@
     zigzag:   { radius: 12, speed: 128, score: 120, color: 0xf472b6 }
   };
   var ENEMY_TEX = { straight: 'enemyStraightTex', swoop: 'enemySwoopTex', zigzag: 'enemyZigzagTex' };
+
+  // The core: a small red dot that orbits one randomly-chosen formation
+  // member per wave. Killing that carrier (an actual bullet kill, not a
+  // miss that despawns naturally) releases it as a free-flying chip that
+  // can chain into one more enemy. Purely a bonus layer - it never
+  // threatens the ship, by design, the same way a shmup's bomb doesn't
+  // hurt the player who triggers it.
+  var CORE_CHANCE_PER_WAVE = 0.5; // not every wave gets one
+  var CORE_ORBIT_RADIUS = 20;
+  var CORE_ORBIT_SPEED = 4; // rad/sec
+  var CORE_RADIUS = 4;
+  var CORE_RELEASE_SPEED = 260;
+  var CORE_LIFETIME = 2.0; // seconds after release before it fizzles unclaimed
+  var COLOR_CORE = 0xef4444;
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
@@ -472,6 +486,16 @@
       g.generateTexture('bulletTex', d, d);
       g.destroy();
     })();
+
+    // Core: small red dot.
+    (function () {
+      var d = CORE_RADIUS * 2;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_CORE, 1);
+      g.fillCircle(CORE_RADIUS, CORE_RADIUS, CORE_RADIUS);
+      g.generateTexture('coreTex', d, d);
+      g.destroy();
+    })();
   };
 
   MainScene.prototype.initState = function () {
@@ -484,6 +508,7 @@
       },
       bullets: [],
       formation: [], // grid slots - see spawnFormation()
+      core: null, // the orbiting/released red dot bonus - see spawnFormation()/updateCore()
       lives: 3,
       score: 0,
       highScore: loadHighScore(),
@@ -546,6 +571,19 @@
         slot.sprite = this.add.sprite(baseX, baseY, ENEMY_TEX[type]);
         state.formation.push(slot);
       }
+    }
+
+    // Roll a fresh core for this wave - at most one, and not guaranteed.
+    if (state.core && state.core.sprite) state.core.sprite.destroy();
+    state.core = null;
+    if (Math.random() < CORE_CHANCE_PER_WAVE) {
+      var carrier = state.formation[Math.floor(Math.random() * state.formation.length)];
+      state.core = {
+        attached: true,
+        carrierSlot: carrier,
+        angle: Math.random() * Math.PI * 2,
+        sprite: this.add.sprite(carrier.x, carrier.y, 'coreTex')
+      };
     }
   };
 
@@ -944,6 +982,9 @@
           b.sprite.destroy(); state.bullets.splice(bi, 1);
           slot.sprite.destroy(); slot.alive = false;
           this.addScore(slot.score);
+          if (state.core && state.core.attached && state.core.carrierSlot === slot) {
+            this.releaseCore(state.core, slot.x, slot.y);
+          }
           break;
         }
       }
@@ -963,6 +1004,68 @@
           break;
         }
       }
+    }
+  };
+
+  // Flings the core off tangentially from its orbit at the moment of
+  // release - same direction it was already moving, just no longer
+  // anchored, like slinging a stone.
+  MainScene.prototype.releaseCore = function (core, x, y) {
+    core.attached = false;
+    core.x = x;
+    core.y = y;
+    core.vx = -Math.sin(core.angle) * CORE_RELEASE_SPEED;
+    core.vy = Math.cos(core.angle) * CORE_RELEASE_SPEED;
+    core.age = 0;
+  };
+
+  MainScene.prototype.updateCore = function (dt) {
+    var state = this.state;
+    var core = state.core;
+    if (!core) return;
+
+    if (core.attached) {
+      var carrier = core.carrierSlot;
+      if (!carrier.alive) {
+        // Carrier died some other way this frame - a missed dive despawning,
+        // or diving straight into the ship - without going through the
+        // explicit release above. No chain bonus, just clean up quietly;
+        // only an actual bullet kill earns the release.
+        core.sprite.destroy();
+        state.core = null;
+        return;
+      }
+      core.angle += CORE_ORBIT_SPEED * dt;
+      core.sprite.x = carrier.x + Math.cos(core.angle) * CORE_ORBIT_RADIUS;
+      core.sprite.y = carrier.y + Math.sin(core.angle) * CORE_ORBIT_RADIUS;
+      return;
+    }
+
+    // Released: fly in a straight line, chain into at most one more
+    // enemy, then fizzle out on impact, timeout, or leaving the screen.
+    core.age += dt;
+    core.x += core.vx * dt;
+    core.y += core.vy * dt;
+    core.sprite.x = core.x;
+    core.sprite.y = core.y;
+
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      if (!slot.alive) continue;
+      var dx = core.x - slot.x, dy = core.y - slot.y;
+      var rr = slot.radius + CORE_RADIUS;
+      if (dx * dx + dy * dy <= rr * rr) {
+        slot.sprite.destroy(); slot.alive = false;
+        this.addScore(slot.score);
+        core.sprite.destroy();
+        state.core = null;
+        return;
+      }
+    }
+
+    if (core.age > CORE_LIFETIME || core.x < -20 || core.x > GAME_WIDTH + 20 || core.y < -20 || core.y > GAME_HEIGHT + 20) {
+      core.sprite.destroy();
+      state.core = null;
     }
   };
 
@@ -1020,6 +1123,8 @@
     var state = this.state;
     state.bullets.forEach(function (b) { b.sprite.destroy(); });
     state.bullets = [];
+    if (state.core && state.core.sprite) state.core.sprite.destroy();
+    state.core = null;
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -1075,6 +1180,7 @@
       this.updateFiring(dt);
       this.tryTriggerDive(dt);
       this.handleCollisions();
+      this.updateCore(dt);
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
     }
