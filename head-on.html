@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 19:10 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 19:35 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -439,22 +439,21 @@
   // for rapid fire - that can go in favor of hold for this").
   var FIRE_LONG_PRESS_MS = 450;
 
-  // A second kind of powerup: a short, self-contained pod that falls with
-  // a small ball already revolving around it, in the same red/green/blue
-  // palette as the color strips (one color, assigned at spawn) - visually
-  // part of the same family, differing only in mechanic. Touch is enough
-  // to collect it safely - one instant of contact, no "whole pass"
-  // requirement like the strips - and it acts like the other powerups
-  // (their actual effect is still undefined, so for now it just banks its
-  // own color, same payoff as catching a strip of that color). But shoot
-  // the pod instead of touching it and the ball breaks loose, flying
-  // straight at wherever the ship was at that moment - a real threat you
-  // have to dodge, not a bonus, same spirit as the enemy's own flying
-  // core.
+  // A second kind of powerup: a small translucent diamond, same
+  // red/green/blue palette as the color strips (one color, assigned at
+  // spawn) - visually part of the same family, differing only in
+  // mechanic. Touch is enough to collect it - one instant of contact, no
+  // "whole pass" requirement like the strips - and it acts like the other
+  // powerups (their actual effect is still undefined, so for now it just
+  // banks its own color, same payoff as catching a strip of that color).
+  // Nothing hints at this while it falls - just the diamond - but shoot it
+  // instead of touching it and a small ball springs out of nowhere and
+  // flies straight at wherever the ship was at that moment, a real threat
+  // you have to dodge. Deliberately no visible orbiting "guardian" ball
+  // beforehand (an earlier pass had one) - the whole point is that it's a
+  // surprise, not something telegraphed in advance.
   var ORB_RADIUS = 11;
   var ORB_BALL_RADIUS = 4;
-  var ORB_BALL_ORBIT_RADIUS = 16;
-  var ORB_BALL_ORBIT_SPEED = 5; // rad/sec - a touch faster than the enemy core's orbit, reads as more agitated
   var ORB_FALL_SPEED = 110;
   var ORB_BALL_HAZARD_SPEED = 260; // straight-line speed once released
   var ORB_BALL_HAZARD_LIFETIME = 2.5; // seconds before an unclaimed released ball fizzles
@@ -620,8 +619,8 @@
 
     // Orb pod: a small translucent diamond (same palette and translucency
     // as the color strips - one texture per color, assigned at spawn like
-    // a strip), plus its own small solid orbiting ball in that same color.
-    // The second powerup type, differing from the strips in mechanic only.
+    // a strip). The second powerup type, differing from the strips in
+    // mechanic only - just the diamond now, no orbiting ball.
     STRIP_COLOR_KEYS.forEach(function (key) {
       var r = ORB_RADIUS;
       var size = r * 2 + 4;
@@ -638,6 +637,10 @@
       g.generateTexture('orbTex_' + key, size, size);
       g.destroy();
     });
+
+    // Orb ball: the "surprise" hazard dot, not visible until an orb pod is
+    // shot instead of touched - one solid (non-translucent) texture per
+    // color, matching whichever orb it came from.
     STRIP_COLOR_KEYS.forEach(function (key) {
       var d = ORB_BALL_RADIUS * 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
@@ -663,8 +666,8 @@
       strips: [], // falling colored powerup strips - see spawnStrip()/updateStrips()
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       powerup: { colors: [], dots: [], angle: 0 }, // banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
-      orbs: [], // falling touch-to-collect pods with an orbiting ball - see spawnOrb()/updateOrbs()
-      orbHazards: [], // balls released by shooting an orb instead of collecting it - see releaseOrbHazard()/updateOrbHazards()
+      orbs: [], // falling touch-to-collect diamond pods - see spawnOrb()/updateOrbs()
+      orbHazards: [], // surprise balls spawned by shooting an orb instead of collecting it - see releaseOrbHazard()/updateOrbHazards()
       powerupSpawnTimer: POWERUP_SPAWN_INTERVAL, // shared between strips and orbs - see updatePowerupSpawns()
       lives: 3,
       score: 0,
@@ -1175,7 +1178,8 @@
       }
 
       // Shooting an orb pod (instead of touching it) is what turns it
-      // dangerous - its ball breaks loose and comes straight at the ship.
+      // dangerous - a ball springs out of nowhere and comes straight at
+      // the ship, with no orbiting telegraph beforehand.
       var hitOrb = false;
       for (var oi = 0; oi < state.orbs.length; oi++) {
         var orbHit = state.orbs[oi];
@@ -1519,9 +1523,7 @@
     this.state.orbs.push({
       colorKey: colorKey,
       x: x, y: -ORB_RADIUS,
-      angle: Math.random() * Math.PI * 2,
-      hostSprite: this.add.sprite(x, -ORB_RADIUS, 'orbTex_' + colorKey),
-      ballSprite: this.add.sprite(x, -ORB_RADIUS, 'orbBallTex_' + colorKey)
+      hostSprite: this.add.sprite(x, -ORB_RADIUS, 'orbTex_' + colorKey)
     });
   };
 
@@ -1538,10 +1540,7 @@
     for (var i = state.orbs.length - 1; i >= 0; i--) {
       var orb = state.orbs[i];
       orb.y += ORB_FALL_SPEED * dt;
-      orb.angle += ORB_BALL_ORBIT_SPEED * dt;
       orb.hostSprite.x = orb.x; orb.hostSprite.y = orb.y;
-      orb.ballSprite.x = orb.x + Math.cos(orb.angle) * ORB_BALL_ORBIT_RADIUS;
-      orb.ballSprite.y = orb.y + Math.sin(orb.angle) * ORB_BALL_ORBIT_RADIUS;
 
       // Touching the pod is enough to collect it safely - a single
       // instant of contact, unlike the color strips' whole-pass
@@ -1551,7 +1550,6 @@
       if (sdx * sdx + sdy * sdy <= srr * srr) {
         this.collectOrb(orb);
         orb.hostSprite.destroy();
-        orb.ballSprite.destroy();
         state.orbs.splice(i, 1);
         continue;
       }
@@ -1559,28 +1557,27 @@
       if (orb.y - ORB_RADIUS > GAME_HEIGHT + 10) {
         // Missed - just gone, same as an unclaimed strip, no side effects.
         orb.hostSprite.destroy();
-        orb.ballSprite.destroy();
         state.orbs.splice(i, 1);
       }
     }
   };
 
-  // Shooting the pod (instead of touching it) detaches its ball and sends
-  // it straight at wherever the ship was at that moment - a fixed
+  // Shooting the pod (instead of touching it) is the surprise: nothing was
+  // visible beforehand, but a ball springs into existence at that spot and
+  // flies straight at wherever the ship was at that moment - a fixed
   // trajectory, not a live homing missile (same reasoning as the enemy
   // swoop dive: aiming at a frozen point gives a real dodge window, aiming
-  // at the ship's live position doesn't). The ball sprite itself is
-  // reused, not recreated - it's the same object, just untethered now.
+  // at the ship's live position doesn't).
   MainScene.prototype.releaseOrbHazard = function (orb) {
     var state = this.state;
-    var dx = state.ship.x - orb.ballSprite.x, dy = SHIP_Y - orb.ballSprite.y;
+    var dx = state.ship.x - orb.x, dy = SHIP_Y - orb.y;
     var dist = Math.sqrt(dx * dx + dy * dy) || 1;
     state.orbHazards.push({
-      x: orb.ballSprite.x, y: orb.ballSprite.y,
+      x: orb.x, y: orb.y,
       vx: (dx / dist) * ORB_BALL_HAZARD_SPEED,
       vy: (dy / dist) * ORB_BALL_HAZARD_SPEED,
       age: 0,
-      sprite: orb.ballSprite
+      sprite: this.add.sprite(orb.x, orb.y, 'orbBallTex_' + orb.colorKey)
     });
   };
 
@@ -1703,7 +1700,7 @@
     this.shipFillSprite.setVisible(false);
     this.shipFillMaskGfx.clear();
     this.clearPowerup();
-    state.orbs.forEach(function (o) { o.hostSprite.destroy(); o.ballSprite.destroy(); });
+    state.orbs.forEach(function (o) { o.hostSprite.destroy(); });
     state.orbs = [];
     state.orbHazards.forEach(function (h) { h.sprite.destroy(); });
     state.orbHazards = [];
