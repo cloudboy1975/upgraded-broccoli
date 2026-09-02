@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 16:55 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 17:15 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -1163,6 +1163,25 @@
       if (kx * kx + ky * ky <= kr * kr) {
         this.triggerStarburst(core.sprite.x, core.sprite.y);
         core.sprite.destroy();
+        state.core = null;
+        this.shipHit();
+      }
+    }
+
+    // The flying core (already chain-released from its carrier) is a real
+    // hazard now, not just cover for enemies - failing to dodge it while
+    // it's airborne costs a life like any other hit, and it's consumed on
+    // impact. Distinct from the sacrifice above: that's deliberately
+    // ramming a still-ORBITING core for a bonus; this is just not getting
+    // out of the way of one already in flight. Same fresh-isInvulnerable()
+    // re-check as the sacrifice, for the same reason - a diver hit this
+    // same frame naturally blocks this from also firing.
+    if (!isInvulnerable(state) && state.core && !state.core.attached) {
+      var flyingCore = state.core;
+      var fx = flyingCore.x - state.ship.x, fy = flyingCore.y - SHIP_Y;
+      var fr = state.ship.radius + CORE_RADIUS;
+      if (fx * fx + fy * fy <= fr * fr) {
+        flyingCore.sprite.destroy();
         state.core = null;
         this.shipHit();
       }
