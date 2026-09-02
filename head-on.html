@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 10:45 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 11:15 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -380,13 +380,20 @@
   // can chain into one more enemy. Purely a bonus layer - it never
   // threatens the ship, by design, the same way a shmup's bomb doesn't
   // hurt the player who triggers it.
-  var CORE_CHANCE_PER_WAVE = 0.5; // not every wave gets one
+  var CORE_CHANCE_PER_WAVE = 1; // every wave gets one
   var CORE_ORBIT_RADIUS = 20;
   var CORE_ORBIT_SPEED = 4; // rad/sec
   var CORE_RADIUS = 4;
   var CORE_RELEASE_SPEED = 260;
   var CORE_LIFETIME = 2.0; // seconds after release before it fizzles unclaimed
   var COLOR_CORE = 0xef4444;
+
+  // Shooting the orbiting dot directly - not its carrier - triggers a
+  // starburst instead: every currently alive enemy dies at once, same
+  // "the trigger never hurts the player" rule as the chain release.
+  var STARBURST_FX_DURATION = 0.45; // seconds
+  var STARBURST_FX_MAX_RADIUS = 260;
+  var COLOR_STARBURST = 0xfbbf24;
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
@@ -509,6 +516,7 @@
       bullets: [],
       formation: [], // grid slots - see spawnFormation()
       core: null, // the orbiting/released red dot bonus - see spawnFormation()/updateCore()
+      starburstFx: null, // visual-only expanding ring when the core is shot directly
       lives: 3,
       score: 0,
       highScore: loadHighScore(),
@@ -576,6 +584,7 @@
     // Roll a fresh core for this wave - at most one, and not guaranteed.
     if (state.core && state.core.sprite) state.core.sprite.destroy();
     state.core = null;
+    if (state.starburstFx) { state.starburstFx.gfx.destroy(); state.starburstFx = null; }
     if (Math.random() < CORE_CHANCE_PER_WAVE) {
       var carrier = state.formation[Math.floor(Math.random() * state.formation.length)];
       state.core = {
@@ -973,6 +982,21 @@
     // formation itself, not just incoming divers.
     for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
       var b = state.bullets[bi];
+
+      // The orbiting dot is itself a target, separate from its carrier -
+      // hit it directly (before its carrier dies) for the bigger payoff.
+      if (state.core && state.core.attached) {
+        var cdx = b.x - state.core.sprite.x, cdy = b.y - state.core.sprite.y;
+        var crr = CORE_RADIUS + BULLET_RADIUS;
+        if (cdx * cdx + cdy * cdy <= crr * crr) {
+          b.sprite.destroy(); state.bullets.splice(bi, 1);
+          this.triggerStarburst(state.core.sprite.x, state.core.sprite.y);
+          state.core.sprite.destroy();
+          state.core = null;
+          continue;
+        }
+      }
+
       for (var si = 0; si < state.formation.length; si++) {
         var slot = state.formation[si];
         if (!slot.alive) continue;
@@ -1069,6 +1093,37 @@
     }
   };
 
+  // Every currently alive enemy dies at once - idle or diving, doesn't
+  // matter. Never touches the ship; this is a reward for hitting a small
+  // moving target, not a risk.
+  MainScene.prototype.triggerStarburst = function (x, y) {
+    var state = this.state;
+    var self = this;
+    state.formation.forEach(function (slot) {
+      if (!slot.alive) return;
+      slot.sprite.destroy();
+      slot.alive = false;
+      self.addScore(slot.score);
+    });
+    if (state.starburstFx) state.starburstFx.gfx.destroy();
+    state.starburstFx = { x: x, y: y, age: 0, gfx: this.add.graphics() };
+  };
+
+  MainScene.prototype.updateStarburstFx = function (dt) {
+    var fx = this.state.starburstFx;
+    if (!fx) return;
+    fx.age += dt;
+    var t = Math.min(fx.age / STARBURST_FX_DURATION, 1);
+    if (t >= 1) {
+      fx.gfx.destroy();
+      this.state.starburstFx = null;
+      return;
+    }
+    fx.gfx.clear();
+    fx.gfx.lineStyle(4, COLOR_STARBURST, 1 - t);
+    fx.gfx.strokeCircle(fx.x, fx.y, STARBURST_FX_MAX_RADIUS * t);
+  };
+
   MainScene.prototype.addScore = function (n) {
     var state = this.state;
     state.score += n;
@@ -1125,6 +1180,8 @@
     state.bullets = [];
     if (state.core && state.core.sprite) state.core.sprite.destroy();
     state.core = null;
+    if (state.starburstFx) state.starburstFx.gfx.destroy();
+    state.starburstFx = null;
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -1181,6 +1238,7 @@
       this.tryTriggerDive(dt);
       this.handleCollisions();
       this.updateCore(dt);
+      this.updateStarburstFx(dt);
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
     }
