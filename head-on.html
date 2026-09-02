@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 11:15 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 11:40 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -1027,6 +1027,26 @@
           this.shipHit();
           break;
         }
+      }
+    }
+
+    // The sacrifice: flying the ship straight into the orbiting core (not
+    // shooting it) also triggers the starburst - full formation swept, but
+    // it costs a life, same as any other hit. A deliberate risk/reward path
+    // alongside the free chain-release and the precision-shot sweep.
+    // Re-checking isInvulnerable() here (not reusing the value above) means
+    // a hit from the diver loop just above - which grants fresh
+    // invulnerability - naturally blocks this from also firing the same
+    // frame, without needing extra bookkeeping.
+    if (!isInvulnerable(state) && state.core && state.core.attached) {
+      var core = state.core;
+      var kx = core.sprite.x - state.ship.x, ky = core.sprite.y - SHIP_Y;
+      var kr = state.ship.radius + CORE_RADIUS;
+      if (kx * kx + ky * ky <= kr * kr) {
+        this.triggerStarburst(core.sprite.x, core.sprite.y);
+        core.sprite.destroy();
+        state.core = null;
+        this.shipHit();
       }
     }
   };
