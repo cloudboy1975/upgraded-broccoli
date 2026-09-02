@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 09:50 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-08-29 10:15 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -574,6 +574,7 @@
       pick.age = 0;
       pick.spawnX = pick.x; // dive formulas anchor to wherever it was (mid-bob) when it broke formation
       pick.phase = Math.random() * Math.PI * 2;
+      pick.diveTargetX = state.ship.x; // swoop curves toward this fixed point, not the ship's live position
     }
   };
 
@@ -599,10 +600,15 @@
       // simple bee-line dive, not a hard homing missile.
       slot.x += (shipX - slot.x) * 0.5 * dt;
     } else if (slot.type === 'swoop') {
-      // Curves from its break-off point toward the ship over ~2.2s, with a
-      // sine wobble riding on top - the classic Galaga S-curve dive-bomb.
+      // Curves from its break-off point toward where the ship WAS at the
+      // moment it dove - a fixed target snapshotted once in tryTriggerDive,
+      // not the ship's live position. Tracking the live position here
+      // made it an inescapable homing lock once t neared 1 (any dodge just
+      // got re-aimed at instantly); curving toward a frozen point is both
+      // the actual "classic Galaga S-curve dive-bomb" behavior and gives a
+      // real dodge window if you move off that spot.
       var t = Math.min(slot.age / 2.2, 1);
-      slot.x = slot.spawnX + (shipX - slot.spawnX) * t + Math.sin(slot.age * 3.1 + slot.phase) * 46;
+      slot.x = slot.spawnX + (slot.diveTargetX - slot.spawnX) * t + Math.sin(slot.age * 3.1 + slot.phase) * 46;
     } else if (slot.type === 'zigzag') {
       // Fast, sharp lateral oscillation, anchored to its break-off point -
       // erratic and hard to predict, doesn't chase the ship at all.
