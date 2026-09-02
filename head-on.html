@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 18:10 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 18:25 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -609,14 +609,23 @@
       g.destroy();
     });
 
-    // Orb pod: a short, solid violet disc, plus its own small orbiting
-    // ball - the second powerup type.
+    // Orb pod: a small translucent violet diamond (matching the color
+    // strips' translucency), plus its own small solid orbiting ball - the
+    // second powerup type.
     (function () {
-      var d = ORB_RADIUS * 2;
+      var r = ORB_RADIUS;
+      var size = r * 2 + 4;
+      var cx = size / 2, cy = size / 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(COLOR_ORB, 1);
-      g.fillCircle(ORB_RADIUS, ORB_RADIUS, ORB_RADIUS);
-      g.generateTexture('orbTex', d, d);
+      g.fillStyle(COLOR_ORB, STRIP_ALPHA);
+      g.beginPath();
+      g.moveTo(cx, cy - r);
+      g.lineTo(cx + r, cy);
+      g.lineTo(cx, cy + r);
+      g.lineTo(cx - r, cy);
+      g.closePath();
+      g.fillPath();
+      g.generateTexture('orbTex', size, size);
       g.destroy();
     })();
     (function () {
