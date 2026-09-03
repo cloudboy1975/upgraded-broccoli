@@ -1277,12 +1277,17 @@
         var dx = b.x - slot.x, dy = b.y - slot.y;
         var rr = slot.radius + BULLET_RADIUS;
         if (dx * dx + dy * dy <= rr * rr) {
-          b.sprite.destroy(); state.bullets.splice(bi, 1);
           slot.sprite.destroy(); slot.alive = false;
           this.addScore(slot.score);
           if (state.core && state.core.attached && state.core.carrierSlot === slot) {
             this.releaseCore(state.core, slot.x, slot.y);
           }
+          // A powerup-released bullet (carries a colorKey) is the "powerful"
+          // shot - it punches through and keeps flying instead of getting
+          // consumed on the first kill, so it can chain through a column.
+          // Ordinary tap-fired bullets still die on their first hit.
+          if (b.colorKey) continue;
+          b.sprite.destroy(); state.bullets.splice(bi, 1);
           break;
         }
       }
