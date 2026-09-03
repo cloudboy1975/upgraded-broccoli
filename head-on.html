@@ -1300,19 +1300,32 @@
       for (var i = 0; i < state.formation.length; i++) {
         var e = state.formation[i];
         if (!e.alive || !e.diving) continue;
+
+        // A banked color's orbiting dot doubles as a one-hit shield, but
+        // only where it actually is - a diver has to physically clip the
+        // dot's own position, not just get close to the ship while any
+        // color happens to be banked. The dots keep circling, so whether
+        // one happens to be in a diver's way is real, moment-to-moment
+        // positioning, not a blanket "has a color" check.
+        var blockedByDot = false;
+        for (var di = 0; di < state.powerup.dots.length; di++) {
+          var dot = state.powerup.dots[di];
+          var ddx = e.x - dot.sprite.x, ddy = e.y - dot.sprite.y;
+          var ddr = e.radius + POWERUP_DOT_RADIUS;
+          if (ddx * ddx + ddy * ddy <= ddr * ddr) {
+            e.sprite.destroy(); e.alive = false;
+            this.consumeShieldDot(di);
+            blockedByDot = true;
+            break;
+          }
+        }
+        if (blockedByDot) break;
+
         var sx = e.x - state.ship.x, sy = e.y - SHIP_Y;
         var sr = state.ship.radius + e.radius;
         if (sx * sx + sy * sy <= sr * sr) {
           e.sprite.destroy(); e.alive = false;
-          // A banked color orbiting the ship doubles as a one-hit shield -
-          // if any are up, the oldest one absorbs this ram instead of the
-          // ship taking damage: the enemy still dies, but no life is lost
-          // and the dot (and its banked color) is spent, gone either way.
-          if (state.powerup.dots.length > 0) {
-            this.consumeShieldDot();
-          } else {
-            this.shipHit();
-          }
+          this.shipHit();
           break;
         }
       }
@@ -1783,14 +1796,16 @@
     pu.dots = [];
   };
 
-  // Spends exactly one banked color/dot - the oldest one collected - as a
-  // shield block. colors and dots are parallel arrays (pushed together in
-  // collectColor()), so shifting both off the front keeps them in sync.
-  MainScene.prototype.consumeShieldDot = function () {
+  // Spends exactly one banked color/dot - specifically the one whose orbit
+  // position a diver actually clipped - as a shield block. colors and dots
+  // are parallel arrays (pushed together in collectColor()), so removing
+  // both at the same index keeps them in sync.
+  MainScene.prototype.consumeShieldDot = function (index) {
     var pu = this.state.powerup;
-    var dot = pu.dots.shift();
+    var dot = pu.dots[index];
     if (dot) dot.sprite.destroy();
-    pu.colors.shift();
+    pu.dots.splice(index, 1);
+    pu.colors.splice(index, 1);
   };
 
   MainScene.prototype.addScore = function (n) {
