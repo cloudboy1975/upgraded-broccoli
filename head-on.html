@@ -1504,6 +1504,28 @@
       }
     }
 
+    // A flying core also destroys any color bar it crosses - unlike a
+    // powerup bullet, it's a blunt hazard, not tuned to one color, so it
+    // wrecks whichever bar it touches regardless of match.
+    for (var cbi = 0; cbi < state.colorBars.length; cbi++) {
+      var bar = state.colorBars[cbi];
+      if (!bar.alive) continue;
+      var barWithinY = Math.abs(core.y - bar.y) <= CORE_RADIUS + state.colorBarHeight / 2;
+      var barWithinX = Math.abs(core.x - bar.x) <= CORE_RADIUS + COLOR_BAR_WIDTH / 2;
+      if (barWithinY && barWithinX) {
+        bar.sprite.destroy();
+        bar.alive = false;
+        core.sprite.destroy();
+        state.core = null;
+        // Same "clearing everything triggers a harder respawn" rule as a
+        // matching-color bullet destroying the last bar.
+        if (state.colorBars.every(function (b2) { return !b2.alive; })) {
+          this.respawnColorBars();
+        }
+        return;
+      }
+    }
+
     if (core.age > CORE_LIFETIME || core.x < -20 || core.x > GAME_WIDTH + 20 || core.y < -20 || core.y > GAME_HEIGHT + 20) {
       core.sprite.destroy();
       state.core = null;
@@ -1615,8 +1637,34 @@
     }
   };
 
+  // Picks a color for a newly-spawned strip/orb, weighted by how many
+  // live color bars of that color are currently on screen - a color with
+  // more remaining bricks is more likely to come up, since it's more
+  // immediately useful to bank; a color with none left (fully cleared
+  // until the next respawn) never comes up at all. Falls back to a plain
+  // uniform pick only in the practically-impossible case that every bar
+  // count is zero (colorBars is always repopulated the instant the last
+  // one dies, so this is just a safety net, not a real path).
+  MainScene.prototype.pickPowerupColor = function () {
+    var state = this.state;
+    var counts = {};
+    var total = 0;
+    STRIP_COLOR_KEYS.forEach(function (key) { counts[key] = 0; });
+    state.colorBars.forEach(function (bar) {
+      if (bar.alive) { counts[bar.colorKey]++; total++; }
+    });
+    if (total === 0) return STRIP_COLOR_KEYS[Math.floor(Math.random() * STRIP_COLOR_KEYS.length)];
+    var r = Math.random() * total;
+    for (var i = 0; i < STRIP_COLOR_KEYS.length; i++) {
+      var key = STRIP_COLOR_KEYS[i];
+      r -= counts[key];
+      if (r < 0) return key;
+    }
+    return STRIP_COLOR_KEYS[STRIP_COLOR_KEYS.length - 1]; // float-rounding fallback
+  };
+
   MainScene.prototype.spawnStrip = function () {
-    var colorKey = STRIP_COLOR_KEYS[Math.floor(Math.random() * STRIP_COLOR_KEYS.length)];
+    var colorKey = this.pickPowerupColor();
     var margin = STRIP_WIDTH / 2 + 4;
     var x = margin + Math.random() * (GAME_WIDTH - margin * 2);
     this.state.strips.push({
@@ -1740,7 +1788,7 @@
 
   // ---- Orb pods (second powerup type) ------------------------------------------------------
   MainScene.prototype.spawnOrb = function () {
-    var colorKey = STRIP_COLOR_KEYS[Math.floor(Math.random() * STRIP_COLOR_KEYS.length)];
+    var colorKey = this.pickPowerupColor();
     var margin = ORB_RADIUS + 4;
     var x = margin + Math.random() * (GAME_WIDTH - margin * 2);
     this.state.orbs.push({
