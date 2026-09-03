@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-03 07:00 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-03 07:20 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -385,7 +385,7 @@
   var CORE_RADIUS = 4;
   var CORE_RELEASE_SPEED = 260;
   var CORE_LIFETIME = 2.0; // seconds after release before it fizzles unclaimed
-  var COLOR_CORE = 0xef4444;
+  var COLOR_CORE = 0xffffff; // white - reads as "this can hurt you" whether it's orbiting an enemy or flying free
 
   // Shooting the orbiting dot directly - not its carrier - triggers a
   // starburst instead: every currently alive enemy dies at once, same
@@ -649,16 +649,16 @@
     });
 
     // Orb ball: the "surprise" hazard dot, not visible until an orb pod is
-    // shot instead of touched - one solid (non-translucent) texture per
-    // color, matching whichever orb it came from.
-    STRIP_COLOR_KEYS.forEach(function (key) {
+    // shot instead of touched - white regardless of the orb's own color,
+    // same "this attacks the ship" signal as the core.
+    (function () {
       var d = ORB_BALL_RADIUS * 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], 1);
+      g.fillStyle(0xffffff, 1);
       g.fillCircle(ORB_BALL_RADIUS, ORB_BALL_RADIUS, ORB_BALL_RADIUS);
-      g.generateTexture('orbBallTex_' + key, d, d);
+      g.generateTexture('orbBallTex', d, d);
       g.destroy();
-    });
+    })();
   };
 
   MainScene.prototype.initState = function () {
@@ -1647,7 +1647,7 @@
       vx: (dx / dist) * ORB_BALL_HAZARD_SPEED,
       vy: (dy / dist) * ORB_BALL_HAZARD_SPEED,
       age: 0,
-      sprite: this.add.sprite(orb.x, orb.y, 'orbBallTex_' + orb.colorKey)
+      sprite: this.add.sprite(orb.x, orb.y, 'orbBallTex')
     });
   };
 
