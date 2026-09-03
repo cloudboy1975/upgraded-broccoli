@@ -466,6 +466,9 @@
   var COLOR_BAR_SPEED_PER_WAVE = 0.6; // added per wave beyond the first, so later levels press harder
   var COLOR_BAR_MAX_SPEED = 16; // ceiling so very late waves don't turn this into a sudden-death timer
   var COLOR_BAR_ALPHA = 0.28; // lighter than STRIP_ALPHA - these now drift the whole game, so they need to read as background, not compete with foreground action
+  var COLOR_BAR_HEIGHT_SHRINK = 2; // px shorter each time a full clear triggers a respawn
+  var COLOR_BAR_MIN_HEIGHT = 6; // floor so repeated clears don't shrink them to nothing
+  var COLOR_BAR_ROW_GAP = 40; // vertical spacing between stacked rows added on each respawn
 
   // A second kind of powerup: a small translucent diamond, same
   // red/green/blue palette as the color strips (one color, assigned at
@@ -711,6 +714,8 @@
       orbs: [], // falling touch-to-collect diamond pods - see spawnOrb()/updateOrbs()
       orbHazards: [], // surprise balls spawned by shooting an orb instead of collecting it - see releaseOrbHazard()/updateOrbHazards()
       colorBars: [], // destructible per-color test targets above the formation - see spawnColorBars()
+      colorBarHeight: COLOR_BAR_HEIGHT, // shrinks a bit each time a full clear triggers a respawn - see respawnColorBars()
+      colorBarRows: 1, // grows by one each time a full clear triggers a respawn
       powerupSpawnTimer: POWERUP_SPAWN_INTERVAL, // shared between strips and orbs - see updatePowerupSpawns()
       lives: 3,
       score: 0,
@@ -758,18 +763,37 @@
     this.spawnColorBars(); // once per game, not per wave - see spawnColorBars()
   };
 
+  // Builds state.colorBarRows stacked rows of 3 (one per color each),
+  // sized to the current state.colorBarHeight - both grow/shrink over the
+  // course of a game via respawnColorBars(), not just at boot.
   MainScene.prototype.spawnColorBars = function () {
     var state = this.state;
     state.colorBars.forEach(function (bar) { bar.sprite.destroy(); });
     state.colorBars = [];
-    for (var i = 0; i < STRIP_COLOR_KEYS.length; i++) {
-      var key = STRIP_COLOR_KEYS[i];
-      var x = i * COLOR_BAR_WIDTH + COLOR_BAR_WIDTH / 2;
-      state.colorBars.push({
-        colorKey: key, x: x, y: COLOR_BAR_Y, alive: true,
-        sprite: this.add.sprite(x, COLOR_BAR_Y, 'colorBarTex_' + key)
-      });
+    for (var row = 0; row < state.colorBarRows; row++) {
+      var y = COLOR_BAR_Y - row * COLOR_BAR_ROW_GAP; // later rows start higher above the screen, queued up behind the first
+      for (var i = 0; i < STRIP_COLOR_KEYS.length; i++) {
+        var key = STRIP_COLOR_KEYS[i];
+        var x = i * COLOR_BAR_WIDTH + COLOR_BAR_WIDTH / 2;
+        var sprite = this.add.sprite(x, y, 'colorBarTex_' + key);
+        sprite.displayHeight = state.colorBarHeight; // texture is baked at COLOR_BAR_HEIGHT - scale it down to the current height instead of rebaking
+        state.colorBars.push({ colorKey: key, x: x, y: y, alive: true, sprite: sprite });
+      }
     }
+  };
+
+  // Rewards fully clearing every bar on screen (by shooting the matching
+  // color, not by letting one reach the bottom - that's the losing case,
+  // handled in updateColorBars) by bringing a fresh set back rather than
+  // just leaving the drift threat gone for good: a bit shorter (smaller,
+  // harder-to-hit targets, floored at COLOR_BAR_MIN_HEIGHT) and with one
+  // additional row than before, so clearing them keeps getting harder
+  // instead of the pressure permanently going away after the first clear.
+  MainScene.prototype.respawnColorBars = function () {
+    var state = this.state;
+    state.colorBarHeight = Math.max(state.colorBarHeight - COLOR_BAR_HEIGHT_SHRINK, COLOR_BAR_MIN_HEIGHT);
+    state.colorBarRows++;
+    this.spawnColorBars();
   };
 
   // The bars drift slowly downward the whole game - a background pressure
@@ -786,7 +810,7 @@
       if (!bar.alive) continue;
       bar.y += speed * dt;
       bar.sprite.y = bar.y;
-      if (bar.y + COLOR_BAR_HEIGHT / 2 >= GAME_HEIGHT) {
+      if (bar.y + state.colorBarHeight / 2 >= GAME_HEIGHT) {
         this.endGame();
         return;
       }
@@ -1285,12 +1309,18 @@
         for (var cbi = 0; cbi < state.colorBars.length; cbi++) {
           var bar = state.colorBars[cbi];
           if (!bar.alive || bar.colorKey !== b.colorKey) continue;
-          var barWithinY = Math.abs(b.y - bar.y) <= COLOR_BAR_HEIGHT / 2 + BULLET_RADIUS;
+          var barWithinY = Math.abs(b.y - bar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
           var barWithinX = Math.abs(b.x - bar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
           if (barWithinY && barWithinX) {
             b.sprite.destroy(); state.bullets.splice(bi, 1);
             bar.sprite.destroy(); bar.alive = false;
             hitBar = true;
+            // Clearing every bar on screen (all rows, all colors) is a
+            // reward, not an end to the pressure - bring a fresh, harder
+            // set back instead of leaving the drift threat gone for good.
+            if (state.colorBars.every(function (b2) { return !b2.alive; })) {
+              this.respawnColorBars();
+            }
             break;
           }
         }
@@ -1908,6 +1938,8 @@
     state.orbHazards.forEach(function (h) { h.sprite.destroy(); });
     state.orbHazards = [];
     state.powerupSpawnTimer = POWERUP_SPAWN_INTERVAL;
+    state.colorBarHeight = COLOR_BAR_HEIGHT; // undo any shrinking from respawnColorBars() over the previous game
+    state.colorBarRows = 1;
     this.spawnColorBars(); // fresh, all-alive bars for a new game
 
     state.phase = 'playing';
