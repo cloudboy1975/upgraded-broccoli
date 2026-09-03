@@ -461,7 +461,7 @@
   // no stacking, no win condition wired up yet - purely a feel test.
   var COLOR_BAR_WIDTH = GAME_WIDTH / 3;
   var COLOR_BAR_HEIGHT = 16;
-  var COLOR_BAR_Y = 40;
+  var COLOR_BAR_Y = 28;
 
   // A second kind of powerup: a small translucent diamond, same
   // red/green/blue palette as the color strips (one color, assigned at
@@ -641,13 +641,14 @@
       g.destroy();
     });
 
-    // Color bars: solid (not translucent) rectangles, one per primary
-    // color, with a small gap on each side so adjacent bars read as
-    // separate targets rather than one continuous strip.
+    // Color bars: translucent rectangles (same alpha as the powerup
+    // strips/orbs, for a consistent palette), one per primary color, with
+    // a small gap on each side so adjacent bars read as separate targets
+    // rather than one continuous strip.
     STRIP_COLOR_KEYS.forEach(function (key) {
       var w = COLOR_BAR_WIDTH - 4;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], 1);
+      g.fillStyle(STRIP_COLORS[key], STRIP_ALPHA);
       g.fillRect(0, 0, w, COLOR_BAR_HEIGHT);
       g.generateTexture('colorBarTex_' + key, w, COLOR_BAR_HEIGHT);
       g.destroy();
