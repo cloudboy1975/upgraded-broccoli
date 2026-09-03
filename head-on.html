@@ -1300,11 +1300,16 @@
       if (hitOrb) continue;
 
       // A powerup-released bullet (carries a colorKey) can also destroy a
-      // matching color bar above the formation - the whole point of this
-      // pass is testing whether "bank a color, fire it, hit the matching
-      // target" feels good. Ordinary tap-fired bullets have no colorKey
-      // and never interact with these.
-      var hitBar = false;
+      // matching color bar above the formation. Like the formation-enemy
+      // pierce below, hitting a bar does NOT consume the bullet - with
+      // multiple bars of the same color stacked in rows, a bullet that
+      // stopped on the first one it touched would leave the rest
+      // unreachable (bars don't move horizontally, so a second shot along
+      // the same column just re-hits nothing or sails past). Piercing
+      // means N banked colors of a color with M same-color bars on screen
+      // clears up to min(N, M) of them, same column, same flight.
+      // Ordinary tap-fired bullets have no colorKey and never interact
+      // with these at all.
       if (b.colorKey) {
         for (var cbi = 0; cbi < state.colorBars.length; cbi++) {
           var bar = state.colorBars[cbi];
@@ -1312,9 +1317,7 @@
           var barWithinY = Math.abs(b.y - bar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
           var barWithinX = Math.abs(b.x - bar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
           if (barWithinY && barWithinX) {
-            b.sprite.destroy(); state.bullets.splice(bi, 1);
             bar.sprite.destroy(); bar.alive = false;
-            hitBar = true;
             // Clearing every bar on screen (all rows, all colors) is a
             // reward, not an end to the pressure - bring a fresh, harder
             // set back instead of leaving the drift threat gone for good.
@@ -1325,7 +1328,6 @@
           }
         }
       }
-      if (hitBar) continue;
 
       for (var si = 0; si < state.formation.length; si++) {
         var slot = state.formation[si];
