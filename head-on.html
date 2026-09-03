@@ -462,6 +462,9 @@
   var COLOR_BAR_WIDTH = GAME_WIDTH / 3;
   var COLOR_BAR_HEIGHT = 16;
   var COLOR_BAR_Y = 28;
+  var COLOR_BAR_SPEED = 4; // px/sec at wave 1 - deliberately slow, a background pressure rather than a real-time threat
+  var COLOR_BAR_SPEED_PER_WAVE = 0.6; // added per wave beyond the first, so later levels press harder
+  var COLOR_BAR_MAX_SPEED = 16; // ceiling so very late waves don't turn this into a sudden-death timer
 
   // A second kind of powerup: a small translucent diamond, same
   // red/green/blue palette as the color strips (one color, assigned at
@@ -765,6 +768,27 @@
         colorKey: key, x: x, y: COLOR_BAR_Y, alive: true,
         sprite: this.add.sprite(x, COLOR_BAR_Y, 'colorBarTex_' + key)
       });
+    }
+  };
+
+  // The bars drift slowly downward the whole game - a background pressure
+  // separate from the formation's dives. If any bar's leading edge reaches
+  // the very bottom of the screen, it's an immediate game over, so leaving
+  // a color unmatched for too long eventually ends the run on its own.
+  // Speed ramps gently with the wave count (state.wave), capped so it
+  // never turns into a sudden-death timer at very late waves.
+  MainScene.prototype.updateColorBars = function (dt) {
+    var state = this.state;
+    var speed = Math.min(COLOR_BAR_SPEED + (state.wave - 1) * COLOR_BAR_SPEED_PER_WAVE, COLOR_BAR_MAX_SPEED);
+    for (var i = 0; i < state.colorBars.length; i++) {
+      var bar = state.colorBars[i];
+      if (!bar.alive) continue;
+      bar.y += speed * dt;
+      bar.sprite.y = bar.y;
+      if (bar.y + COLOR_BAR_HEIGHT / 2 >= GAME_HEIGHT) {
+        this.endGame();
+        return;
+      }
     }
   };
 
@@ -1940,6 +1964,7 @@
       updateDivers(state, dt);
       this.updateFiring(dt);
       this.tryTriggerDive(dt);
+      this.updateColorBars(dt);
       this.handleCollisions();
       this.updateCore(dt);
       this.updateStarburstFx(dt);
