@@ -1304,7 +1304,15 @@
         var sr = state.ship.radius + e.radius;
         if (sx * sx + sy * sy <= sr * sr) {
           e.sprite.destroy(); e.alive = false;
-          this.shipHit();
+          // A banked color orbiting the ship doubles as a one-hit shield -
+          // if any are up, the oldest one absorbs this ram instead of the
+          // ship taking damage: the enemy still dies, but no life is lost
+          // and the dot (and its banked color) is spent, gone either way.
+          if (state.powerup.dots.length > 0) {
+            this.consumeShieldDot();
+          } else {
+            this.shipHit();
+          }
           break;
         }
       }
@@ -1773,6 +1781,16 @@
     pu.dots.forEach(function (d) { d.sprite.destroy(); });
     pu.colors = [];
     pu.dots = [];
+  };
+
+  // Spends exactly one banked color/dot - the oldest one collected - as a
+  // shield block. colors and dots are parallel arrays (pushed together in
+  // collectColor()), so shifting both off the front keeps them in sync.
+  MainScene.prototype.consumeShieldDot = function () {
+    var pu = this.state.powerup;
+    var dot = pu.dots.shift();
+    if (dot) dot.sprite.destroy();
+    pu.colors.shift();
   };
 
   MainScene.prototype.addScore = function (n) {
