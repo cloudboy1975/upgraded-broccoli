@@ -1629,13 +1629,15 @@
     maskGfx.fillRect(sprite.x - size / 2, sprite.y - size / 2, size, size * fill.level);
   };
 
-  // Banks a distinct color (duplicates are a no-op - no stacking the same
-  // color) and spawns its orbiting indicator dot around the ship, reusing
-  // the core's orbiting-dot look for now. Collecting a second or third
-  // color just adds another dot to the same orbit.
+  // Banks a color and spawns its orbiting indicator dot around the ship,
+  // reusing the core's orbiting-dot look for now. Colors stack - collecting
+  // a second (or third) of the same color adds another dot to the orbit
+  // and another bullet of that color on release, same as collecting two
+  // different colors does. Collecting one you already have used to be a
+  // silent no-op (the strip/orb still vanished, nothing happened) - now it
+  // always adds to the volley.
   MainScene.prototype.collectColor = function (colorKey) {
     var pu = this.state.powerup;
-    if (pu.colors.indexOf(colorKey) !== -1) return;
     pu.colors.push(colorKey);
     pu.dots.push({
       colorKey: colorKey,
