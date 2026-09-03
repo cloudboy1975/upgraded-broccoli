@@ -309,7 +309,7 @@
       <button type="button" class="zone zone-mid" id="zoneMid" aria-label="Fire"><span class="zone-shape fire-dot" aria-hidden="true"></span></button>
     </div>
 
-    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-02 19:35 UTC</footer>
+    <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-03 07:00 UTC</footer>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -393,6 +393,16 @@
   var STARBURST_FX_DURATION = 0.45; // seconds
   var STARBURST_FX_MAX_RADIUS = 260;
   var COLOR_STARBURST = 0xfbbf24;
+
+  // Ship break-apart: a placeholder death beat, retro-Asteroids style -
+  // the ship's own outline splits into its 4 edges, each tumbling and
+  // drifting outward while fading out, before the existing blink-
+  // invulnerable respawn takes over. The ship sprite itself is hidden for
+  // the duration (not blinking yet) so the two don't overlap - "you
+  // exploded" reads first, "you're briefly safe" reads second.
+  var SHIP_BREAK_DURATION = 0.55; // seconds
+  var SHIP_BREAK_SHARD_SPEED = 90; // px/sec outward drift
+  var SHIP_BREAK_SHARD_SPIN = 6; // rad/sec, random tumble per shard
 
   // Powerup strips: translucent, ship-width colored bars drift straight
   // down like the stars, one primary color at a time. Flying through one
@@ -663,6 +673,7 @@
       formation: [], // grid slots - see spawnFormation()
       core: null, // the orbiting/released red dot bonus - see spawnFormation()/updateCore()
       starburstFx: null, // visual-only expanding ring when the core is shot directly
+      shipBreakFx: null, // visual-only ship-explosion placeholder on death - see triggerShipBreak()/updateShipBreakFx()
       strips: [], // falling colored powerup strips - see spawnStrip()/updateStrips()
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       powerup: { colors: [], dots: [], angle: 0 }, // banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
@@ -1379,6 +1390,65 @@
     fx.gfx.strokeCircle(fx.x, fx.y, STARBURST_FX_MAX_RADIUS * t);
   };
 
+  // The ship's own outline (nose, right wing, notch, left wing - same
+  // vertices as shipTex) split into their 4 individual edges, each given a
+  // random outward drift and tumble. Purely visual, no state impact beyond
+  // itself.
+  MainScene.prototype.triggerShipBreak = function (x, y) {
+    var state = this.state;
+    if (state.shipBreakFx) state.shipBreakFx.gfx.destroy();
+
+    var r = SHIP_RADIUS;
+    var pts = [
+      { x: 0, y: -r },
+      { x: r * 0.75, y: r * 0.7 },
+      { x: 0, y: r * 0.35 },
+      { x: -r * 0.75, y: r * 0.7 }
+    ];
+    var shards = [];
+    for (var i = 0; i < pts.length; i++) {
+      var a = pts[i], b = pts[(i + 1) % pts.length];
+      var midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+      var mag = Math.sqrt(midX * midX + midY * midY) || 1;
+      var jitter = (Math.random() - 0.5) * 0.6; // keeps the 4 shards from flying apart too mechanically
+      shards.push({
+        ax: a.x, ay: a.y, bx: b.x, by: b.y,
+        vx: (midX / mag + jitter) * SHIP_BREAK_SHARD_SPEED,
+        vy: (midY / mag + jitter) * SHIP_BREAK_SHARD_SPEED,
+        spin: (Math.random() - 0.5) * 2 * SHIP_BREAK_SHARD_SPIN,
+        rotation: 0, driftX: 0, driftY: 0
+      });
+    }
+    state.shipBreakFx = { x: x, y: y, age: 0, shards: shards, gfx: this.add.graphics() };
+  };
+
+  MainScene.prototype.updateShipBreakFx = function (dt) {
+    var fx = this.state.shipBreakFx;
+    if (!fx) return;
+    fx.age += dt;
+    var t = Math.min(fx.age / SHIP_BREAK_DURATION, 1);
+    if (t >= 1) {
+      fx.gfx.destroy();
+      this.state.shipBreakFx = null;
+      return;
+    }
+    var gfx = fx.gfx;
+    gfx.clear();
+    gfx.lineStyle(2, COLOR_SHIP, 1 - t);
+    fx.shards.forEach(function (s) {
+      s.driftX += s.vx * dt;
+      s.driftY += s.vy * dt;
+      s.rotation += s.spin * dt;
+      var cos = Math.cos(s.rotation), sin = Math.sin(s.rotation);
+      var ax = s.ax * cos - s.ay * sin, ay = s.ax * sin + s.ay * cos;
+      var bx = s.bx * cos - s.by * sin, by = s.bx * sin + s.by * cos;
+      gfx.beginPath();
+      gfx.moveTo(fx.x + s.driftX + ax, fx.y + s.driftY + ay);
+      gfx.lineTo(fx.x + s.driftX + bx, fx.y + s.driftY + by);
+      gfx.strokePath();
+    });
+  };
+
   // ---- Powerup strips ------------------------------------------------------
   // Strips and orbs share one timer and cadence - each firing spawns
   // EITHER a strip OR an orb, never both, so the two never show up
@@ -1646,6 +1716,7 @@
   MainScene.prototype.shipHit = function () {
     var state = this.state;
     this.clearPowerup(); // dying resets whatever colors were banked - no carrying progress through a death
+    this.triggerShipBreak(state.ship.x, SHIP_Y); // placeholder death beat - see triggerShipBreak()
     state.lives--;
     if (state.lives <= 0) {
       state.lives = 0;
@@ -1692,6 +1763,8 @@
     state.core = null;
     if (state.starburstFx) state.starburstFx.gfx.destroy();
     state.starburstFx = null;
+    if (state.shipBreakFx) state.shipBreakFx.gfx.destroy();
+    state.shipBreakFx = null;
     state.strips.forEach(function (s) { s.sprite.destroy(); });
     state.strips = [];
     state.shipFill.level = 0;
@@ -1764,6 +1837,7 @@
       this.handleCollisions();
       this.updateCore(dt);
       this.updateStarburstFx(dt);
+      this.updateShipBreakFx(dt);
       this.updatePowerupSpawns(dt);
       this.updateStrips(dt);
       this.updateShipFill(dt);
@@ -1778,7 +1852,8 @@
     this.shipSprite.x = state.ship.x;
 
     var invuln = isInvulnerable(state);
-    this.shipSprite.setVisible(!invuln || Math.floor(performance.now() / 100) % 2 !== 0);
+    var breaking = !!state.shipBreakFx;
+    this.shipSprite.setVisible(!breaking && (!invuln || Math.floor(performance.now() / 100) % 2 !== 0));
   };
 
   // Restart/Reset Best only live in the game-over overlay now - no
