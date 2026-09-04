@@ -447,18 +447,28 @@
 
   // A bullet's colored trail (one segment per color the ship has leveled
   // up via strips - see levelUpFirePower()) is drawn behind it, anchored
-  // at the bullet so it trails toward where it came from. Baked at a unit
-  // length representing level 1, then stretched taller (scaled via
-  // displayHeight, same "bake once, scale to fit" trick colorBarTex_*
-  // uses) for each additional level - a visible, growing readout of how
-  // much damage that color currently does. Multiple active colors on the
-  // same bullet are spread a few px apart on x so they read as distinct
-  // trails, not one blended blob.
-  var BULLET_TRAIL_WIDTH = BULLET_RADIUS * 2;
-  var BULLET_TRAIL_UNIT_LENGTH = 6; // px, length at level 1
-  var BULLET_TRAIL_LENGTH_PER_LEVEL = 3; // px added per level beyond 1
-  var BULLET_TRAIL_ALPHA = 0.6;
-  var BULLET_TRAIL_X_GAP = 5; // px between adjacent trails when more than one color is active
+  // at the bullet so it trails toward where it came from. Styled as a
+  // small pulse-cannon charge rather than a plain colored block, so it
+  // reads as a distinct component riding along with the bullet, not part
+  // of it: a bright core down the middle, a soft glow around it, and a
+  // couple of brighter cross-bands (the "pulse rings"). It also visibly
+  // pulses in brightness over time (see updateBullets()) rather than
+  // sitting static. Baked at a unit length representing level 1, then
+  // stretched taller (scaled via displayHeight, same "bake once, scale to
+  // fit" trick colorBarTex_* uses) for each additional level - a visible,
+  // growing readout of how much damage that color currently does.
+  // Multiple active colors on the same bullet are spread a few px apart
+  // on x so they read as distinct trails, not one blended blob.
+  var BULLET_TRAIL_CORE_WIDTH = BULLET_RADIUS * 1.3; // bright inner charge
+  var BULLET_TRAIL_GLOW_WIDTH = BULLET_RADIUS * 2.6; // soft outer glow, wider than the core
+  var BULLET_TRAIL_UNIT_LENGTH = 8; // px, length at level 1
+  var BULLET_TRAIL_LENGTH_PER_LEVEL = 4; // px added per level beyond 1
+  var BULLET_TRAIL_GLOW_ALPHA = 0.28;
+  var BULLET_TRAIL_CORE_ALPHA = 0.85;
+  var BULLET_TRAIL_RING_ALPHA = 0.65; // the bright white pulse-ring cross-bands
+  var BULLET_TRAIL_X_GAP = 8; // px between adjacent trails when more than one color is active
+  var BULLET_TRAIL_PULSE_SPEED = 10; // rad/sec - how fast the trail's brightness pulses
+  var BULLET_TRAIL_PULSE_DEPTH = 0.35; // how far alpha swings below full brightness at the dimmest point of each pulse
 
   // Firing no longer auto-repeats while held - a press still fires one
   // shot immediately, but holding past this threshold spends whatever
@@ -697,14 +707,25 @@
       g.destroy();
     });
 
-    // Bullet trails: one per color, baked at the level-1 unit length and
-    // stretched taller per level via displayHeight at creation time (see
+    // Bullet trails: one per color, styled as a small pulse-cannon charge
+    // (soft outer glow + bright core + a couple of brighter pulse-ring
+    // cross-bands) rather than a plain block - see the BULLET_TRAIL_*
+    // comment above. Baked at the level-1 unit length and stretched
+    // taller per level via displayHeight at creation time (see
     // fireBullet()) rather than rebaked per level.
     STRIP_COLOR_KEYS.forEach(function (key) {
+      var gw = BULLET_TRAIL_GLOW_WIDTH, h = BULLET_TRAIL_UNIT_LENGTH;
+      var cx = gw / 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], BULLET_TRAIL_ALPHA);
-      g.fillRoundedRect(0, 0, BULLET_TRAIL_WIDTH, BULLET_TRAIL_UNIT_LENGTH, BULLET_TRAIL_WIDTH / 2);
-      g.generateTexture('bulletTrailTex_' + key, BULLET_TRAIL_WIDTH, BULLET_TRAIL_UNIT_LENGTH);
+      g.fillStyle(STRIP_COLORS[key], BULLET_TRAIL_GLOW_ALPHA);
+      g.fillRoundedRect(0, 0, gw, h, gw / 2);
+      g.fillStyle(STRIP_COLORS[key], BULLET_TRAIL_CORE_ALPHA);
+      g.fillRoundedRect(cx - BULLET_TRAIL_CORE_WIDTH / 2, 0, BULLET_TRAIL_CORE_WIDTH, h, BULLET_TRAIL_CORE_WIDTH / 2);
+      var ringH = h * 0.16;
+      g.fillStyle(0xffffff, BULLET_TRAIL_RING_ALPHA);
+      g.fillRoundedRect(cx - gw * 0.45, h * 0.28 - ringH / 2, gw * 0.9, ringH, ringH / 2);
+      g.fillRoundedRect(cx - gw * 0.45, h * 0.64 - ringH / 2, gw * 0.9, ringH, ringH / 2);
+      g.generateTexture('bulletTrailTex_' + key, gw, h);
       g.destroy();
     });
 
@@ -720,6 +741,35 @@
       g.generateTexture('colorBarTex_' + key, w, COLOR_BAR_HEIGHT);
       g.destroy();
     });
+
+    // Brick cracks: one shared overlay (not per-color - dark fracture
+    // lines read fine over any bar color), baked once and reused by every
+    // bar. Sits over the bar at alpha 0 when undamaged and is revealed in
+    // proportion to damage taken (see updateBrickCrack()) - the SAME
+    // crack pattern gradually showing through, not a new one swapped in
+    // per hit, so it reads as one spreading fracture.
+    (function () {
+      var w = COLOR_BAR_WIDTH - 4, h = COLOR_BAR_HEIGHT;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.lineStyle(1.4, 0x000000, 0.9);
+      function crackLine(points) {
+        g.beginPath();
+        g.moveTo(points[0][0], points[0][1]);
+        for (var i = 1; i < points.length; i++) g.lineTo(points[i][0], points[i][1]);
+        g.strokePath();
+      }
+      // Three main jagged fractures running roughly top to bottom, plus a
+      // couple of short branches connecting them - a small, fixed "shatter"
+      // pattern that reads at this size without needing per-instance
+      // randomness.
+      crackLine([[w * 0.15, 0], [w * 0.22, h * 0.4], [w * 0.12, h * 0.65], [w * 0.2, h]]);
+      crackLine([[w * 0.5, 0], [w * 0.46, h * 0.3], [w * 0.58, h * 0.55], [w * 0.5, h]]);
+      crackLine([[w * 0.8, 0], [w * 0.86, h * 0.35], [w * 0.74, h * 0.7], [w * 0.82, h]]);
+      crackLine([[w * 0.22, h * 0.4], [w * 0.46, h * 0.3]]);
+      crackLine([[w * 0.58, h * 0.55], [w * 0.74, h * 0.7]]);
+      g.generateTexture('brickCrackTex', w, h);
+      g.destroy();
+    })();
 
     // Brick shards: a small solid (fully opaque, not translucent like the
     // collectible powerups - this is now a genuine enemy) four-pointed
@@ -843,7 +893,7 @@
   // course of a game via respawnColorBars(), not just at boot.
   MainScene.prototype.spawnColorBars = function () {
     var state = this.state;
-    state.colorBars.forEach(function (bar) { bar.sprite.destroy(); });
+    state.colorBars.forEach(function (bar) { bar.sprite.destroy(); bar.crackSprite.destroy(); });
     state.colorBars = [];
     for (var row = 0; row < state.colorBarRows; row++) {
       var y = COLOR_BAR_Y - row * COLOR_BAR_ROW_GAP; // later rows start higher above the screen, queued up behind the first
@@ -852,9 +902,21 @@
         var x = i * COLOR_BAR_WIDTH + COLOR_BAR_WIDTH / 2;
         var sprite = this.add.sprite(x, y, 'colorBarTex_' + key);
         sprite.displayHeight = state.colorBarHeight; // texture is baked at COLOR_BAR_HEIGHT - scale it down to the current height instead of rebaking
-        state.colorBars.push({ colorKey: key, x: x, y: y, alive: true, hp: COLOR_BAR_MAX_HP, sprite: sprite });
+        // The crack overlay sits on top, scaled to match, starting fully
+        // invisible (a fresh bar is undamaged) - see updateBrickCrack().
+        var crackSprite = this.add.sprite(x, y, 'brickCrackTex');
+        crackSprite.displayHeight = state.colorBarHeight;
+        crackSprite.alpha = 0;
+        state.colorBars.push({ colorKey: key, x: x, y: y, alive: true, hp: COLOR_BAR_MAX_HP, sprite: sprite, crackSprite: crackSprite });
       }
     }
+  };
+
+  // Reveals the shared crack overlay in proportion to damage taken - 0
+  // alpha at full hp (no visible cracks), fully opaque once hp hits 0
+  // (about to break). Call any time a bar's hp changes without killing it.
+  MainScene.prototype.updateBrickCrack = function (bar) {
+    bar.crackSprite.alpha = clamp(1 - bar.hp / COLOR_BAR_MAX_HP, 0, 1);
   };
 
   // Rewards fully clearing every bar on screen (by shooting the matching
@@ -887,9 +949,11 @@
       if (!bar.alive) continue;
       bar.y += speed * dt;
       bar.sprite.y = bar.y;
+      bar.crackSprite.y = bar.y;
       if (bar.y + state.colorBarHeight / 2 >= GAME_HEIGHT) {
         this.breakBrickIntoShards(bar);
         bar.sprite.destroy();
+        bar.crackSprite.destroy();
         bar.alive = false;
         // Same "clearing everything triggers a harder respawn" rule as a
         // matching-color bullet or a flying core destroying the last bar.
@@ -1385,6 +1449,7 @@
       var trail = self.add.sprite(b.x + offset, b.y, 'bulletTrailTex_' + key);
       trail.setOrigin(0.5, 0);
       trail.displayHeight = BULLET_TRAIL_UNIT_LENGTH + (level - 1) * BULLET_TRAIL_LENGTH_PER_LEVEL;
+      trail.pulsePhase = Math.random() * Math.PI * 2; // random start so multiple trails don't pulse in lockstep
       b.trailSprites[key] = trail;
     });
 
@@ -1421,7 +1486,15 @@
       b.ttl -= dt;
       b.sprite.y = b.y;
       if (b.trailSprites) {
-        for (var key in b.trailSprites) b.trailSprites[key].y = b.y;
+        for (var key in b.trailSprites) {
+          var trail = b.trailSprites[key];
+          trail.y = b.y;
+          // The pulse-cannon "pulse" itself - a smooth brightness swing
+          // over time, each trail on its own phase so a multi-color
+          // bullet's segments don't flash in unison.
+          var swing = Math.sin(state.clock * BULLET_TRAIL_PULSE_SPEED + trail.pulsePhase) * 0.5 + 0.5;
+          trail.alpha = 1 - BULLET_TRAIL_PULSE_DEPTH + BULLET_TRAIL_PULSE_DEPTH * swing;
+        }
       }
       if (b.ttl <= 0 || b.y < -10) { destroyBulletSprites(b); state.bullets.splice(i, 1); }
     }
@@ -1514,7 +1587,7 @@
           var barWithinX = Math.abs(b.x - bar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
           if (barWithinY && barWithinX) {
             destroyBulletSprites(b); state.bullets.splice(bi, 1);
-            bar.sprite.destroy(); bar.alive = false;
+            bar.sprite.destroy(); bar.crackSprite.destroy(); bar.alive = false;
             hitBar = true;
             // Clearing every bar on screen (all rows, all colors) is a
             // reward, not an end to the pressure - bring a fresh, harder
@@ -1554,10 +1627,12 @@
               delete b.trailSprites[tbar.colorKey];
             }
             if (tbar.hp <= 0) {
-              tbar.sprite.destroy(); tbar.alive = false;
+              tbar.sprite.destroy(); tbar.crackSprite.destroy(); tbar.alive = false;
               if (state.colorBars.every(function (b2) { return !b2.alive; })) {
                 this.respawnColorBars();
               }
+            } else {
+              this.updateBrickCrack(tbar);
             }
             break;
           }
@@ -1798,6 +1873,7 @@
       var barWithinX = Math.abs(core.x - bar.x) <= CORE_RADIUS + COLOR_BAR_WIDTH / 2;
       if (barWithinY && barWithinX) {
         bar.sprite.destroy();
+        bar.crackSprite.destroy();
         bar.alive = false;
         core.sprite.destroy();
         state.core = null;
