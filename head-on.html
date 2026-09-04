@@ -415,7 +415,7 @@
   var STRIP_COLOR_KEYS = ['red', 'green', 'blue'];
   var STRIP_WIDTH = 20; // 60 was too long/thin - a third shorter, a few px wider
   var STRIP_HEIGHT = 40;
-  var STRIP_FALL_SPEED = 130;
+  var STRIP_FALL_SPEED = 180;
   var STRIP_ALPHA = 0.45;
   // How far the ship's center may be from a strip's center and still count
   // as touching it - the ship's radius plus half the strip's width, i.e.
@@ -462,9 +462,9 @@
   var COLOR_BAR_WIDTH = GAME_WIDTH / 3;
   var COLOR_BAR_HEIGHT = 16;
   var COLOR_BAR_Y = 28;
-  var COLOR_BAR_SPEED = 4; // px/sec at wave 1 - deliberately slow, a background pressure rather than a real-time threat
-  var COLOR_BAR_SPEED_PER_WAVE = 0.6; // added per wave beyond the first, so later levels press harder
-  var COLOR_BAR_MAX_SPEED = 16; // ceiling so very late waves don't turn this into a sudden-death timer
+  var COLOR_BAR_SPEED = 7; // px/sec at wave 1 - still a background pressure, not a real-time threat, just faster than the original feel test
+  var COLOR_BAR_SPEED_PER_WAVE = 1; // added per wave beyond the first, so later levels press harder
+  var COLOR_BAR_MAX_SPEED = 28; // ceiling so very late waves don't turn this into a sudden-death timer
   var COLOR_BAR_ALPHA = 0.28; // lighter than STRIP_ALPHA - these now drift the whole game, so they need to read as background, not compete with foreground action
   var COLOR_BAR_HEIGHT_SHRINK = 2; // px shorter each time a full clear triggers a respawn
   var COLOR_BAR_MIN_HEIGHT = 6; // floor so repeated clears don't shrink them to nothing
@@ -485,8 +485,8 @@
   var BRICK_SHARD_SCORE = 60; // between straight (50) and swoop (80) - a mid-tier threat
   var BRICK_SHARD_SPIN_DURATION = 0.6; // seconds of pure in-place spin before it starts moving
   var BRICK_SHARD_SPIN_SPEED = 14; // rad/sec - fast, reads as a spinning top
-  var BRICK_SHARD_FLY_DURATION = 1.6; // seconds of wandering flight before it commits to attacking
-  var BRICK_SHARD_FLY_UP_SPEED = 70; // px/sec upward drift while wandering
+  var BRICK_SHARD_FLY_DURATION = 2.4; // seconds of wandering flight before it commits to attacking
+  var BRICK_SHARD_FLY_UP_SPEED = 140; // px/sec upward drift while wandering - climbs a lot higher before attacking (~330px, up from ~110px)
   var BRICK_SHARD_FLY_WANDER_AMPLITUDE = 90; // px, lateral wander while flying
   var BRICK_SHARD_FLY_WANDER_FREQ = 2.2; // rad/sec
   var BRICK_SHARD_ATTACK_SPEED = 150; // px/sec once diving at the ship
@@ -506,7 +506,7 @@
   // surprise, not something telegraphed in advance.
   var ORB_RADIUS = 11;
   var ORB_BALL_RADIUS = 4;
-  var ORB_FALL_SPEED = 110;
+  var ORB_FALL_SPEED = 150;
   var ORB_BALL_HAZARD_SPEED = 260; // straight-line speed once released
   var ORB_BALL_HAZARD_LIFETIME = 2.5; // seconds before an unclaimed released ball fizzles
 
