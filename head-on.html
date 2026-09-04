@@ -1796,17 +1796,23 @@
   };
 
   // ---- Powerup strips ------------------------------------------------------
-  // Strips and orbs share one timer and cadence - each firing spawns
-  // EITHER a strip OR an orb, never both, so the two never show up
-  // together just because their own independent timers happened to line
-  // up. spawnStrip()/spawnOrb() themselves stay untouched; this only owns
-  // the shared "when" and "which one".
+  // Strips and orbs share one timer and cadence. Each firing spawns
+  // state.colorBarRows of them (independent strip-or-orb coin flip per
+  // spawn) - at the starting 1 row that's exactly one, same as the
+  // original feel; as full clears stack up more brick rows (and the
+  // fight escalates), more powerups fall at once too, so there's enough
+  // ammo in play to keep pace with the added bricks. spawnStrip()/
+  // spawnOrb() themselves stay untouched; this only owns the shared
+  // "when", "how many", and "which one each".
   MainScene.prototype.updatePowerupSpawns = function (dt) {
     var state = this.state;
     state.powerupSpawnTimer -= dt;
     if (state.powerupSpawnTimer <= 0) {
       state.powerupSpawnTimer = POWERUP_SPAWN_INTERVAL;
-      if (Math.random() < 0.5) this.spawnStrip(); else this.spawnOrb();
+      var count = state.colorBarRows;
+      for (var i = 0; i < count; i++) {
+        if (Math.random() < 0.5) this.spawnStrip(); else this.spawnOrb();
+      }
     }
   };
 
