@@ -498,17 +498,16 @@
   // "whole pass" requirement like the strips - and it acts like the other
   // powerups (their actual effect is still undefined, so for now it just
   // banks its own color, same payoff as catching a strip of that color).
-  // Nothing hints at this while it falls - just the diamond - but shoot it
-  // instead of touching it and a small ball springs out of nowhere and
-  // flies straight at wherever the ship was at that moment, a real threat
-  // you have to dodge. Deliberately no visible orbiting "guardian" ball
-  // beforehand (an earlier pass had one) - the whole point is that it's a
-  // surprise, not something telegraphed in advance.
+  // Shoot it instead of touching it and it doesn't vanish - it turns into
+  // a colored bullet (same color as the pod) that flies at wherever the
+  // ship was at that moment and gets collected the instant it arrives,
+  // same payoff as touching the pod directly. Not a hazard: it can't hurt
+  // the ship, it's just a second way to deliver the same pickup.
   var ORB_RADIUS = 11;
-  var ORB_BALL_RADIUS = 4;
+  var ORB_BULLET_RADIUS = 4;
   var ORB_FALL_SPEED = 130;
-  var ORB_BALL_HAZARD_SPEED = 260; // straight-line speed once released
-  var ORB_BALL_HAZARD_LIFETIME = 2.5; // seconds before an unclaimed released ball fizzles
+  var ORB_BULLET_SPEED = 260; // straight-line speed once released
+  var ORB_BULLET_LIFETIME = 2.5; // seconds before an unclaimed released bullet fizzles
 
   // Strips and orbs share ONE spawn timer and cadence, not two independent
   // ones - each time it fires, it spawns EITHER a strip OR an orb (a coin
@@ -729,17 +728,10 @@
       g.destroy();
     });
 
-    // Orb ball: the "surprise" hazard dot, not visible until an orb pod is
-    // shot instead of touched - white regardless of the orb's own color,
-    // same "this attacks the ship" signal as the core.
-    (function () {
-      var d = ORB_BALL_RADIUS * 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(ORB_BALL_RADIUS, ORB_BALL_RADIUS, ORB_BALL_RADIUS);
-      g.generateTexture('orbBallTex', d, d);
-      g.destroy();
-    })();
+    // Shooting an orb pod releases it as a colored bullet flying at the
+    // ship (see releaseOrbBullet()) - it reuses powerupDotTex_<color>, the
+    // same colored-dot texture the player's own banked-powerup shots use,
+    // so no separate texture is needed here.
   };
 
   MainScene.prototype.initState = function () {
@@ -759,7 +751,7 @@
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       powerup: { colors: [], dots: [], angle: 0 }, // banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
       orbs: [], // falling touch-to-collect diamond pods - see spawnOrb()/updateOrbs()
-      orbHazards: [], // surprise balls spawned by shooting an orb instead of collecting it - see releaseOrbHazard()/updateOrbHazards()
+      orbBullets: [], // colored bullets released by shooting an orb instead of collecting it - see releaseOrbBullet()/updateOrbBullets()
       colorBars: [], // destructible per-color test targets above the formation - see spawnColorBars()
       colorBarHeight: COLOR_BAR_HEIGHT, // shrinks a bit each time a full clear triggers a respawn - see respawnColorBars()
       colorBarRows: 1, // grows by one each time a full clear triggers a respawn
@@ -1407,9 +1399,9 @@
         }
       }
 
-      // Shooting an orb pod (instead of touching it) is what turns it
-      // dangerous - a ball springs out of nowhere and comes straight at
-      // the ship, with no orbiting telegraph beforehand.
+      // Shooting an orb pod (instead of touching it) is an alternate way
+      // to collect it - the pod turns into its own colored bullet, sent
+      // flying at the ship, instead of vanishing.
       var hitOrb = false;
       for (var oi = 0; oi < state.orbs.length; oi++) {
         var orbHit = state.orbs[oi];
@@ -1417,7 +1409,7 @@
         var orr = ORB_RADIUS + BULLET_RADIUS;
         if (odx * odx + ody * ody <= orr * orr) {
           b.sprite.destroy(); state.bullets.splice(bi, 1);
-          this.releaseOrbHazard(orbHit);
+          this.releaseOrbBullet(orbHit);
           orbHit.hostSprite.destroy();
           state.orbs.splice(oi, 1);
           hitOrb = true;
@@ -2023,48 +2015,50 @@
     }
   };
 
-  // Shooting the pod (instead of touching it) is the surprise: nothing was
-  // visible beforehand, but a ball springs into existence at that spot and
-  // flies straight at wherever the ship was at that moment - a fixed
-  // trajectory, not a live homing missile (same reasoning as the enemy
-  // swoop dive: aiming at a frozen point gives a real dodge window, aiming
-  // at the ship's live position doesn't).
-  MainScene.prototype.releaseOrbHazard = function (orb) {
+  // Shooting the pod (instead of touching it) turns it into its own
+  // colored bullet, sent flying at wherever the ship was at that moment -
+  // a fixed trajectory, not a live homing missile (same reasoning as the
+  // enemy swoop dive: aiming at a frozen point gives a real dodge window
+  // if the ship moves away, aiming at the ship's live position doesn't).
+  // It isn't a hazard: reaching the ship collects it, same payoff as
+  // touching the falling pod directly.
+  MainScene.prototype.releaseOrbBullet = function (orb) {
     var state = this.state;
     var dx = state.ship.x - orb.x, dy = SHIP_Y - orb.y;
     var dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    state.orbHazards.push({
+    state.orbBullets.push({
+      colorKey: orb.colorKey,
       x: orb.x, y: orb.y,
-      vx: (dx / dist) * ORB_BALL_HAZARD_SPEED,
-      vy: (dy / dist) * ORB_BALL_HAZARD_SPEED,
+      vx: (dx / dist) * ORB_BULLET_SPEED,
+      vy: (dy / dist) * ORB_BULLET_SPEED,
       age: 0,
-      sprite: this.add.sprite(orb.x, orb.y, 'orbBallTex')
+      sprite: this.add.sprite(orb.x, orb.y, 'powerupDotTex_' + orb.colorKey)
     });
   };
 
-  MainScene.prototype.updateOrbHazards = function (dt) {
+  MainScene.prototype.updateOrbBullets = function (dt) {
     var state = this.state;
-    for (var i = state.orbHazards.length - 1; i >= 0; i--) {
-      var h = state.orbHazards[i];
+    for (var i = state.orbBullets.length - 1; i >= 0; i--) {
+      var h = state.orbBullets[i];
       h.age += dt;
       h.x += h.vx * dt;
       h.y += h.vy * dt;
       h.sprite.x = h.x; h.sprite.y = h.y;
 
-      if (!isInvulnerable(state)) {
-        var hdx = h.x - state.ship.x, hdy = h.y - SHIP_Y;
-        var hrr = ORB_BALL_RADIUS + state.ship.radius;
-        if (hdx * hdx + hdy * hdy <= hrr * hrr) {
-          h.sprite.destroy();
-          state.orbHazards.splice(i, 1);
-          this.shipHit();
-          continue;
-        }
+      // Reaching the ship collects it - not a hit, so this isn't gated on
+      // invulnerability like a real hazard would be.
+      var hdx = h.x - state.ship.x, hdy = h.y - SHIP_Y;
+      var hrr = ORB_BULLET_RADIUS + state.ship.radius;
+      if (hdx * hdx + hdy * hdy <= hrr * hrr) {
+        this.collectColor(h.colorKey);
+        h.sprite.destroy();
+        state.orbBullets.splice(i, 1);
+        continue;
       }
 
-      if (h.age > ORB_BALL_HAZARD_LIFETIME || h.x < -20 || h.x > GAME_WIDTH + 20 || h.y < -20 || h.y > GAME_HEIGHT + 20) {
+      if (h.age > ORB_BULLET_LIFETIME || h.x < -20 || h.x > GAME_WIDTH + 20 || h.y < -20 || h.y > GAME_HEIGHT + 20) {
         h.sprite.destroy();
-        state.orbHazards.splice(i, 1);
+        state.orbBullets.splice(i, 1);
       }
     }
   };
@@ -2178,8 +2172,8 @@
     this.clearPowerup();
     state.orbs.forEach(function (o) { o.hostSprite.destroy(); });
     state.orbs = [];
-    state.orbHazards.forEach(function (h) { h.sprite.destroy(); });
-    state.orbHazards = [];
+    state.orbBullets.forEach(function (h) { h.sprite.destroy(); });
+    state.orbBullets = [];
     state.powerupSpawnTimer = randomPowerupSpawnInterval();
     state.colorBarHeight = COLOR_BAR_HEIGHT; // undo any shrinking from respawnColorBars() over the previous game
     state.colorBarRows = 1;
@@ -2253,7 +2247,7 @@
       this.updateShipFill(dt);
       this.updatePowerupDots(dt);
       this.updateOrbs(dt);
-      this.updateOrbHazards(dt);
+      this.updateOrbBullets(dt);
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
     }
