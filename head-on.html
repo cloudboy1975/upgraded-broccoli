@@ -476,9 +476,11 @@
   // orb-banked ammo) instant-kills one in a single hit, consumed on
   // impact; an ordinary bullet carrying a matching color trail (built up
   // via strips - see levelUpFirePower()) chips COLOR_BAR_MAX_HP down by
-  // that color's current level per hit instead, also consumed on impact.
-  // A mismatched color, or an ordinary bullet with no trail at all, passes
-  // through untouched either way.
+  // that color's current level per hit instead - only that ONE color's
+  // trail segment is spent on the hit, not the whole bullet, so it keeps
+  // flying (still able to hit an enemy afterward) with any other colors
+  // it's still carrying. A mismatched color, or an ordinary bullet with
+  // no trail at all, passes through untouched either way.
   var COLOR_BAR_WIDTH = GAME_WIDTH / 3;
   var COLOR_BAR_HEIGHT = 16;
   var COLOR_BAR_Y = 28;
@@ -1362,7 +1364,11 @@
       // firing - a strip collected after this shot is already in flight
       // levels up future bullets, not this one.
       trailLevels: { red: state.colorLevels.red, green: state.colorLevels.green, blue: state.colorLevels.blue },
-      trailSprites: []
+      // Keyed by color (not a plain array) so a single color's segment can
+      // be dropped on its own when it spends itself on a matching bar -
+      // see handleCollisions() - without touching the others or the
+      // bullet itself.
+      trailSprites: {}
     };
     b.sprite = this.add.sprite(b.x, b.y, 'bulletTex');
 
@@ -1379,7 +1385,7 @@
       var trail = self.add.sprite(b.x + offset, b.y, 'bulletTrailTex_' + key);
       trail.setOrigin(0.5, 0);
       trail.displayHeight = BULLET_TRAIL_UNIT_LENGTH + (level - 1) * BULLET_TRAIL_LENGTH_PER_LEVEL;
-      b.trailSprites.push(trail);
+      b.trailSprites[key] = trail;
     });
 
     state.bullets.push(b);
@@ -1396,12 +1402,14 @@
     ship.x = clamp(ship.x, ship.radius, GAME_WIDTH - ship.radius);
   }
 
-  // Destroys a bullet's own sprite plus any trail segments it's carrying -
-  // every place a bullet gets removed goes through this so a trail never
-  // outlives its bullet.
+  // Destroys a bullet's own sprite plus any trail segments it's still
+  // carrying - every place a bullet gets removed goes through this so a
+  // trail never outlives its bullet. A color already spent against a bar
+  // (see handleCollisions()) has its entry deleted from trailSprites
+  // ahead of time, so this only ever touches what's left.
   function destroyBulletSprites(b) {
     if (b.trailSprites) {
-      for (var i = 0; i < b.trailSprites.length; i++) b.trailSprites[i].destroy();
+      for (var key in b.trailSprites) b.trailSprites[key].destroy();
     }
     b.sprite.destroy();
   }
@@ -1413,7 +1421,7 @@
       b.ttl -= dt;
       b.sprite.y = b.y;
       if (b.trailSprites) {
-        for (var ti = 0; ti < b.trailSprites.length; ti++) b.trailSprites[ti].y = b.y;
+        for (var key in b.trailSprites) b.trailSprites[key].y = b.y;
       }
       if (b.ttl <= 0 || b.y < -10) { destroyBulletSprites(b); state.bullets.splice(i, 1); }
     }
@@ -1524,10 +1532,12 @@
       // through strips - see levelUpFirePower()/fireBullet()) chips away
       // at a matching-color bar instead of instant-killing it: each hit
       // deals damage equal to that color's current level, and the bar
-      // dies once COLOR_BAR_MAX_HP runs out. A mismatched color's trail
-      // (or no trail at all) does nothing here - the bullet just carries
-      // on to whatever's next, same as any ordinary shot.
-      var hitBarWithTrail = false;
+      // dies once COLOR_BAR_MAX_HP runs out. Only THAT color's own trail
+      // is spent on the hit - the bullet itself isn't consumed, so it
+      // keeps flying with whatever other colors it's still carrying, and
+      // can still go on to hit a formation enemy or shard below, same as
+      // any ordinary shot. A mismatched color's trail (or no trail at
+      // all) does nothing here.
       if (b.trailLevels) {
         for (var tbi = 0; tbi < state.colorBars.length; tbi++) {
           var tbar = state.colorBars[tbi];
@@ -1537,9 +1547,12 @@
           var tbarWithinY = Math.abs(b.y - tbar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
           var tbarWithinX = Math.abs(b.x - tbar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
           if (tbarWithinY && tbarWithinX) {
-            destroyBulletSprites(b); state.bullets.splice(bi, 1);
             tbar.hp -= trailLevel;
-            hitBarWithTrail = true;
+            b.trailLevels[tbar.colorKey] = 0;
+            if (b.trailSprites[tbar.colorKey]) {
+              b.trailSprites[tbar.colorKey].destroy();
+              delete b.trailSprites[tbar.colorKey];
+            }
             if (tbar.hp <= 0) {
               tbar.sprite.destroy(); tbar.alive = false;
               if (state.colorBars.every(function (b2) { return !b2.alive; })) {
@@ -1550,7 +1563,6 @@
           }
         }
       }
-      if (hitBarWithTrail) continue;
 
       for (var si = 0; si < state.formation.length; si++) {
         var slot = state.formation[si];
