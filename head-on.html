@@ -406,11 +406,13 @@
 
   // Powerup strips: translucent, ship-width colored bars drift straight
   // down like the stars, one primary color at a time. Flying through one
-  // WITHOUT drifting off it banks that color; collect all three distinct
-  // colors (any order, duplicates are a no-op) and a long hold on fire
-  // spends them. Dying resets whatever's banked - same "can't snowball"
-  // property as the core, it's a one-shot you have to re-earn, not a
-  // permanent upgrade.
+  // WITHOUT drifting off it levels up the ship's fire power in that color
+  // (see levelUpFirePower()) - every ordinary bullet fired afterward
+  // carries a trail in every color leveled up so far, each doing damage
+  // to a matching color bar equal to its own level. Dying resets every
+  // color's level back to zero - same "can't snowball" property as the
+  // core, it's progress you have to re-earn each life, not a permanent
+  // upgrade.
   var STRIP_COLORS = { red: 0xef4444, green: 0x22c55e, blue: 0x3b82f6 };
   var STRIP_COLOR_KEYS = ['red', 'green', 'blue'];
   var STRIP_WIDTH = 20; // 60 was too long/thin - a third shorter, a few px wider
@@ -429,36 +431,54 @@
   // As a strip passes, the ship fills with its color proportionately to
   // how far through the pass it is - moment-to-moment feedback for "stay
   // under it", not just a pass/fail check at the end. On success the fill
-  // (now full) fades back out as the orbiting dot appears, reading as a
-  // handoff; on a miss, whatever partial fill it had reached freezes for
-  // an instant, then fades the same way - visible proof of how close it
-  // was, with no dot to show for it.
+  // (now full) fades back out as the level-up registers, reading as a
+  // handoff to the ship's fire; on a miss, whatever partial fill it had
+  // reached freezes for an instant, then fades the same way - visible
+  // proof of how close it was, with nothing gained for it.
   var SHIP_FILL_FADE_DURATION = 0.4; // seconds
 
-  // The collected-color dots orbit the SHIP (not an enemy) - reusing the
-  // core's orbiting-dot look for now, one dot per distinct color banked,
-  // so having two or three visibly reads as "more charged" with no new art.
+  // The banked-color dots still orbit the ship for orb pods (collectColor())
+  // - reusing the core's orbiting-dot look, one dot per distinct color
+  // banked, so having two or three visibly reads as "more charged" with no
+  // new art. Strips no longer use this - see levelUpFirePower() instead.
   var POWERUP_ORBIT_RADIUS = 22;
   var POWERUP_ORBIT_SPEED = 3; // rad/sec
   var POWERUP_DOT_RADIUS = 4;
+
+  // A bullet's colored trail (one segment per color the ship has leveled
+  // up via strips - see levelUpFirePower()) is drawn behind it, anchored
+  // at the bullet so it trails toward where it came from. Baked at a unit
+  // length representing level 1, then stretched taller (scaled via
+  // displayHeight, same "bake once, scale to fit" trick colorBarTex_*
+  // uses) for each additional level - a visible, growing readout of how
+  // much damage that color currently does. Multiple active colors on the
+  // same bullet are spread a few px apart on x so they read as distinct
+  // trails, not one blended blob.
+  var BULLET_TRAIL_WIDTH = BULLET_RADIUS * 2;
+  var BULLET_TRAIL_UNIT_LENGTH = 6; // px, length at level 1
+  var BULLET_TRAIL_LENGTH_PER_LEVEL = 3; // px added per level beyond 1
+  var BULLET_TRAIL_ALPHA = 0.6;
+  var BULLET_TRAIL_X_GAP = 5; // px between adjacent trails when more than one color is active
 
   // Firing no longer auto-repeats while held - a press still fires one
   // shot immediately, but holding past this threshold spends whatever
   // colors are banked instead of continuing to shoot. Traded away
   // deliberately per direct feedback ("I didn't even realize we had hold
-  // for rapid fire - that can go in favor of hold for this").
+  // for rapid fire - that can go in favor of hold for this"). Only orb-
+  // banked colors are spent this way now - strips no longer bank anything
+  // to spend, they're a permanent (until death) fire upgrade instead.
   var FIRE_LONG_PRESS_MS = 350;
 
-  // Color bars: a first, deliberately minimal test of a much bigger idea
-  // (destructible "generator" targets gating real progress) - just to
-  // feel out whether "bank a color, fire it, hit the matching target
-  // above the formation" is fun before building anything more elaborate.
-  // One solid bar per primary color, sitting in the open canvas space
-  // between the HUD and the formation's top row - real estate that's
-  // just background stars right now. Only a powerup-released bullet (one
-  // that carries a colorKey) can destroy one, and only if the colors
-  // match; ordinary tap-fired bullets pass through untouched. Single hit,
-  // no stacking, no win condition wired up yet - purely a feel test.
+  // Color bars: destructible "generator" targets gating real progress,
+  // sitting in the open canvas space between the HUD and the formation's
+  // top row. Two independent ways to destroy one, both requiring a color
+  // match: a powerup-released bullet (carries a colorKey, spent from
+  // orb-banked ammo) instant-kills one in a single hit, consumed on
+  // impact; an ordinary bullet carrying a matching color trail (built up
+  // via strips - see levelUpFirePower()) chips COLOR_BAR_MAX_HP down by
+  // that color's current level per hit instead, also consumed on impact.
+  // A mismatched color, or an ordinary bullet with no trail at all, passes
+  // through untouched either way.
   var COLOR_BAR_WIDTH = GAME_WIDTH / 3;
   var COLOR_BAR_HEIGHT = 16;
   var COLOR_BAR_Y = 28;
@@ -469,6 +489,7 @@
   var COLOR_BAR_HEIGHT_SHRINK = 2; // px shorter each time a full clear triggers a respawn
   var COLOR_BAR_MIN_HEIGHT = 6; // floor so repeated clears don't shrink them to nothing
   var COLOR_BAR_ROW_GAP = 22; // vertical spacing between stacked rows added on each respawn
+  var COLOR_BAR_MAX_HP = 10; // hits' worth of trail damage needed to destroy one this way - see handleCollisions()
 
   // Brick shards: what a color bar becomes when it reaches the bottom,
   // instead of ending the game outright. It breaks into BRICK_SHARD_COUNT
@@ -674,6 +695,17 @@
       g.destroy();
     });
 
+    // Bullet trails: one per color, baked at the level-1 unit length and
+    // stretched taller per level via displayHeight at creation time (see
+    // fireBullet()) rather than rebaked per level.
+    STRIP_COLOR_KEYS.forEach(function (key) {
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(STRIP_COLORS[key], BULLET_TRAIL_ALPHA);
+      g.fillRoundedRect(0, 0, BULLET_TRAIL_WIDTH, BULLET_TRAIL_UNIT_LENGTH, BULLET_TRAIL_WIDTH / 2);
+      g.generateTexture('bulletTrailTex_' + key, BULLET_TRAIL_WIDTH, BULLET_TRAIL_UNIT_LENGTH);
+      g.destroy();
+    });
+
     // Color bars: translucent rectangles (same palette as the powerup
     // strips/orbs, but lighter - see COLOR_BAR_ALPHA), one per primary
     // color, with a small gap on each side so adjacent bars read as
@@ -749,7 +781,8 @@
       shipBreakFx: null, // visual-only ship-explosion placeholder on death - see triggerShipBreak()/updateShipBreakFx()
       strips: [], // falling colored powerup strips - see spawnStrip()/updateStrips()
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
-      powerup: { colors: [], dots: [], angle: 0 }, // banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
+      colorLevels: { red: 0, green: 0, blue: 0 }, // per-color fire-power levels flying through a strip builds up - see levelUpFirePower()/fireBullet()
+      powerup: { colors: [], dots: [], angle: 0 }, // orb-banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
       orbs: [], // falling touch-to-collect diamond pods - see spawnOrb()/updateOrbs()
       orbBullets: [], // colored bullets released by shooting an orb instead of collecting it - see releaseOrbBullet()/updateOrbBullets()
       colorBars: [], // destructible per-color test targets above the formation - see spawnColorBars()
@@ -817,7 +850,7 @@
         var x = i * COLOR_BAR_WIDTH + COLOR_BAR_WIDTH / 2;
         var sprite = this.add.sprite(x, y, 'colorBarTex_' + key);
         sprite.displayHeight = state.colorBarHeight; // texture is baked at COLOR_BAR_HEIGHT - scale it down to the current height instead of rebaking
-        state.colorBars.push({ colorKey: key, x: x, y: y, alive: true, sprite: sprite });
+        state.colorBars.push({ colorKey: key, x: x, y: y, alive: true, hp: COLOR_BAR_MAX_HP, sprite: sprite });
       }
     }
   };
@@ -1319,13 +1352,36 @@
   // ---- Firing ------------------------------------------------------
   MainScene.prototype.fireBullet = function () {
     var state = this.state;
+    var self = this;
     var b = {
       x: state.ship.x,
       y: SHIP_Y - state.ship.radius,
       vy: -BULLET_SPEED,
-      ttl: BULLET_LIFETIME
+      ttl: BULLET_LIFETIME,
+      // Snapshot the ship's current fire-power levels at the moment of
+      // firing - a strip collected after this shot is already in flight
+      // levels up future bullets, not this one.
+      trailLevels: { red: state.colorLevels.red, green: state.colorLevels.green, blue: state.colorLevels.blue },
+      trailSprites: []
     };
     b.sprite = this.add.sprite(b.x, b.y, 'bulletTex');
+
+    // One trail segment per color currently leveled up, anchored at the
+    // bullet (setOrigin(0.5, 0)) so it grows away from the bullet, toward
+    // where it came from - a visible, growing readout of how much damage
+    // that color currently does. Spread a few px apart on x when more
+    // than one color is active so they read as distinct trails, not one
+    // blended blob.
+    var activeColors = STRIP_COLOR_KEYS.filter(function (key) { return b.trailLevels[key] > 0; });
+    activeColors.forEach(function (key, i) {
+      var level = b.trailLevels[key];
+      var offset = (i - (activeColors.length - 1) / 2) * BULLET_TRAIL_X_GAP;
+      var trail = self.add.sprite(b.x + offset, b.y, 'bulletTrailTex_' + key);
+      trail.setOrigin(0.5, 0);
+      trail.displayHeight = BULLET_TRAIL_UNIT_LENGTH + (level - 1) * BULLET_TRAIL_LENGTH_PER_LEVEL;
+      b.trailSprites.push(trail);
+    });
+
     state.bullets.push(b);
   };
 
@@ -1340,13 +1396,26 @@
     ship.x = clamp(ship.x, ship.radius, GAME_WIDTH - ship.radius);
   }
 
+  // Destroys a bullet's own sprite plus any trail segments it's carrying -
+  // every place a bullet gets removed goes through this so a trail never
+  // outlives its bullet.
+  function destroyBulletSprites(b) {
+    if (b.trailSprites) {
+      for (var i = 0; i < b.trailSprites.length; i++) b.trailSprites[i].destroy();
+    }
+    b.sprite.destroy();
+  }
+
   function updateBullets(state, dt) {
     for (var i = state.bullets.length - 1; i >= 0; i--) {
       var b = state.bullets[i];
       b.y += b.vy * dt;
       b.ttl -= dt;
       b.sprite.y = b.y;
-      if (b.ttl <= 0 || b.y < -10) { b.sprite.destroy(); state.bullets.splice(i, 1); }
+      if (b.trailSprites) {
+        for (var ti = 0; ti < b.trailSprites.length; ti++) b.trailSprites[ti].y = b.y;
+      }
+      if (b.ttl <= 0 || b.y < -10) { destroyBulletSprites(b); state.bullets.splice(i, 1); }
     }
   }
 
@@ -1391,7 +1460,7 @@
         var cdx = b.x - state.core.sprite.x, cdy = b.y - state.core.sprite.y;
         var crr = CORE_RADIUS + BULLET_RADIUS;
         if (cdx * cdx + cdy * cdy <= crr * crr) {
-          b.sprite.destroy(); state.bullets.splice(bi, 1);
+          destroyBulletSprites(b); state.bullets.splice(bi, 1);
           this.triggerStarburst(state.core.sprite.x, state.core.sprite.y);
           state.core.sprite.destroy();
           state.core = null;
@@ -1408,7 +1477,7 @@
         var odx = b.x - orbHit.x, ody = b.y - orbHit.y;
         var orr = ORB_RADIUS + BULLET_RADIUS;
         if (odx * odx + ody * ody <= orr * orr) {
-          b.sprite.destroy(); state.bullets.splice(bi, 1);
+          destroyBulletSprites(b); state.bullets.splice(bi, 1);
           this.releaseOrbBullet(orbHit);
           orbHit.hostSprite.destroy();
           state.orbs.splice(oi, 1);
@@ -1436,7 +1505,7 @@
           var barWithinY = Math.abs(b.y - bar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
           var barWithinX = Math.abs(b.x - bar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
           if (barWithinY && barWithinX) {
-            b.sprite.destroy(); state.bullets.splice(bi, 1);
+            destroyBulletSprites(b); state.bullets.splice(bi, 1);
             bar.sprite.destroy(); bar.alive = false;
             hitBar = true;
             // Clearing every bar on screen (all rows, all colors) is a
@@ -1450,6 +1519,38 @@
         }
       }
       if (hitBar) continue;
+
+      // An ordinary bullet carrying a color trail (built up by flying
+      // through strips - see levelUpFirePower()/fireBullet()) chips away
+      // at a matching-color bar instead of instant-killing it: each hit
+      // deals damage equal to that color's current level, and the bar
+      // dies once COLOR_BAR_MAX_HP runs out. A mismatched color's trail
+      // (or no trail at all) does nothing here - the bullet just carries
+      // on to whatever's next, same as any ordinary shot.
+      var hitBarWithTrail = false;
+      if (b.trailLevels) {
+        for (var tbi = 0; tbi < state.colorBars.length; tbi++) {
+          var tbar = state.colorBars[tbi];
+          if (!tbar.alive) continue;
+          var trailLevel = b.trailLevels[tbar.colorKey] || 0;
+          if (trailLevel <= 0) continue;
+          var tbarWithinY = Math.abs(b.y - tbar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
+          var tbarWithinX = Math.abs(b.x - tbar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
+          if (tbarWithinY && tbarWithinX) {
+            destroyBulletSprites(b); state.bullets.splice(bi, 1);
+            tbar.hp -= trailLevel;
+            hitBarWithTrail = true;
+            if (tbar.hp <= 0) {
+              tbar.sprite.destroy(); tbar.alive = false;
+              if (state.colorBars.every(function (b2) { return !b2.alive; })) {
+                this.respawnColorBars();
+              }
+            }
+            break;
+          }
+        }
+      }
+      if (hitBarWithTrail) continue;
 
       for (var si = 0; si < state.formation.length; si++) {
         var slot = state.formation[si];
@@ -1467,7 +1568,7 @@
           // consumed on the first kill, so it can chain through a column.
           // Ordinary tap-fired bullets still die on their first hit.
           if (b.colorKey) continue;
-          b.sprite.destroy(); state.bullets.splice(bi, 1);
+          destroyBulletSprites(b); state.bullets.splice(bi, 1);
           break;
         }
       }
@@ -1484,7 +1585,7 @@
           state.brickShards.splice(shi, 1);
           this.addScore(BRICK_SHARD_SCORE);
           if (b.colorKey) continue;
-          b.sprite.destroy(); state.bullets.splice(bi, 1);
+          destroyBulletSprites(b); state.bullets.splice(bi, 1);
           break;
         }
       }
@@ -1884,20 +1985,20 @@
           state.shipFill.level = progress;
         } else {
           // Contact lost mid-pass - freeze whatever fill it had reached
-          // and let it fade back out; no color banked, no orbiting dot.
+          // and let it fade back out; no level gained.
           s.missed = true;
           state.shipFill.mode = 'fading';
         }
       }
 
       if (s.y - STRIP_HEIGHT / 2 > SHIP_Y + SHIP_RADIUS) {
-        // Fully passed the ship's band - collect only if it stayed in
+        // Fully passed the ship's band - level up only if it stayed in
         // contact the entire way through.
         if (!s.missed) {
-          this.collectColor(s.colorKey);
+          this.levelUpFirePower(s.colorKey);
           // Held it the whole way - the ship's fully colored right now;
           // fading it back out is what visually hands the color off to
-          // the orbiting dot collectColor() just spawned.
+          // the ship's fire (the trail on its next shots).
           state.shipFill.mode = 'fading';
           state.shipFill.level = 1;
         }
@@ -1941,12 +2042,14 @@
   };
 
   // Banks a color and spawns its orbiting indicator dot around the ship,
-  // reusing the core's orbiting-dot look for now. Colors stack - collecting
-  // a second (or third) of the same color adds another dot to the orbit
-  // and another bullet of that color on release, same as collecting two
-  // different colors does. Collecting one you already have used to be a
-  // silent no-op (the strip/orb still vanished, nothing happened) - now it
-  // always adds to the volley.
+  // reusing the core's orbiting-dot look for now. Only orb pods use this
+  // now (see collectOrb()/updateOrbBullets()) - strips level up fire power
+  // instead (see levelUpFirePower()). Colors stack - collecting a second
+  // (or third) of the same color adds another dot to the orbit and another
+  // bullet of that color on release, same as collecting two different
+  // colors does. Collecting one you already have used to be a silent no-op
+  // (the orb still vanished, nothing happened) - now it always adds to the
+  // volley.
   MainScene.prototype.collectColor = function (colorKey) {
     var pu = this.state.powerup;
     pu.colors.push(colorKey);
@@ -1954,6 +2057,22 @@
       colorKey: colorKey,
       sprite: this.add.sprite(this.state.ship.x, SHIP_Y, 'powerupDotTex_' + colorKey)
     });
+  };
+
+  // Strips permanently (until death) raise the ship's fire power in one
+  // color, instead of banking a one-shot to spend later. No cap - every
+  // additional strip of the same color keeps adding both trail length and
+  // damage per hit. See fireBullet() for where this actually gets read.
+  MainScene.prototype.levelUpFirePower = function (colorKey) {
+    this.state.colorLevels[colorKey]++;
+  };
+
+  // Dying wipes every color's fire-power level back to zero - see
+  // shipHit(). Kept separate from clearPowerup() since that's the
+  // orb-banked-ammo cleanup, an unrelated piece of state.
+  MainScene.prototype.clearFirePower = function () {
+    var cl = this.state.colorLevels;
+    cl.red = 0; cl.green = 0; cl.blue = 0;
   };
 
   MainScene.prototype.updatePowerupDots = function (dt) {
@@ -2112,7 +2231,8 @@
 
   MainScene.prototype.shipHit = function () {
     var state = this.state;
-    this.clearPowerup(); // dying resets whatever colors were banked - no carrying progress through a death
+    this.clearPowerup(); // dying resets whatever orb colors were banked - no carrying progress through a death
+    this.clearFirePower(); // and the ship's strip-earned fire power, same rule
     this.triggerShipBreak(state.ship.x, SHIP_Y); // placeholder death beat - see triggerShipBreak()
     state.lives--;
     if (state.lives <= 0) {
@@ -2154,7 +2274,7 @@
   // ---- Reset / restart ------------------------------------------------------
   MainScene.prototype.resetGame = function () {
     var state = this.state;
-    state.bullets.forEach(function (b) { b.sprite.destroy(); });
+    state.bullets.forEach(function (b) { destroyBulletSprites(b); });
     state.bullets = [];
     if (state.core && state.core.sprite) state.core.sprite.destroy();
     state.core = null;
@@ -2170,6 +2290,7 @@
     this.shipFillSprite.setVisible(false);
     this.shipFillMaskGfx.clear();
     this.clearPowerup();
+    this.clearFirePower();
     state.orbs.forEach(function (o) { o.hostSprite.destroy(); });
     state.orbs = [];
     state.orbBullets.forEach(function (h) { h.sprite.destroy(); });
