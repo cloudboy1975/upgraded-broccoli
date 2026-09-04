@@ -448,25 +448,33 @@
   // A bullet's colored trail (one segment per color the ship has leveled
   // up via strips - see levelUpFirePower()) is drawn behind it, anchored
   // at the bullet so it trails toward where it came from. Styled as a
-  // small pulse-cannon charge rather than a plain colored block, so it
-  // reads as a distinct component riding along with the bullet, not part
-  // of it: a bright core down the middle, a soft glow around it, and a
-  // couple of brighter cross-bands (the "pulse rings"). It also visibly
-  // pulses in brightness over time (see updateBullets()) rather than
-  // sitting static. Baked at a unit length representing level 1, then
-  // stretched taller (scaled via displayHeight, same "bake once, scale to
-  // fit" trick colorBarTex_* uses) for each additional level - a visible,
-  // growing readout of how much damage that color currently does.
-  // Multiple active colors on the same bullet are spread a few px apart
-  // on x so they read as distinct trails, not one blended blob.
-  var BULLET_TRAIL_CORE_WIDTH = BULLET_RADIUS * 1.3; // bright inner charge
-  var BULLET_TRAIL_GLOW_WIDTH = BULLET_RADIUS * 2.6; // soft outer glow, wider than the core
-  var BULLET_TRAIL_UNIT_LENGTH = 8; // px, length at level 1
-  var BULLET_TRAIL_LENGTH_PER_LEVEL = 4; // px added per level beyond 1
-  var BULLET_TRAIL_GLOW_ALPHA = 0.28;
-  var BULLET_TRAIL_CORE_ALPHA = 0.85;
-  var BULLET_TRAIL_RING_ALPHA = 0.65; // the bright white pulse-ring cross-bands
-  var BULLET_TRAIL_X_GAP = 8; // px between adjacent trails when more than one color is active
+  // stack of nested open arcs bulging away from the bullet - the comic-
+  // book "psychic wave" motif (concentric curved lines rippling out
+  // behind something), drawn as unfilled strokes rather than a solid
+  // shape, so it reads as its own distinct energy effect riding along
+  // with the bullet, not a colored version of the bullet itself. The
+  // innermost arc (closest to the bullet) is the brightest; each one
+  // further back is fainter, reading as the wave dissipating as it
+  // trails off. It also visibly pulses in brightness over time (see
+  // updateBullets()) rather than sitting static. Baked at the level-1
+  // size, then stretched taller (scaled via displayHeight, same "bake
+  // once, scale to fit" trick colorBarTex_* uses) for each additional
+  // level - a visible, growing readout of how much damage that color
+  // currently does. Multiple active colors on the same bullet are spread
+  // a few px apart on x so they read as distinct, if overlapping, waves.
+  var BULLET_TRAIL_ARC_COUNT = 3; // nested arcs per trail
+  var BULLET_TRAIL_ARC_BASE_RADIUS = 5; // radius of the innermost (closest to the bullet) arc, at level 1
+  var BULLET_TRAIL_ARC_RADIUS_STEP = 4; // px radius growth per arc further back
+  var BULLET_TRAIL_ARC_STROKE = 1.8; // stroke width of each arc line
+  var BULLET_TRAIL_ARC_ALPHA = 0.95; // alpha of the innermost, brightest arc
+  var BULLET_TRAIL_ARC_ALPHA_FALLOFF = 0.26; // alpha lost per arc further back
+  // UNIT_LENGTH matches the baked arc canvas height at level 1 (the
+  // outermost arc's radius plus its stroke) so displayHeight scaling
+  // starts from the texture's own native size instead of stretching or
+  // squashing it on the very first bullet.
+  var BULLET_TRAIL_UNIT_LENGTH = BULLET_TRAIL_ARC_BASE_RADIUS + (BULLET_TRAIL_ARC_COUNT - 1) * BULLET_TRAIL_ARC_RADIUS_STEP + BULLET_TRAIL_ARC_STROKE;
+  var BULLET_TRAIL_LENGTH_PER_LEVEL = 5; // px added per level beyond 1 - the whole wave stretches taller and more dramatic
+  var BULLET_TRAIL_X_GAP = 4; // px between adjacent trails when more than one color is active - the arcs are wide, so even a small nudge keeps them from perfectly coinciding
   var BULLET_TRAIL_PULSE_SPEED = 10; // rad/sec - how fast the trail's brightness pulses
   var BULLET_TRAIL_PULSE_DEPTH = 0.35; // how far alpha swings below full brightness at the dimmest point of each pulse
 
@@ -707,25 +715,29 @@
       g.destroy();
     });
 
-    // Bullet trails: one per color, styled as a small pulse-cannon charge
-    // (soft outer glow + bright core + a couple of brighter pulse-ring
-    // cross-bands) rather than a plain block - see the BULLET_TRAIL_*
-    // comment above. Baked at the level-1 unit length and stretched
-    // taller per level via displayHeight at creation time (see
-    // fireBullet()) rather than rebaked per level.
+    // Bullet trails: one per color, drawn as BULLET_TRAIL_ARC_COUNT nested
+    // open arcs (unfilled stroked curves, not solid shapes) bulging away
+    // from the bullet - see the BULLET_TRAIL_* comment above for why.
+    // Anchored at canvas-top-center (cx, 0), each arc sweeps the bottom
+    // half of a circle (angle 0 to PI, clockwise) of increasing radius,
+    // so they nest like ripples with the bullet at their shared center -
+    // exactly matching the sprite's own setOrigin(0.5, 0) anchor in
+    // fireBullet(), which pins that same point to the bullet's position.
     STRIP_COLOR_KEYS.forEach(function (key) {
-      var gw = BULLET_TRAIL_GLOW_WIDTH, h = BULLET_TRAIL_UNIT_LENGTH;
-      var cx = gw / 2;
+      var maxRadius = BULLET_TRAIL_ARC_BASE_RADIUS + (BULLET_TRAIL_ARC_COUNT - 1) * BULLET_TRAIL_ARC_RADIUS_STEP;
+      var w = maxRadius * 2 + BULLET_TRAIL_ARC_STROKE * 2;
+      var h = maxRadius + BULLET_TRAIL_ARC_STROKE;
+      var cx = w / 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], BULLET_TRAIL_GLOW_ALPHA);
-      g.fillRoundedRect(0, 0, gw, h, gw / 2);
-      g.fillStyle(STRIP_COLORS[key], BULLET_TRAIL_CORE_ALPHA);
-      g.fillRoundedRect(cx - BULLET_TRAIL_CORE_WIDTH / 2, 0, BULLET_TRAIL_CORE_WIDTH, h, BULLET_TRAIL_CORE_WIDTH / 2);
-      var ringH = h * 0.16;
-      g.fillStyle(0xffffff, BULLET_TRAIL_RING_ALPHA);
-      g.fillRoundedRect(cx - gw * 0.45, h * 0.28 - ringH / 2, gw * 0.9, ringH, ringH / 2);
-      g.fillRoundedRect(cx - gw * 0.45, h * 0.64 - ringH / 2, gw * 0.9, ringH, ringH / 2);
-      g.generateTexture('bulletTrailTex_' + key, gw, h);
+      for (var i = 0; i < BULLET_TRAIL_ARC_COUNT; i++) {
+        var radius = BULLET_TRAIL_ARC_BASE_RADIUS + i * BULLET_TRAIL_ARC_RADIUS_STEP;
+        var alpha = Math.max(BULLET_TRAIL_ARC_ALPHA - i * BULLET_TRAIL_ARC_ALPHA_FALLOFF, 0.12);
+        g.lineStyle(BULLET_TRAIL_ARC_STROKE, STRIP_COLORS[key], alpha);
+        g.beginPath();
+        g.arc(cx, 0, radius, 0, Math.PI, false);
+        g.strokePath();
+      }
+      g.generateTexture('bulletTrailTex_' + key, w, h);
       g.destroy();
     });
 
