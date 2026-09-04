@@ -470,26 +470,22 @@
   var COLOR_BAR_MIN_HEIGHT = 6; // floor so repeated clears don't shrink them to nothing
   var COLOR_BAR_ROW_GAP = 22; // vertical spacing between stacked rows added on each respawn
 
-  // Brick shards: what a color bar becomes when it reaches the bottom,
-  // instead of ending the game outright. It breaks into BRICK_SHARD_COUNT
-  // pieces, each running through three phases - 'spin' (a brief top-like
-  // spin in place, the telegraph), 'fly' (wanders upward across the
-  // screen, still spinning, still shootable), then 'attack' (locks a
-  // direction toward the ship's position at that moment and dives,
-  // exactly like a formation diver from there on - can kill the ship on
-  // contact, or be blocked by an orbiting shield dot same as any other
-  // diver). Shootable in every phase; a powerup bullet pierces through
-  // shards same as it does formation enemies.
-  var BRICK_SHARD_COUNT = 3;
-  var BRICK_SHARD_RADIUS = 9;
-  var BRICK_SHARD_SCORE = 60; // between straight (50) and swoop (80) - a mid-tier threat
-  var BRICK_SHARD_SPIN_DURATION = 0.6; // seconds of pure in-place spin before it starts moving
-  var BRICK_SHARD_SPIN_SPEED = 14; // rad/sec - fast, reads as a spinning top
-  var BRICK_SHARD_FLY_DURATION = 2.4; // seconds of wandering flight before it commits to attacking
-  var BRICK_SHARD_FLY_UP_SPEED = 140; // px/sec upward drift while wandering - climbs a lot higher before attacking (~330px, up from ~110px)
-  var BRICK_SHARD_FLY_WANDER_AMPLITUDE = 90; // px, lateral wander while flying
-  var BRICK_SHARD_FLY_WANDER_FREQ = 2.2; // rad/sec
-  var BRICK_SHARD_ATTACK_SPEED = 150; // px/sec once diving at the ship
+  // Brick hazard: what a color bar becomes when it reaches the bottom,
+  // instead of ending the game outright. Simplified from an earlier
+  // multi-piece spin/wander/attack version that turned out to make the
+  // game too hard - now it's just one hazard, released immediately,
+  // flying in a straight line at wherever the ship was at that moment
+  // (same "aim once, frozen trajectory" idiom as the orb pod's hazard
+  // ball). Shootable for a small score bonus; a powerup bullet pierces
+  // through it same as it does formation enemies. Still blocked by an
+  // orbiting shield dot on contact, same as any other diving threat. It
+  // keeps a purely cosmetic spin (no gameplay effect) as a nod to the
+  // original "spins like a top" idea.
+  var BRICK_HAZARD_RADIUS = 9;
+  var BRICK_HAZARD_SCORE = 60; // between straight (50) and swoop (80) - a mid-tier threat
+  var BRICK_HAZARD_SPEED = 150; // px/sec, straight at the ship
+  var BRICK_HAZARD_LIFETIME = 4.0; // seconds before it fizzles if it never reaches the ship or leaves the screen
+  var BRICK_HAZARD_SPIN_SPEED = 14; // rad/sec - cosmetic only
 
   // A second kind of powerup: a small translucent diamond, same
   // red/green/blue palette as the color strips (one color, assigned at
@@ -688,12 +684,12 @@
       g.destroy();
     });
 
-    // Brick shards: a small solid (fully opaque, not translucent like the
-    // collectible powerups - this is now a genuine enemy) four-pointed
-    // kite shape, same palette as the bars they came from. Reads as a
-    // little spinning top when rotated fast.
+    // Brick hazard: a small solid (fully opaque, not translucent like the
+    // collectible powerups - this is a genuine hazard) four-pointed kite
+    // shape, same palette as the bars they came from. Reads as a little
+    // spinning top when rotated (purely cosmetic - see BRICK_HAZARD_SPIN_SPEED).
     STRIP_COLOR_KEYS.forEach(function (key) {
-      var r = BRICK_SHARD_RADIUS;
+      var r = BRICK_HAZARD_RADIUS;
       var size = r * 2;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
       g.fillStyle(STRIP_COLORS[key], 1);
@@ -704,7 +700,7 @@
       g.lineTo(r * 0.5, r);
       g.closePath();
       g.fillPath();
-      g.generateTexture('brickShardTex_' + key, size, size);
+      g.generateTexture('brickHazardTex_' + key, size, size);
       g.destroy();
     });
 
@@ -763,7 +759,7 @@
       colorBars: [], // destructible per-color test targets above the formation - see spawnColorBars()
       colorBarHeight: COLOR_BAR_HEIGHT, // shrinks a bit each time a full clear triggers a respawn - see respawnColorBars()
       colorBarRows: 1, // grows by one each time a full clear triggers a respawn
-      brickShards: [], // enemy pieces a color bar breaks into when it reaches the bottom - see breakBrickIntoShards()/updateBrickShards()
+      brickHazards: [], // hazards released when a color bar reaches the bottom - see releaseBrickHazard()/updateBrickHazards()
       powerupSpawnTimer: randomPowerupSpawnInterval(), // shared between strips and orbs - see updatePowerupSpawns()
       lives: 3,
       score: 0,
@@ -846,8 +842,8 @@
 
   // The bars drift slowly downward the whole game - a background pressure
   // separate from the formation's dives. If any bar's leading edge reaches
-  // the very bottom of the screen, it breaks apart into brick shards (see
-  // breakBrickIntoShards()) instead of ending the game - a new, active
+  // the very bottom of the screen, it releases a brick hazard (see
+  // releaseBrickHazard()) instead of ending the game - a new, active
   // threat rather than a fail state, so leaving a color unmatched for too
   // long now escalates the fight instead of ending the run outright.
   // Speed ramps gently with the wave count (state.wave), capped so it
@@ -861,7 +857,7 @@
       bar.y += speed * dt;
       bar.sprite.y = bar.y;
       if (bar.y + state.colorBarHeight / 2 >= GAME_HEIGHT) {
-        this.breakBrickIntoShards(bar);
+        this.releaseBrickHazard(bar);
         bar.sprite.destroy();
         bar.alive = false;
         // Same "clearing everything triggers a harder respawn" rule as a
@@ -873,73 +869,69 @@
     }
   };
 
-  // Breaks a bar that reached the bottom into BRICK_SHARD_COUNT pieces,
-  // spread a little either side of where it crossed. Each starts in the
-  // 'spin' phase - see updateBrickShards() for what that (and 'fly' and
-  // 'attack') actually do.
-  MainScene.prototype.breakBrickIntoShards = function (bar) {
+  // Releases a bar that reached the bottom as a single hazard, flying
+  // straight at wherever the ship was at that exact moment - same "aim
+  // once, frozen trajectory" idiom as the orb pod's hazard ball, not a
+  // live homing lock, so a dodge afterward actually works.
+  MainScene.prototype.releaseBrickHazard = function (bar) {
     var state = this.state;
-    for (var i = 0; i < BRICK_SHARD_COUNT; i++) {
-      var offset = (i - (BRICK_SHARD_COUNT - 1) / 2) * (BRICK_SHARD_RADIUS * 1.6);
-      var x = clamp(bar.x + offset, BRICK_SHARD_RADIUS, GAME_WIDTH - BRICK_SHARD_RADIUS);
-      var y = clamp(bar.y, BRICK_SHARD_RADIUS, GAME_HEIGHT - BRICK_SHARD_RADIUS);
-      state.brickShards.push({
-        colorKey: bar.colorKey,
-        x: x, y: y,
-        phase: 'spin', // 'spin' -> 'fly' -> 'attack'
-        age: 0,
-        rotation: Math.random() * Math.PI * 2,
-        wanderPhase: Math.random() * Math.PI * 2,
-        wanderDir: Math.random() < 0.5 ? -1 : 1,
-        vx: 0, vy: 0,
-        sprite: this.add.sprite(x, y, 'brickShardTex_' + bar.colorKey)
-      });
-    }
+    var dx = state.ship.x - bar.x, dy = SHIP_Y - bar.y;
+    var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    state.brickHazards.push({
+      colorKey: bar.colorKey,
+      x: bar.x, y: bar.y,
+      vx: (dx / dist) * BRICK_HAZARD_SPEED,
+      vy: (dy / dist) * BRICK_HAZARD_SPEED,
+      age: 0,
+      rotation: Math.random() * Math.PI * 2,
+      sprite: this.add.sprite(bar.x, bar.y, 'brickHazardTex_' + bar.colorKey)
+    });
   };
 
-  MainScene.prototype.updateBrickShards = function (dt) {
+  MainScene.prototype.updateBrickHazards = function (dt) {
     var state = this.state;
-    for (var i = state.brickShards.length - 1; i >= 0; i--) {
-      var sh = state.brickShards[i];
-      sh.age += dt;
-      sh.rotation += BRICK_SHARD_SPIN_SPEED * dt;
+    for (var i = state.brickHazards.length - 1; i >= 0; i--) {
+      var h = state.brickHazards[i];
+      h.age += dt;
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      h.rotation += BRICK_HAZARD_SPIN_SPEED * dt; // cosmetic only
+      h.sprite.x = h.x;
+      h.sprite.y = h.y;
+      h.sprite.rotation = h.rotation;
 
-      if (sh.phase === 'spin') {
-        // Pure telegraph - spins in place, doesn't move yet.
-        if (sh.age >= BRICK_SHARD_SPIN_DURATION) {
-          sh.phase = 'fly';
-          sh.age = 0;
+      if (!isInvulnerable(state)) {
+        // An orbiting shield dot blocks it exactly like any other diving
+        // threat - has to actually be at that spot, same spatial rule as
+        // the formation-diver shield check.
+        var blockedByDot = false;
+        for (var di = 0; di < state.powerup.dots.length; di++) {
+          var dot = state.powerup.dots[di];
+          var ddx = h.x - dot.sprite.x, ddy = h.y - dot.sprite.y;
+          var ddr = BRICK_HAZARD_RADIUS + POWERUP_DOT_RADIUS;
+          if (ddx * ddx + ddy * ddy <= ddr * ddr) {
+            h.sprite.destroy();
+            state.brickHazards.splice(i, 1);
+            this.consumeShieldDot(di);
+            blockedByDot = true;
+            break;
+          }
         }
-      } else if (sh.phase === 'fly') {
-        // Wanders side to side while drifting steadily upward, still spinning.
-        sh.vx = Math.sin(sh.age * BRICK_SHARD_FLY_WANDER_FREQ + sh.wanderPhase) * BRICK_SHARD_FLY_WANDER_AMPLITUDE * sh.wanderDir;
-        sh.vy = -BRICK_SHARD_FLY_UP_SPEED;
-        sh.x = clamp(sh.x + sh.vx * dt, BRICK_SHARD_RADIUS, GAME_WIDTH - BRICK_SHARD_RADIUS);
-        sh.y += sh.vy * dt;
-        if (sh.age >= BRICK_SHARD_FLY_DURATION) {
-          // Commit to a dive - lock a direction toward the ship's position
-          // at THIS moment, not a live homing lock, same "aim once" idiom
-          // as the swoop diver, so a dodge afterward actually works.
-          var dx = state.ship.x - sh.x, dy = SHIP_Y - sh.y;
-          var dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          sh.vx = (dx / dist) * BRICK_SHARD_ATTACK_SPEED;
-          sh.vy = (dy / dist) * BRICK_SHARD_ATTACK_SPEED;
-          sh.phase = 'attack';
-          sh.age = 0;
+        if (blockedByDot) continue;
+
+        var hdx = h.x - state.ship.x, hdy = h.y - SHIP_Y;
+        var hrr = BRICK_HAZARD_RADIUS + state.ship.radius;
+        if (hdx * hdx + hdy * hdy <= hrr * hrr) {
+          h.sprite.destroy();
+          state.brickHazards.splice(i, 1);
+          this.shipHit();
+          continue;
         }
-      } else {
-        // 'attack' - straight line at whatever it locked onto.
-        sh.x += sh.vx * dt;
-        sh.y += sh.vy * dt;
       }
 
-      sh.sprite.x = sh.x;
-      sh.sprite.y = sh.y;
-      sh.sprite.rotation = sh.rotation;
-
-      if (sh.y > GAME_HEIGHT + 30 || sh.y < -30 || sh.x < -30 || sh.x > GAME_WIDTH + 30) {
-        sh.sprite.destroy();
-        state.brickShards.splice(i, 1);
+      if (h.age > BRICK_HAZARD_LIFETIME || h.y > GAME_HEIGHT + 30 || h.y < -30 || h.x < -30 || h.x > GAME_WIDTH + 30) {
+        h.sprite.destroy();
+        state.brickHazards.splice(i, 1);
       }
     }
   };
@@ -1480,17 +1472,17 @@
         }
       }
 
-      // Brick shards are shootable in every phase, same rules as a
-      // formation enemy - a powerup bullet pierces through and keeps
-      // going, an ordinary bullet is consumed on the hit.
-      for (var shi = 0; shi < state.brickShards.length; shi++) {
-        var shard = state.brickShards[shi];
-        var shdx = b.x - shard.x, shdy = b.y - shard.y;
-        var shrr = BRICK_SHARD_RADIUS + BULLET_RADIUS;
+      // A brick hazard is shootable, same rules as a formation enemy - a
+      // powerup bullet pierces through and keeps going, an ordinary
+      // bullet is consumed on the hit.
+      for (var shi = 0; shi < state.brickHazards.length; shi++) {
+        var hazard = state.brickHazards[shi];
+        var shdx = b.x - hazard.x, shdy = b.y - hazard.y;
+        var shrr = BRICK_HAZARD_RADIUS + BULLET_RADIUS;
         if (shdx * shdx + shdy * shdy <= shrr * shrr) {
-          shard.sprite.destroy();
-          state.brickShards.splice(shi, 1);
-          this.addScore(BRICK_SHARD_SCORE);
+          hazard.sprite.destroy();
+          state.brickHazards.splice(shi, 1);
+          this.addScore(BRICK_HAZARD_SCORE);
           if (b.colorKey) continue;
           b.sprite.destroy(); state.bullets.splice(bi, 1);
           break;
@@ -1535,40 +1527,9 @@
       }
     }
 
-    // A brick shard only threatens the ship once it's committed to the
-    // 'attack' phase - during 'spin'/'fly' it's just a target, not a
-    // hazard yet, giving a beat to shoot it down first. Same shield rule
-    // as a formation diver: an orbiting powerup dot in its way blocks it.
-    if (!isInvulnerable(state)) {
-      for (var shj = 0; shj < state.brickShards.length; shj++) {
-        var atk = state.brickShards[shj];
-        if (atk.phase !== 'attack') continue;
-
-        var atkBlockedByDot = false;
-        for (var adi = 0; adi < state.powerup.dots.length; adi++) {
-          var adot = state.powerup.dots[adi];
-          var addx = atk.x - adot.sprite.x, addy = atk.y - adot.sprite.y;
-          var addr = BRICK_SHARD_RADIUS + POWERUP_DOT_RADIUS;
-          if (addx * addx + addy * addy <= addr * addr) {
-            atk.sprite.destroy();
-            state.brickShards.splice(shj, 1);
-            this.consumeShieldDot(adi);
-            atkBlockedByDot = true;
-            break;
-          }
-        }
-        if (atkBlockedByDot) break;
-
-        var asx = atk.x - state.ship.x, asy = atk.y - SHIP_Y;
-        var asr = state.ship.radius + BRICK_SHARD_RADIUS;
-        if (asx * asx + asy * asy <= asr * asr) {
-          atk.sprite.destroy();
-          state.brickShards.splice(shj, 1);
-          this.shipHit();
-          break;
-        }
-      }
-    }
+    // Brick hazards handle their own ship/shield collision entirely
+    // inside updateBrickHazards() (same self-contained pattern as the
+    // orb pod's hazard ball) - nothing more to do for them here.
 
     // The sacrifice: flying the ship straight into the orbiting core (not
     // shooting it) also triggers the starburst - full formation swept, but
@@ -2184,8 +2145,8 @@
     state.colorBarHeight = COLOR_BAR_HEIGHT; // undo any shrinking from respawnColorBars() over the previous game
     state.colorBarRows = 1;
     this.spawnColorBars(); // fresh, all-alive bars for a new game
-    state.brickShards.forEach(function (sh) { sh.sprite.destroy(); });
-    state.brickShards = [];
+    state.brickHazards.forEach(function (h) { h.sprite.destroy(); });
+    state.brickHazards = [];
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -2243,7 +2204,7 @@
       this.updateFiring(dt);
       this.tryTriggerDive(dt);
       this.updateColorBars(dt);
-      this.updateBrickShards(dt);
+      this.updateBrickHazards(dt);
       this.handleCollisions();
       this.updateCore(dt);
       this.updateStarburstFx(dt);
