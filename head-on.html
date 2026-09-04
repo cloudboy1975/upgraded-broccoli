@@ -515,9 +515,15 @@
   // flip), never both. Two separate timers meant they could show up on
   // screen together regardless of how rare either was individually, which
   // read as busy/cluttered; a shared timer guarantees only one kind of
-  // falling powerup exists per spawn, at the same overall cadence the
-  // strips already had.
-  var POWERUP_SPAWN_INTERVAL = 4.5; // seconds - was STRIP_SPAWN_INTERVAL's cadence, now shared
+  // falling powerup exists per spawn attempt, at a randomized (staggered)
+  // interval so multiple concurrent ones - allowed up to
+  // state.colorBarRows at once - don't all land in a single batch.
+  var POWERUP_SPAWN_INTERVAL_MIN = 3.0; // seconds - randomized stagger range between spawn attempts
+  var POWERUP_SPAWN_INTERVAL_MAX = 6.0; // averages to the original 4.5s cadence
+
+  function randomPowerupSpawnInterval() {
+    return POWERUP_SPAWN_INTERVAL_MIN + Math.random() * (POWERUP_SPAWN_INTERVAL_MAX - POWERUP_SPAWN_INTERVAL_MIN);
+  }
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
@@ -758,7 +764,7 @@
       colorBarHeight: COLOR_BAR_HEIGHT, // shrinks a bit each time a full clear triggers a respawn - see respawnColorBars()
       colorBarRows: 1, // grows by one each time a full clear triggers a respawn
       brickShards: [], // enemy pieces a color bar breaks into when it reaches the bottom - see breakBrickIntoShards()/updateBrickShards()
-      powerupSpawnTimer: POWERUP_SPAWN_INTERVAL, // shared between strips and orbs - see updatePowerupSpawns()
+      powerupSpawnTimer: randomPowerupSpawnInterval(), // shared between strips and orbs - see updatePowerupSpawns()
       lives: 3,
       score: 0,
       highScore: loadHighScore(),
@@ -1796,23 +1802,28 @@
   };
 
   // ---- Powerup strips ------------------------------------------------------
-  // Strips and orbs share one timer and cadence. Each firing spawns
-  // state.colorBarRows of them (independent strip-or-orb coin flip per
-  // spawn) - at the starting 1 row that's exactly one, same as the
-  // original feel; as full clears stack up more brick rows (and the
-  // fight escalates), more powerups fall at once too, so there's enough
-  // ammo in play to keep pace with the added bricks. spawnStrip()/
-  // spawnOrb() themselves stay untouched; this only owns the shared
-  // "when", "how many", and "which one each".
+  // Strips and orbs share one timer, and each attempt spawns EITHER a
+  // strip or an orb (never both at once). Rather than batching
+  // state.colorBarRows of them into a single instant, they trickle in
+  // staggered: a spawn attempt only actually spawns something if fewer
+  // than colorBarRows are currently active (state.strips.length +
+  // state.orbs.length), and the wait before the next attempt is
+  // randomized (see randomPowerupSpawnInterval()), not a fixed cadence.
+  // At the starting 1 row this caps things at one at a time, same as the
+  // original feel; as full clears stack up more brick rows, up to that
+  // many can be active in parallel - just not all landing together.
+  // Once the timer's already elapsed, a freed-up slot (something
+  // collected or missed) gets backfilled on the very next frame rather
+  // than waiting for the next scheduled attempt. spawnStrip()/spawnOrb()
+  // themselves stay untouched; this only owns the shared "when", "is
+  // there room", and "which one".
   MainScene.prototype.updatePowerupSpawns = function (dt) {
     var state = this.state;
-    state.powerupSpawnTimer -= dt;
-    if (state.powerupSpawnTimer <= 0) {
-      state.powerupSpawnTimer = POWERUP_SPAWN_INTERVAL;
-      var count = state.colorBarRows;
-      for (var i = 0; i < count; i++) {
-        if (Math.random() < 0.5) this.spawnStrip(); else this.spawnOrb();
-      }
+    if (state.powerupSpawnTimer > 0) state.powerupSpawnTimer -= dt;
+    var activeCount = state.strips.length + state.orbs.length;
+    if (state.powerupSpawnTimer <= 0 && activeCount < state.colorBarRows) {
+      state.powerupSpawnTimer = randomPowerupSpawnInterval();
+      if (Math.random() < 0.5) this.spawnStrip(); else this.spawnOrb();
     }
   };
 
@@ -2169,7 +2180,7 @@
     state.orbs = [];
     state.orbHazards.forEach(function (h) { h.sprite.destroy(); });
     state.orbHazards = [];
-    state.powerupSpawnTimer = POWERUP_SPAWN_INTERVAL;
+    state.powerupSpawnTimer = randomPowerupSpawnInterval();
     state.colorBarHeight = COLOR_BAR_HEIGHT; // undo any shrinking from respawnColorBars() over the previous game
     state.colorBarRows = 1;
     this.spawnColorBars(); // fresh, all-alive bars for a new game
