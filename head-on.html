@@ -598,6 +598,50 @@
   // ---- Helpers ------------------------------------------------------
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+  // ---- Geometry ------------------------------------------------------
+  // Almost everything in this game collides as a circle - ship, bullets,
+  // formation enemies, brick shards, orb pods, the core, the orbiting
+  // shield dots. Callers pass the SUM of the two radii so the intent reads
+  // at the call site: circleHit(b.x, b.y, slot.x, slot.y, slot.radius + BULLET_RADIUS).
+  function circleHit(ax, ay, bx, by, radiusSum) {
+    var dx = ax - bx, dy = ay - by;
+    return dx * dx + dy * dy <= radiusSum * radiusSum;
+  }
+
+  // One axis of an axis-aligned overlap: "is a within halfSpan of b". The
+  // color bars, their segments and the powerup strips are wide rectangles,
+  // so they test each axis with this rather than as circles.
+  function spanHit(a, b, halfSpan) {
+    return Math.abs(a - b) <= halfSpan;
+  }
+
+  // Comfortably outside the playfield in any direction - the shared "this
+  // has flown away, clean it up" test for free-flying objects.
+  function isOffPlayfield(x, y, margin) {
+    return x < -margin || x > GAME_WIDTH + margin || y < -margin || y > GAME_HEIGHT + margin;
+  }
+
+  // ---- Color-bar teardown ------------------------------------------------------
+  // A segment's own teardown - its sprite, its crack overlay, and the alive
+  // flag every other check keys off. Every place a segment dies goes through
+  // here, so a later change (a death effect, a score, a sound) lands in all
+  // of them at once instead of three places out of four.
+  function killSegment(seg) {
+    if (!seg.alive) return;
+    seg.sprite.destroy();
+    seg.crackSprite.destroy();
+    seg.alive = false;
+  }
+
+  // A whole bar at once: every segment still standing, plus the bar's own
+  // flag. Used by the blunt kills - a banked powerup shot, a flying core, or
+  // the bar reaching the bottom. The pulse cannon instead chips one segment
+  // at a time via killSegment().
+  function killBar(bar) {
+    bar.segments.forEach(function (seg) { killSegment(seg); });
+    bar.alive = false;
+  }
+
   function loadHighScore() {
     try {
       var raw = localStorage.getItem(HIGH_SCORE_KEY);
@@ -1029,6 +1073,16 @@
     this.spawnColorBars();
   };
 
+  // Called from every path that can take out the last bar standing - a
+  // matching-color powerup shot, a pulse-cannon hit finishing a bar's last
+  // segment, a flying core, or a bar reaching the bottom. Clearing the board
+  // is a reward, not an end to the pressure, so a fresh harder set comes
+  // straight back rather than the drift threat going away for good.
+  MainScene.prototype.respawnBarsIfCleared = function () {
+    var cleared = this.state.colorBars.every(function (bar) { return !bar.alive; });
+    if (cleared) this.respawnColorBars();
+  };
+
   // The bars drift slowly downward the whole game - a background pressure
   // separate from the formation's dives. If any bar's leading edge reaches
   // the very bottom of the screen, it breaks apart into brick shards (see
@@ -1051,15 +1105,8 @@
       });
       if (bar.y + state.colorBarHeight / 2 >= GAME_HEIGHT) {
         this.breakBrickIntoShards(bar);
-        bar.segments.forEach(function (seg) {
-          if (seg.alive) { seg.sprite.destroy(); seg.crackSprite.destroy(); seg.alive = false; }
-        });
-        bar.alive = false;
-        // Same "clearing everything triggers a harder respawn" rule as a
-        // matching-color bullet or a flying core destroying the last bar.
-        if (state.colorBars.every(function (b2) { return !b2.alive; })) {
-          this.respawnColorBars();
-        }
+        killBar(bar);
+        this.respawnBarsIfCleared();
       }
     }
   };
@@ -1635,315 +1682,317 @@
     }
   };
 
+  // Every collision in the game, in a deliberate order: bullets first (so a
+  // bullet that kills a diver this frame stops it before it can also reach
+  // the ship), then the hazards that can hit the ship.
   MainScene.prototype.handleCollisions = function () {
+    this.handleBulletHits();
+    this.handleShipHazards();
+  };
+
+  // One pass over every bullet, back to front so a consumed bullet can
+  // splice itself out mid-loop without disturbing the indices still to come.
+  //
+  // Each check returns true when it CONSUMED the bullet, which ends that
+  // bullet's frame immediately. That matters for more than tidiness: a
+  // consumed bullet has already been spliced out of state.bullets, so
+  // testing it against anything further would splice a SECOND time at the
+  // same index and evict a different, still-live bullet - leaving that one's
+  // sprite on screen with nothing tracking it. (That was a real bug when
+  // these were sequential blocks in one function: a plain bullet that hit a
+  // formation enemy fell straight through into the brick-shard check.)
+  MainScene.prototype.handleBulletHits = function () {
     var state = this.state;
+    for (var i = state.bullets.length - 1; i >= 0; i--) {
+      var b = state.bullets[i];
+      if (this.bulletVsOrbitingCore(b, i)) continue;
+      if (this.bulletVsOrbPods(b, i)) continue;
+      if (this.bulletVsColorBars(b, i)) continue;
+      this.pulseTrailVsColorBars(b); // never consumes the bullet - see below
+      if (this.bulletVsFormation(b, i)) continue;
+      if (this.bulletVsBrickShards(b, i)) continue;
+    }
+  };
 
-    // Bullets can hit any live formation member, whether it's still idle
-    // in formation or already mid-dive - classic Galaga lets you snipe the
-    // formation itself, not just incoming divers.
-    for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
-      var b = state.bullets[bi];
+  // The orbiting dot is itself a target, separate from its carrier - hit it
+  // directly (before its carrier dies) for the bigger payoff.
+  MainScene.prototype.bulletVsOrbitingCore = function (b, bi) {
+    var state = this.state;
+    var core = state.core;
+    if (!core || !core.attached) return false;
+    if (!circleHit(b.x, b.y, core.sprite.x, core.sprite.y, CORE_RADIUS + BULLET_RADIUS)) return false;
+    destroyBulletSprites(b); state.bullets.splice(bi, 1);
+    this.triggerStarburst(core.sprite.x, core.sprite.y);
+    core.sprite.destroy();
+    state.core = null;
+    return true;
+  };
 
-      // The orbiting dot is itself a target, separate from its carrier -
-      // hit it directly (before its carrier dies) for the bigger payoff.
-      if (state.core && state.core.attached) {
-        var cdx = b.x - state.core.sprite.x, cdy = b.y - state.core.sprite.y;
-        var crr = CORE_RADIUS + BULLET_RADIUS;
-        if (cdx * cdx + cdy * cdy <= crr * crr) {
-          destroyBulletSprites(b); state.bullets.splice(bi, 1);
-          this.triggerStarburst(state.core.sprite.x, state.core.sprite.y);
-          state.core.sprite.destroy();
-          state.core = null;
-          continue;
-        }
-      }
+  // Shooting an orb pod (instead of touching it) is an alternate way to
+  // collect it - the pod turns into its own colored bullet, sent flying at
+  // the ship, instead of vanishing.
+  MainScene.prototype.bulletVsOrbPods = function (b, bi) {
+    var state = this.state;
+    for (var i = 0; i < state.orbs.length; i++) {
+      var orb = state.orbs[i];
+      if (!circleHit(b.x, b.y, orb.x, orb.y, ORB_RADIUS + BULLET_RADIUS)) continue;
+      destroyBulletSprites(b); state.bullets.splice(bi, 1);
+      this.releaseOrbBullet(orb);
+      orb.hostSprite.destroy();
+      state.orbs.splice(i, 1);
+      return true;
+    }
+    return false;
+  };
 
-      // Shooting an orb pod (instead of touching it) is an alternate way
-      // to collect it - the pod turns into its own colored bullet, sent
-      // flying at the ship, instead of vanishing.
-      var hitOrb = false;
-      for (var oi = 0; oi < state.orbs.length; oi++) {
-        var orbHit = state.orbs[oi];
-        var odx = b.x - orbHit.x, ody = b.y - orbHit.y;
-        var orr = ORB_RADIUS + BULLET_RADIUS;
-        if (odx * odx + ody * ody <= orr * orr) {
-          destroyBulletSprites(b); state.bullets.splice(bi, 1);
-          this.releaseOrbBullet(orbHit);
-          orbHit.hostSprite.destroy();
-          state.orbs.splice(oi, 1);
-          hitOrb = true;
-          break;
-        }
-      }
-      if (hitOrb) continue;
+  // A powerup-released bullet (carries a colorKey) destroys a matching color
+  // bar outright - one bullet, one WHOLE bar, every segment at once - and is
+  // consumed on the hit like an ordinary shot on an enemy. Deliberately
+  // blunter than the pulse cannon, which only ever chips one segment: banked
+  // powerup ammo is the scarce resource, so it should feel like it.
+  //
+  // With N banked shots of a color and M same-color bars on screen, the
+  // volley spreads its kills across up to min(N, M) of them without needing
+  // to pierce - the first bullet to reach a given bar claims it and stops
+  // there, while the others (not yet at that bar's height, or arriving a
+  // frame later once it's already gone) fly on to whichever bar they reach
+  // next. Ordinary tap-fired bullets have no colorKey and never come here.
+  MainScene.prototype.bulletVsColorBars = function (b, bi) {
+    var state = this.state;
+    if (!b.colorKey) return false;
+    for (var i = 0; i < state.colorBars.length; i++) {
+      var bar = state.colorBars[i];
+      if (!bar.alive || bar.colorKey !== b.colorKey) continue;
+      // Whole-bar footprint, not a single segment's - the same blunt hit
+      // test the flying core already uses against these bars.
+      if (!spanHit(b.y, bar.y, state.colorBarHeight / 2 + BULLET_RADIUS)) continue;
+      if (!spanHit(b.x, bar.x, COLOR_BAR_WIDTH / 2 + BULLET_RADIUS)) continue;
+      destroyBulletSprites(b); state.bullets.splice(bi, 1);
+      killBar(bar);
+      this.respawnBarsIfCleared();
+      return true;
+    }
+    return false;
+  };
 
-      // A powerup-released bullet (carries a colorKey) can also destroy a
-      // matching color bar above the formation - one bullet, one WHOLE bar
-      // (every segment at once, not just the one it lines up with),
-      // consumed on the hit exactly like an ordinary shot on an enemy. This
-      // is deliberately blunter than an ordinary trailed shot (which only
-      // ever chips one segment) - banked powerup ammo is the valuable,
-      // limited resource, so it should feel like it: one shot clears a
-      // whole brick, in contrast to the pulse cannon's segment-by-segment
-      // whittling. With N banked colors of a color and M same-color bars on
-      // screen, the bullets naturally spread the kills across up to
-      // min(N, M) of them without needing to pierce: the first bullet to
-      // reach a given bar claims it and stops there, while the others (not
-      // yet at that bar's height, or arriving a frame later once it's
-      // already gone) keep flying on to whichever bar they reach next.
-      // Ordinary tap-fired bullets have no colorKey and never interact with
-      // these.
-      var hitBar = false;
-      if (b.colorKey) {
-        for (var cbi = 0; cbi < state.colorBars.length && !hitBar; cbi++) {
-          var bar = state.colorBars[cbi];
-          if (!bar.alive || bar.colorKey !== b.colorKey) continue;
-          var barWithinY = Math.abs(b.y - bar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
-          if (!barWithinY) continue;
-          // Whole-bar footprint, not a single segment's - same blunt
-          // hit test the flying core already uses against these bars.
-          var barWithinX = Math.abs(b.x - bar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
-          if (!barWithinX) continue;
-          destroyBulletSprites(b); state.bullets.splice(bi, 1);
-          bar.segments.forEach(function (seg) {
-            if (seg.alive) { seg.sprite.destroy(); seg.crackSprite.destroy(); seg.alive = false; }
-          });
-          bar.alive = false;
-          // Clearing every bar on screen (all rows, all colors) is a
-          // reward, not an end to the pressure - bring a fresh, harder
-          // set back instead of leaving the drift threat gone for good.
-          if (state.colorBars.every(function (b2) { return !b2.alive; })) {
-            this.respawnColorBars();
-          }
-          hitBar = true;
-        }
-      }
-      if (hitBar) continue;
+  // The pulse cannon: an ordinary bullet carrying color trails built up by
+  // flying through strips (see levelUpFirePower()/fireBullet()). It interacts
+  // with AT MOST ONE bar, ever - the first (closest, "bottom") one its path
+  // reaches - and that single encounter either matches or it doesn't.
+  //
+  // It deliberately does not keep re-rolling against every bar stacked
+  // behind that one: every row shares the same fixed color per lane (see
+  // spawnColorBars()), so a multi-color bullet that spent one color on a
+  // match at the bottom bar would otherwise sail on and mismatch its
+  // remaining colors against the NEXT bar up the same lane, fizzling
+  // somewhere other than the bottom brick. b.trailResolved is what holds
+  // that line, and it doubles as protection against re-resolving the same
+  // bar across the several frames a bullet spends inside its hit band.
+  //
+  // Never consumes the bullet either way - it flies on to whatever's above.
+  MainScene.prototype.pulseTrailVsColorBars = function (b) {
+    var state = this.state;
+    // A powerup-released bullet carries no trailLevels at all - it's the
+    // other mechanic entirely, handled by bulletVsColorBars() above.
+    if (b.trailResolved || !b.trailLevels) return;
+    var carriesAnyColor = STRIP_COLOR_KEYS.some(function (key) { return b.trailLevels[key] > 0; });
+    if (!carriesAnyColor) return; // nothing to spend, nothing to absorb - passes straight through
 
-      // An ordinary bullet carrying a color trail (built up by flying
-      // through strips - see levelUpFirePower()/fireBullet()) interacts
-      // with AT MOST ONE bar, ever: the first (closest, "bottom") one its
-      // path reaches, whichever lane it's in. That single encounter either
-      // matches or it doesn't - it does not keep re-rolling against every
-      // further bar stacked behind it in the same lane (every row shares
-      // the same fixed color per lane - see spawnColorBars() - so a multi-
-      // color bullet that only spent ONE color on a match at the bottom
-      // bar would otherwise sail on and mismatch its remaining color(s)
-      // against the NEXT bar up in that same lane, fizzling somewhere
-      // other than the bottom brick - not the intended read). On a match,
-      // it chips that ONE segment's hp down by the matching color's
-      // level (dies once BRICK_SEGMENT_HP runs out) and spends just that
-      // one color's trail - the bullet keeps flying with whatever other
-      // colors it's still carrying (can still hit a formation enemy or
-      // shard below), but b.trailResolved below means those other colors
-      // are done interacting with bars for good, not just with this one.
-      // On a mismatch, the bullet's WHOLE pulse (every trail it's still
-      // carrying, not just the one that doesn't match) fizzles out right
-      // there instead - a brief flash of light at the point of contact,
-      // doing no damage - leaving the bullet to keep flying on afterward
-      // as a plain, trail-less shot. A bullet with no active trail at all
-      // has nothing to absorb, so it just passes through untouched, same
-      // as always.
-      var hasActiveTrail = !b.trailResolved && !!b.trailLevels && STRIP_COLOR_KEYS.some(function (key) { return b.trailLevels[key] > 0; }); // a powerup-released bullet (activatePowerup()) carries no trailLevels at all - not a pulse-cannon shot
-      if (hasActiveTrail) {
-        var trailHandled = false;
-        for (var tbi = 0; tbi < state.colorBars.length && !trailHandled; tbi++) {
-          var tbar = state.colorBars[tbi];
-          if (!tbar.alive) continue;
-          var tbarWithinY = Math.abs(b.y - tbar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
-          if (!tbarWithinY) continue;
-          var trailLevel = b.trailLevels[tbar.colorKey] || 0;
-          for (var tsegi = 0; tsegi < tbar.segments.length && !trailHandled; tsegi++) {
-            var tseg = tbar.segments[tsegi];
-            if (!tseg.alive) continue;
-            var tsegWithinX = Math.abs(b.x - tseg.sprite.x) <= BRICK_SEGMENT_WIDTH / 2 + BULLET_RADIUS;
-            if (!tsegWithinX) continue;
-            if (trailLevel > 0) {
-              tseg.hp -= trailLevel;
-              b.trailLevels[tbar.colorKey] = 0;
-              if (b.trailSprites[tbar.colorKey]) {
-                b.trailSprites[tbar.colorKey].destroy();
-                delete b.trailSprites[tbar.colorKey];
-              }
-              if (tseg.hp <= 0) {
-                tseg.sprite.destroy(); tseg.crackSprite.destroy(); tseg.alive = false;
-                if (tbar.segments.every(function (s2) { return !s2.alive; })) {
-                  tbar.alive = false;
-                  if (state.colorBars.every(function (b2) { return !b2.alive; })) {
-                    this.respawnColorBars();
-                  }
-                }
-              } else {
-                this.updateBrickCrack(tseg);
-              }
-            } else {
-              // Color mismatch - absorb the WHOLE pulse here (every color
-              // this bullet is carrying, not just the one that doesn't
-              // match), not just this one. No damage; the bullet itself
-              // survives and keeps flying on, trail-less from here on.
-              for (var fkey in b.trailSprites) b.trailSprites[fkey].destroy();
-              b.trailSprites = {};
-              STRIP_COLOR_KEYS.forEach(function (key) { b.trailLevels[key] = 0; });
-              // Positioned at the segment's bottom edge (closer to the
-              // ship, further from the bar's own center) - where the
-              // pulse actually made contact, coming from below.
-              this.triggerBrickFizzle(tseg.sprite.x, tseg.sprite.y + state.colorBarHeight / 2);
-            }
-            b.trailResolved = true; // this bullet is done interacting with bars, win or lose, for the rest of its life
-            trailHandled = true;
-          }
-        }
-      }
-
-      for (var si = 0; si < state.formation.length; si++) {
-        var slot = state.formation[si];
-        if (!slot.alive) continue;
-        var dx = b.x - slot.x, dy = b.y - slot.y;
-        var rr = slot.radius + BULLET_RADIUS;
-        if (dx * dx + dy * dy <= rr * rr) {
-          slot.sprite.destroy(); slot.alive = false;
-          this.addScore(slot.score);
-          if (state.core && state.core.attached && state.core.carrierSlot === slot) {
-            this.releaseCore(state.core, slot.x, slot.y);
-          }
-          // A powerup-released bullet (carries a colorKey) is the "powerful"
-          // shot - it punches through and keeps flying instead of getting
-          // consumed on the first kill, so it can chain through a column.
-          // Ordinary tap-fired bullets still die on their first hit.
-          if (b.colorKey) continue;
-          destroyBulletSprites(b); state.bullets.splice(bi, 1);
-          break;
-        }
-      }
-
-      // Brick shards are shootable in every phase, same rules as a
-      // formation enemy - a powerup bullet pierces through and keeps
-      // going, an ordinary bullet is consumed on the hit.
-      for (var shi = 0; shi < state.brickShards.length; shi++) {
-        var shard = state.brickShards[shi];
-        var shdx = b.x - shard.x, shdy = b.y - shard.y;
-        var shrr = BRICK_SHARD_RADIUS + BULLET_RADIUS;
-        if (shdx * shdx + shdy * shdy <= shrr * shrr) {
-          shard.sprite.destroy();
-          state.brickShards.splice(shi, 1);
-          this.addScore(BRICK_SHARD_SCORE);
-          if (b.colorKey) continue;
-          destroyBulletSprites(b); state.bullets.splice(bi, 1);
-          break;
-        }
+    for (var i = 0; i < state.colorBars.length; i++) {
+      var bar = state.colorBars[i];
+      if (!bar.alive) continue;
+      if (!spanHit(b.y, bar.y, state.colorBarHeight / 2 + BULLET_RADIUS)) continue;
+      var level = b.trailLevels[bar.colorKey] || 0;
+      for (var j = 0; j < bar.segments.length; j++) {
+        var seg = bar.segments[j];
+        if (!seg.alive) continue; // a destroyed segment is a real gap - nothing to hit
+        if (!spanHit(b.x, seg.sprite.x, BRICK_SEGMENT_WIDTH / 2 + BULLET_RADIUS)) continue;
+        if (level > 0) this.pulseDamagesSegment(b, bar, seg, level);
+        else this.pulseFizzlesOut(b, seg);
+        b.trailResolved = true;
+        return;
       }
     }
+  };
 
-    // The ship can only be hit by an active diver - idle formation members
-    // stay up near the top, out of reach.
-    if (!isInvulnerable(state)) {
-      for (var i = 0; i < state.formation.length; i++) {
-        var e = state.formation[i];
-        if (!e.alive || !e.diving) continue;
-
-        // A banked color's orbiting dot doubles as a one-hit shield, but
-        // only where it actually is - a diver has to physically clip the
-        // dot's own position, not just get close to the ship while any
-        // color happens to be banked. The dots keep circling, so whether
-        // one happens to be in a diver's way is real, moment-to-moment
-        // positioning, not a blanket "has a color" check.
-        var blockedByDot = false;
-        for (var di = 0; di < state.powerup.dots.length; di++) {
-          var dot = state.powerup.dots[di];
-          var ddx = e.x - dot.sprite.x, ddy = e.y - dot.sprite.y;
-          var ddr = e.radius + POWERUP_DOT_RADIUS;
-          if (ddx * ddx + ddy * ddy <= ddr * ddr) {
-            e.sprite.destroy(); e.alive = false;
-            this.consumeShieldDot(di);
-            blockedByDot = true;
-            break;
-          }
-        }
-        if (blockedByDot) break;
-
-        var sx = e.x - state.ship.x, sy = e.y - SHIP_Y;
-        var sr = state.ship.radius + e.radius;
-        if (sx * sx + sy * sy <= sr * sr) {
-          e.sprite.destroy(); e.alive = false;
-          this.shipHit();
-          break;
-        }
-      }
+  // Matching color: chip that ONE segment down by the color's current level,
+  // spending only that color's trail. The bullet keeps flying with whatever
+  // other colors it still carries (it can still take out a formation enemy
+  // above), though trailResolved means those are done with bars for good.
+  MainScene.prototype.pulseDamagesSegment = function (b, bar, seg, level) {
+    seg.hp -= level;
+    b.trailLevels[bar.colorKey] = 0;
+    if (b.trailSprites[bar.colorKey]) {
+      b.trailSprites[bar.colorKey].destroy();
+      delete b.trailSprites[bar.colorKey];
     }
-
-    // A brick shard only threatens the ship once it's committed to the
-    // 'attack' phase - during 'spin'/'fly' it's just a target, not a
-    // hazard yet, giving a beat to shoot it down first. Same shield rule
-    // as a formation diver: an orbiting powerup dot in its way blocks it.
-    if (!isInvulnerable(state)) {
-      for (var shj = 0; shj < state.brickShards.length; shj++) {
-        var atk = state.brickShards[shj];
-        if (atk.phase !== 'attack') continue;
-
-        var atkBlockedByDot = false;
-        for (var adi = 0; adi < state.powerup.dots.length; adi++) {
-          var adot = state.powerup.dots[adi];
-          var addx = atk.x - adot.sprite.x, addy = atk.y - adot.sprite.y;
-          var addr = BRICK_SHARD_RADIUS + POWERUP_DOT_RADIUS;
-          if (addx * addx + addy * addy <= addr * addr) {
-            atk.sprite.destroy();
-            state.brickShards.splice(shj, 1);
-            this.consumeShieldDot(adi);
-            atkBlockedByDot = true;
-            break;
-          }
-        }
-        if (atkBlockedByDot) break;
-
-        var asx = atk.x - state.ship.x, asy = atk.y - SHIP_Y;
-        var asr = state.ship.radius + BRICK_SHARD_RADIUS;
-        if (asx * asx + asy * asy <= asr * asr) {
-          atk.sprite.destroy();
-          state.brickShards.splice(shj, 1);
-          this.shipHit();
-          break;
-        }
-      }
+    if (seg.hp > 0) {
+      this.updateBrickCrack(seg);
+      return;
     }
+    killSegment(seg);
+    if (bar.segments.every(function (s) { return !s.alive; })) {
+      bar.alive = false;
+      this.respawnBarsIfCleared();
+    }
+  };
 
-    // The sacrifice: flying the ship straight into the orbiting core (not
-    // shooting it) also triggers the starburst - full formation swept, but
-    // it costs a life, same as any other hit. A deliberate risk/reward path
-    // alongside the free chain-release and the precision-shot sweep.
-    // Re-checking isInvulnerable() here (not reusing the value above) means
-    // a hit from the diver loop just above - which grants fresh
-    // invulnerability - naturally blocks this from also firing the same
-    // frame, without needing extra bookkeeping.
-    if (!isInvulnerable(state) && state.core && state.core.attached) {
-      var core = state.core;
-      var kx = core.sprite.x - state.ship.x, ky = core.sprite.y - SHIP_Y;
-      var kr = state.ship.radius + CORE_RADIUS;
-      if (kx * kx + ky * ky <= kr * kr) {
-        this.triggerStarburst(core.sprite.x, core.sprite.y);
-        core.sprite.destroy();
-        state.core = null;
+  // No matching color: the WHOLE pulse is absorbed here - every trail the
+  // bullet carries, not just the one that didn't match - doing no damage,
+  // with a brief flash at the segment's bottom edge, where the pulse
+  // actually made contact coming from below. The bullet survives and flies
+  // on as a plain, trail-less shot.
+  MainScene.prototype.pulseFizzlesOut = function (b, seg) {
+    for (var key in b.trailSprites) b.trailSprites[key].destroy();
+    b.trailSprites = {};
+    STRIP_COLOR_KEYS.forEach(function (key) { b.trailLevels[key] = 0; });
+    this.triggerBrickFizzle(seg.sprite.x, seg.sprite.y + this.state.colorBarHeight / 2);
+  };
+
+  // Bullets can hit any live formation member, idle or already mid-dive -
+  // classic Galaga lets you snipe the formation itself, not just incoming
+  // divers.
+  MainScene.prototype.bulletVsFormation = function (b, bi) {
+    var state = this.state;
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      if (!slot.alive) continue;
+      if (!circleHit(b.x, b.y, slot.x, slot.y, slot.radius + BULLET_RADIUS)) continue;
+      slot.sprite.destroy(); slot.alive = false;
+      this.addScore(slot.score);
+      if (state.core && state.core.attached && state.core.carrierSlot === slot) {
+        this.releaseCore(state.core, slot.x, slot.y);
+      }
+      // A powerup-released bullet is the "powerful" shot - it punches
+      // through and keeps scanning, so it can chain down a whole column.
+      // Ordinary tap-fired bullets die on their first hit.
+      if (b.colorKey) continue;
+      destroyBulletSprites(b); state.bullets.splice(bi, 1);
+      return true;
+    }
+    return false;
+  };
+
+  // Brick shards are shootable in every phase, same rules as a formation
+  // enemy - a powerup bullet pierces on through, an ordinary one is consumed.
+  // Iterated back to front so splicing a dead shard out doesn't skip the
+  // next one for a piercing bullet.
+  MainScene.prototype.bulletVsBrickShards = function (b, bi) {
+    var state = this.state;
+    for (var i = state.brickShards.length - 1; i >= 0; i--) {
+      var shard = state.brickShards[i];
+      if (!circleHit(b.x, b.y, shard.x, shard.y, BRICK_SHARD_RADIUS + BULLET_RADIUS)) continue;
+      shard.sprite.destroy();
+      state.brickShards.splice(i, 1);
+      this.addScore(BRICK_SHARD_SCORE);
+      if (b.colorKey) continue;
+      destroyBulletSprites(b); state.bullets.splice(bi, 1);
+      return true;
+    }
+    return false;
+  };
+
+  // Everything that can cost the ship a life. Each check re-tests
+  // isInvulnerable() itself rather than sharing one cached value: a hit in
+  // an earlier check grants fresh invulnerability, which then naturally
+  // blocks the later ones from also landing in the same frame, with no extra
+  // bookkeeping.
+  MainScene.prototype.handleShipHazards = function () {
+    this.shipVsDivers();
+    this.shipVsAttackingShards();
+    this.shipVsOrbitingCore();
+    this.shipVsFlyingCore();
+  };
+
+  // A banked color's orbiting dot doubles as a one-hit shield, but only
+  // where it actually IS - a hazard has to physically clip the dot's own
+  // position, not merely get near the ship while some color happens to be
+  // banked. The dots keep circling, so whether one is in a given hazard's
+  // way is real moment-to-moment positioning, not a blanket "has a color"
+  // check. Returns true if a dot blocked (and was spent on) this hazard.
+  MainScene.prototype.shieldDotBlocks = function (x, y, radius) {
+    var dots = this.state.powerup.dots;
+    for (var i = 0; i < dots.length; i++) {
+      var dot = dots[i];
+      if (!circleHit(x, y, dot.sprite.x, dot.sprite.y, radius + POWERUP_DOT_RADIUS)) continue;
+      this.consumeShieldDot(i);
+      return true;
+    }
+    return false;
+  };
+
+  // Only an active diver can reach the ship - idle formation members stay up
+  // near the top, out of reach.
+  MainScene.prototype.shipVsDivers = function () {
+    var state = this.state;
+    if (isInvulnerable(state)) return;
+    for (var i = 0; i < state.formation.length; i++) {
+      var diver = state.formation[i];
+      if (!diver.alive || !diver.diving) continue;
+      if (this.shieldDotBlocks(diver.x, diver.y, diver.radius)) {
+        diver.sprite.destroy(); diver.alive = false;
+        return;
+      }
+      if (circleHit(diver.x, diver.y, state.ship.x, SHIP_Y, state.ship.radius + diver.radius)) {
+        diver.sprite.destroy(); diver.alive = false;
         this.shipHit();
+        return;
       }
     }
+  };
 
-    // The flying core (already chain-released from its carrier) is a real
-    // hazard now, not just cover for enemies - failing to dodge it while
-    // it's airborne costs a life like any other hit, and it's consumed on
-    // impact. Distinct from the sacrifice above: that's deliberately
-    // ramming a still-ORBITING core for a bonus; this is just not getting
-    // out of the way of one already in flight. Same fresh-isInvulnerable()
-    // re-check as the sacrifice, for the same reason - a diver hit this
-    // same frame naturally blocks this from also firing.
-    if (!isInvulnerable(state) && state.core && !state.core.attached) {
-      var flyingCore = state.core;
-      var fx = flyingCore.x - state.ship.x, fy = flyingCore.y - SHIP_Y;
-      var fr = state.ship.radius + CORE_RADIUS;
-      if (fx * fx + fy * fy <= fr * fr) {
-        flyingCore.sprite.destroy();
-        state.core = null;
+  // A brick shard only threatens the ship once it's committed to its
+  // 'attack' phase - during 'spin'/'fly' it's just a target, giving a beat to
+  // shoot it down first. Same shield rule as a formation diver.
+  MainScene.prototype.shipVsAttackingShards = function () {
+    var state = this.state;
+    if (isInvulnerable(state)) return;
+    for (var i = 0; i < state.brickShards.length; i++) {
+      var shard = state.brickShards[i];
+      if (shard.phase !== 'attack') continue;
+      if (this.shieldDotBlocks(shard.x, shard.y, BRICK_SHARD_RADIUS)) {
+        shard.sprite.destroy();
+        state.brickShards.splice(i, 1);
+        return;
+      }
+      if (circleHit(shard.x, shard.y, state.ship.x, SHIP_Y, state.ship.radius + BRICK_SHARD_RADIUS)) {
+        shard.sprite.destroy();
+        state.brickShards.splice(i, 1);
         this.shipHit();
+        return;
       }
     }
+  };
+
+  // The sacrifice: flying the ship straight into a still-ORBITING core (not
+  // shooting it) also triggers the starburst - the full formation swept - but
+  // it costs a life, same as any other hit. A deliberate risk/reward path
+  // alongside the free chain-release and the precision-shot sweep.
+  MainScene.prototype.shipVsOrbitingCore = function () {
+    var state = this.state;
+    if (isInvulnerable(state)) return;
+    var core = state.core;
+    if (!core || !core.attached) return;
+    if (!circleHit(core.sprite.x, core.sprite.y, state.ship.x, SHIP_Y, state.ship.radius + CORE_RADIUS)) return;
+    this.triggerStarburst(core.sprite.x, core.sprite.y);
+    core.sprite.destroy();
+    state.core = null;
+    this.shipHit();
+  };
+
+  // An already-released core is a real hazard, not just cover for enemies -
+  // failing to dodge one in flight costs a life like any other hit, and it's
+  // consumed on impact. Distinct from the sacrifice above: that's deliberately
+  // ramming a still-orbiting core for a bonus, this is just not getting out
+  // of the way of one already airborne.
+  MainScene.prototype.shipVsFlyingCore = function () {
+    var state = this.state;
+    if (isInvulnerable(state)) return;
+    var core = state.core;
+    if (!core || core.attached) return;
+    if (!circleHit(core.x, core.y, state.ship.x, SHIP_Y, state.ship.radius + CORE_RADIUS)) return;
+    this.consumeFlyingCore();
+    this.shipHit();
   };
 
   // Flings the core off tangentially from its orbit at the moment of
@@ -1991,13 +2040,10 @@
     for (var i = 0; i < state.formation.length; i++) {
       var slot = state.formation[i];
       if (!slot.alive) continue;
-      var dx = core.x - slot.x, dy = core.y - slot.y;
-      var rr = slot.radius + CORE_RADIUS;
-      if (dx * dx + dy * dy <= rr * rr) {
+      if (circleHit(core.x, core.y, slot.x, slot.y, slot.radius + CORE_RADIUS)) {
         slot.sprite.destroy(); slot.alive = false;
         this.addScore(slot.score);
-        core.sprite.destroy();
-        state.core = null;
+        this.consumeFlyingCore();
         return;
       }
     }
@@ -2008,13 +2054,11 @@
     // consumed on the hit, same as chaining into an enemy.
     for (var si = 0; si < state.strips.length; si++) {
       var strip = state.strips[si];
-      var withinY = Math.abs(core.y - strip.y) <= CORE_RADIUS + STRIP_HEIGHT / 2;
-      var withinX = Math.abs(core.x - strip.x) <= CORE_RADIUS + STRIP_WIDTH / 2;
-      if (withinY && withinX) {
+      if (spanHit(core.y, strip.y, CORE_RADIUS + STRIP_HEIGHT / 2) &&
+          spanHit(core.x, strip.x, CORE_RADIUS + STRIP_WIDTH / 2)) {
         strip.sprite.destroy();
         state.strips.splice(si, 1);
-        core.sprite.destroy();
-        state.core = null;
+        this.consumeFlyingCore();
         return;
       }
     }
@@ -2025,28 +2069,24 @@
     for (var cbi = 0; cbi < state.colorBars.length; cbi++) {
       var bar = state.colorBars[cbi];
       if (!bar.alive) continue;
-      var barWithinY = Math.abs(core.y - bar.y) <= CORE_RADIUS + state.colorBarHeight / 2;
-      var barWithinX = Math.abs(core.x - bar.x) <= CORE_RADIUS + COLOR_BAR_WIDTH / 2;
-      if (barWithinY && barWithinX) {
-        bar.segments.forEach(function (seg) {
-          if (seg.alive) { seg.sprite.destroy(); seg.crackSprite.destroy(); seg.alive = false; }
-        });
-        bar.alive = false;
-        core.sprite.destroy();
-        state.core = null;
-        // Same "clearing everything triggers a harder respawn" rule as a
-        // matching-color bullet destroying the last bar.
-        if (state.colorBars.every(function (b2) { return !b2.alive; })) {
-          this.respawnColorBars();
-        }
+      if (spanHit(core.y, bar.y, CORE_RADIUS + state.colorBarHeight / 2) &&
+          spanHit(core.x, bar.x, CORE_RADIUS + COLOR_BAR_WIDTH / 2)) {
+        killBar(bar);
+        this.consumeFlyingCore();
+        this.respawnBarsIfCleared();
         return;
       }
     }
 
-    if (core.age > CORE_LIFETIME || core.x < -20 || core.x > GAME_WIDTH + 20 || core.y < -20 || core.y > GAME_HEIGHT + 20) {
-      core.sprite.destroy();
-      state.core = null;
+    if (core.age > CORE_LIFETIME || isOffPlayfield(core.x, core.y, 20)) {
+      this.consumeFlyingCore();
     }
+  };
+
+  // The core is spent on whatever it hits - one target, then gone.
+  MainScene.prototype.consumeFlyingCore = function () {
+    this.state.core.sprite.destroy();
+    this.state.core = null;
   };
 
   // Every currently alive enemy dies at once - idle or diving, doesn't
@@ -2362,9 +2402,7 @@
       // Touching the pod is enough to collect it safely - a single
       // instant of contact, unlike the color strips' whole-pass
       // requirement.
-      var sdx = orb.x - state.ship.x, sdy = orb.y - SHIP_Y;
-      var srr = ORB_RADIUS + state.ship.radius;
-      if (sdx * sdx + sdy * sdy <= srr * srr) {
+      if (circleHit(orb.x, orb.y, state.ship.x, SHIP_Y, ORB_RADIUS + state.ship.radius)) {
         this.collectOrb(orb);
         orb.hostSprite.destroy();
         state.orbs.splice(i, 1);
@@ -2411,16 +2449,14 @@
 
       // Reaching the ship collects it - not a hit, so this isn't gated on
       // invulnerability like a real hazard would be.
-      var hdx = h.x - state.ship.x, hdy = h.y - SHIP_Y;
-      var hrr = ORB_BULLET_RADIUS + state.ship.radius;
-      if (hdx * hdx + hdy * hdy <= hrr * hrr) {
+      if (circleHit(h.x, h.y, state.ship.x, SHIP_Y, ORB_BULLET_RADIUS + state.ship.radius)) {
         this.collectColor(h.colorKey);
         h.sprite.destroy();
         state.orbBullets.splice(i, 1);
         continue;
       }
 
-      if (h.age > ORB_BULLET_LIFETIME || h.x < -20 || h.x > GAME_WIDTH + 20 || h.y < -20 || h.y > GAME_HEIGHT + 20) {
+      if (h.age > ORB_BULLET_LIFETIME || isOffPlayfield(h.x, h.y, 20)) {
         h.sprite.destroy();
         state.orbBullets.splice(i, 1);
       }
