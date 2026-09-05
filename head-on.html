@@ -621,6 +621,19 @@
     return x < -margin || x > GAME_WIDTH + margin || y < -margin || y > GAME_HEIGHT + margin;
   }
 
+  // ---- Texture baking ------------------------------------------------------
+  // Every sprite in this game is drawn once at boot into a texture that
+  // instances then reuse - there are no image assets to load. This owns the
+  // throwaway-Graphics dance (make it, draw, generate, destroy) so callers
+  // describe only the drawing: no way to leak a Graphics object by
+  // forgetting the destroy(), and no IIFE needed just to scope a few locals.
+  function bakeTexture(scene, key, w, h, draw) {
+    var g = scene.make.graphics({ x: 0, y: 0, add: false });
+    draw(g);
+    g.generateTexture(key, w, h);
+    g.destroy();
+  }
+
   // "Aim once" - a velocity toward where the ship is at THIS moment, at a
   // fixed speed. Deliberately not a live homing lock: freezing the
   // trajectory at launch is what gives the player a real dodge window, and
@@ -682,46 +695,38 @@
     this.renderHud();
   };
 
+  // Every sprite in the game is drawn once here, at boot, into a texture
+  // that instances then reuse - there are no image assets to load. Callers
+  // describe only the drawing; bakeTexture() owns the make/generate/destroy
+  // dance around it, so there's no way to leak a Graphics object by
+  // forgetting to destroy one, and no IIFE needed just to scope a few locals.
   MainScene.prototype.buildTextures = function () {
     var self = this;
 
-    // Ship: triangle outline, nose up.
-    (function () {
-      var r = SHIP_RADIUS;
-      var size = r * 2 + 4;
-      var cx = size / 2, cy = size / 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
+    // Ship: triangle outline, nose up. shipFillTex is the same silhouette
+    // solid instead of outlined, in white so it can be tinted per strip
+    // color and masked to reveal proportionately (the powerup-strip
+    // progress effect), layered underneath shipTex.
+    var shipSize = SHIP_RADIUS * 2 + 4;
+    function traceShip(g) {
+      var r = SHIP_RADIUS, cx = shipSize / 2, cy = shipSize / 2;
+      g.beginPath();
+      g.moveTo(cx, cy - r);
+      g.lineTo(cx + r * 0.75, cy + r * 0.7);
+      g.lineTo(cx, cy + r * 0.35);
+      g.lineTo(cx - r * 0.75, cy + r * 0.7);
+      g.closePath();
+    }
+    bakeTexture(self, 'shipTex', shipSize, shipSize, function (g) {
       g.lineStyle(2, COLOR_SHIP, 1);
-      g.beginPath();
-      g.moveTo(cx, cy - r);
-      g.lineTo(cx + r * 0.75, cy + r * 0.7);
-      g.lineTo(cx, cy + r * 0.35);
-      g.lineTo(cx - r * 0.75, cy + r * 0.7);
-      g.closePath();
+      traceShip(g);
       g.strokePath();
-      g.generateTexture('shipTex', size, size);
-      g.destroy();
-    })();
-
-    // Ship fill: same silhouette, solid instead of outlined, in white so
-    // it can be tinted per strip color and masked to reveal proportionately
-    // - the powerup-strip progress effect. Layered underneath shipTex.
-    (function () {
-      var r = SHIP_RADIUS;
-      var size = r * 2 + 4;
-      var cx = size / 2, cy = size / 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
+    });
+    bakeTexture(self, 'shipFillTex', shipSize, shipSize, function (g) {
       g.fillStyle(0xffffff, 1);
-      g.beginPath();
-      g.moveTo(cx, cy - r);
-      g.lineTo(cx + r * 0.75, cy + r * 0.7);
-      g.lineTo(cx, cy + r * 0.35);
-      g.lineTo(cx - r * 0.75, cy + r * 0.7);
-      g.closePath();
+      traceShip(g);
       g.fillPath();
-      g.generateTexture('shipFillTex', size, size);
-      g.destroy();
-    })();
+    });
 
     // Enemy textures, one per dive pattern: triangle (straight), diamond
     // (swoop), square (zigzag, rotated at runtime via sprite.rotation).
@@ -730,57 +735,45 @@
       var r = cfg.radius;
       var size = r * 2 + 4;
       var cx = size / 2, cy = size / 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(cfg.color, 1);
-      g.beginPath();
-      if (type === 'straight') {
-        g.moveTo(cx, cy + r);
-        g.lineTo(cx - r, cy - r * 0.7);
-        g.lineTo(cx + r, cy - r * 0.7);
-      } else if (type === 'swoop') {
-        g.moveTo(cx, cy - r);
-        g.lineTo(cx + r, cy);
-        g.lineTo(cx, cy + r);
-        g.lineTo(cx - r, cy);
-      } else {
-        g.moveTo(cx - r * 0.8, cy - r * 0.8);
-        g.lineTo(cx + r * 0.8, cy - r * 0.8);
-        g.lineTo(cx + r * 0.8, cy + r * 0.8);
-        g.lineTo(cx - r * 0.8, cy + r * 0.8);
-      }
-      g.closePath();
-      g.fillPath();
-      g.generateTexture(ENEMY_TEX[type], size, size);
-      g.destroy();
+      bakeTexture(self, ENEMY_TEX[type], size, size, function (g) {
+        g.fillStyle(cfg.color, 1);
+        g.beginPath();
+        if (type === 'straight') {
+          g.moveTo(cx, cy + r);
+          g.lineTo(cx - r, cy - r * 0.7);
+          g.lineTo(cx + r, cy - r * 0.7);
+        } else if (type === 'swoop') {
+          g.moveTo(cx, cy - r);
+          g.lineTo(cx + r, cy);
+          g.lineTo(cx, cy + r);
+          g.lineTo(cx - r, cy);
+        } else {
+          g.moveTo(cx - r * 0.8, cy - r * 0.8);
+          g.lineTo(cx + r * 0.8, cy - r * 0.8);
+          g.lineTo(cx + r * 0.8, cy + r * 0.8);
+          g.lineTo(cx - r * 0.8, cy + r * 0.8);
+        }
+        g.closePath();
+        g.fillPath();
+      });
     });
 
-    // Bullet: filled circle.
-    (function () {
-      var d = BULLET_RADIUS * 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
+    // Bullet: filled circle. Core: the same idea a touch smaller, in white.
+    bakeTexture(self, 'bulletTex', BULLET_RADIUS * 2, BULLET_RADIUS * 2, function (g) {
       g.fillStyle(COLOR_BULLET, 1);
       g.fillCircle(BULLET_RADIUS, BULLET_RADIUS, BULLET_RADIUS);
-      g.generateTexture('bulletTex', d, d);
-      g.destroy();
-    })();
-
-    // Core: small red dot.
-    (function () {
-      var d = CORE_RADIUS * 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
+    });
+    bakeTexture(self, 'coreTex', CORE_RADIUS * 2, CORE_RADIUS * 2, function (g) {
       g.fillStyle(COLOR_CORE, 1);
       g.fillCircle(CORE_RADIUS, CORE_RADIUS, CORE_RADIUS);
-      g.generateTexture('coreTex', d, d);
-      g.destroy();
-    })();
+    });
 
     // Powerup strips: one translucent rect per primary color.
     STRIP_COLOR_KEYS.forEach(function (key) {
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], STRIP_ALPHA);
-      g.fillRoundedRect(0, 0, STRIP_WIDTH, STRIP_HEIGHT, 4);
-      g.generateTexture('stripTex_' + key, STRIP_WIDTH, STRIP_HEIGHT);
-      g.destroy();
+      bakeTexture(self, 'stripTex_' + key, STRIP_WIDTH, STRIP_HEIGHT, function (g) {
+        g.fillStyle(STRIP_COLORS[key], STRIP_ALPHA);
+        g.fillRoundedRect(0, 0, STRIP_WIDTH, STRIP_HEIGHT, 4);
+      });
     });
 
     // Powerup dots: the banked-color indicators that orbit the ship, and
@@ -788,11 +781,10 @@
     // core, one solid (non-translucent) texture per color.
     STRIP_COLOR_KEYS.forEach(function (key) {
       var d = POWERUP_DOT_RADIUS * 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], 1);
-      g.fillCircle(POWERUP_DOT_RADIUS, POWERUP_DOT_RADIUS, POWERUP_DOT_RADIUS);
-      g.generateTexture('powerupDotTex_' + key, d, d);
-      g.destroy();
+      bakeTexture(self, 'powerupDotTex_' + key, d, d, function (g) {
+        g.fillStyle(STRIP_COLORS[key], 1);
+        g.fillCircle(POWERUP_DOT_RADIUS, POWERUP_DOT_RADIUS, POWERUP_DOT_RADIUS);
+      });
     });
 
     // Bullet trails: one per color, drawn as BULLET_TRAIL_ARC_COUNT nested
@@ -807,18 +799,16 @@
       var maxRadius = BULLET_TRAIL_ARC_BASE_RADIUS + (BULLET_TRAIL_ARC_COUNT - 1) * BULLET_TRAIL_ARC_RADIUS_STEP;
       var w = maxRadius * 2 + BULLET_TRAIL_ARC_STROKE * 2;
       var h = maxRadius + BULLET_TRAIL_ARC_STROKE;
-      var cx = w / 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      for (var i = 0; i < BULLET_TRAIL_ARC_COUNT; i++) {
-        var radius = BULLET_TRAIL_ARC_BASE_RADIUS + i * BULLET_TRAIL_ARC_RADIUS_STEP;
-        var alpha = Math.max(BULLET_TRAIL_ARC_ALPHA - i * BULLET_TRAIL_ARC_ALPHA_FALLOFF, 0.12);
-        g.lineStyle(BULLET_TRAIL_ARC_STROKE, STRIP_COLORS[key], alpha);
-        g.beginPath();
-        g.arc(cx, 0, radius, 0, Math.PI, false);
-        g.strokePath();
-      }
-      g.generateTexture('bulletTrailTex_' + key, w, h);
-      g.destroy();
+      bakeTexture(self, 'bulletTrailTex_' + key, w, h, function (g) {
+        for (var i = 0; i < BULLET_TRAIL_ARC_COUNT; i++) {
+          var radius = BULLET_TRAIL_ARC_BASE_RADIUS + i * BULLET_TRAIL_ARC_RADIUS_STEP;
+          var alpha = Math.max(BULLET_TRAIL_ARC_ALPHA - i * BULLET_TRAIL_ARC_ALPHA_FALLOFF, 0.12);
+          g.lineStyle(BULLET_TRAIL_ARC_STROKE, STRIP_COLORS[key], alpha);
+          g.beginPath();
+          g.arc(w / 2, 0, radius, 0, Math.PI, false);
+          g.strokePath();
+        }
+      });
     });
 
     // Color bar segments: translucent rectangles (same palette as the
@@ -827,13 +817,12 @@
     // BRICK_SEGMENT_COUNT of these sit flush together (no gap) to make up
     // one bar's full width, with a small gap only between adjacent BARS
     // so those still read as separate targets.
+    var segWidth = Math.round(BRICK_SEGMENT_WIDTH);
     STRIP_COLOR_KEYS.forEach(function (key) {
-      var w = Math.round(BRICK_SEGMENT_WIDTH);
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], COLOR_BAR_ALPHA);
-      g.fillRect(0, 0, w, COLOR_BAR_HEIGHT);
-      g.generateTexture('colorBarSegTex_' + key, w, COLOR_BAR_HEIGHT);
-      g.destroy();
+      bakeTexture(self, 'colorBarSegTex_' + key, segWidth, COLOR_BAR_HEIGHT, function (g) {
+        g.fillStyle(STRIP_COLORS[key], COLOR_BAR_ALPHA);
+        g.fillRect(0, 0, segWidth, COLOR_BAR_HEIGHT);
+      });
     });
 
     // Brick cracks: one shared overlay (not per-color - dark fracture
@@ -844,9 +833,8 @@
     // through, not a new one swapped in per hit, so it reads as one
     // spreading fracture. Simpler than the old full-bar version (one
     // crack instead of three) since a segment is a third the width.
-    (function () {
-      var w = Math.round(BRICK_SEGMENT_WIDTH), h = COLOR_BAR_HEIGHT;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
+    bakeTexture(self, 'brickSegCrackTex', segWidth, COLOR_BAR_HEIGHT, function (g) {
+      var w = segWidth, h = COLOR_BAR_HEIGHT;
       g.lineStyle(1.4, 0x000000, 0.9);
       function crackLine(points) {
         g.beginPath();
@@ -859,9 +847,7 @@
       // size without needing per-instance randomness.
       crackLine([[w * 0.45, 0], [w * 0.6, h * 0.35], [w * 0.4, h * 0.65], [w * 0.55, h]]);
       crackLine([[w * 0.6, h * 0.35], [w * 0.85, h * 0.5]]);
-      g.generateTexture('brickSegCrackTex', w, h);
-      g.destroy();
-    })();
+    });
 
     // Brick fizzle: a thin, bright, color-neutral strip (same idea as the
     // crack overlay - one shared texture, reused regardless of the
@@ -869,14 +855,10 @@
     // fades - see triggerBrickFizzle()/updateBrickFizzles(). Baked at full
     // segment width; grown from near-zero to full via displayWidth as it
     // animates, same "bake once, scale per instance" trick used elsewhere.
-    (function () {
-      var w = Math.round(BRICK_SEGMENT_WIDTH), h = BRICK_FIZZLE_HEIGHT;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
+    bakeTexture(self, 'brickFizzleTex', segWidth, BRICK_FIZZLE_HEIGHT, function (g) {
       g.fillStyle(COLOR_BRICK_FIZZLE, 1);
-      g.fillRect(0, 0, w, h);
-      g.generateTexture('brickFizzleTex', w, h);
-      g.destroy();
-    })();
+      g.fillRect(0, 0, segWidth, BRICK_FIZZLE_HEIGHT);
+    });
 
     // Brick shards: a small solid (fully opaque, not translucent like the
     // collectible powerups - this is now a genuine enemy) four-pointed
@@ -885,17 +867,16 @@
     STRIP_COLOR_KEYS.forEach(function (key) {
       var r = BRICK_SHARD_RADIUS;
       var size = r * 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], 1);
-      g.beginPath();
-      g.moveTo(r, 0);
-      g.lineTo(r * 1.5, r);
-      g.lineTo(r, size);
-      g.lineTo(r * 0.5, r);
-      g.closePath();
-      g.fillPath();
-      g.generateTexture('brickShardTex_' + key, size, size);
-      g.destroy();
+      bakeTexture(self, 'brickShardTex_' + key, size, size, function (g) {
+        g.fillStyle(STRIP_COLORS[key], 1);
+        g.beginPath();
+        g.moveTo(r, 0);
+        g.lineTo(r * 1.5, r);
+        g.lineTo(r, size);
+        g.lineTo(r * 0.5, r);
+        g.closePath();
+        g.fillPath();
+      });
     });
 
     // Orb pod: a small translucent diamond (same palette and translucency
@@ -906,17 +887,16 @@
       var r = ORB_RADIUS;
       var size = r * 2 + 4;
       var cx = size / 2, cy = size / 2;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(STRIP_COLORS[key], STRIP_ALPHA);
-      g.beginPath();
-      g.moveTo(cx, cy - r);
-      g.lineTo(cx + r, cy);
-      g.lineTo(cx, cy + r);
-      g.lineTo(cx - r, cy);
-      g.closePath();
-      g.fillPath();
-      g.generateTexture('orbTex_' + key, size, size);
-      g.destroy();
+      bakeTexture(self, 'orbTex_' + key, size, size, function (g) {
+        g.fillStyle(STRIP_COLORS[key], STRIP_ALPHA);
+        g.beginPath();
+        g.moveTo(cx, cy - r);
+        g.lineTo(cx + r, cy);
+        g.lineTo(cx, cy + r);
+        g.lineTo(cx - r, cy);
+        g.closePath();
+        g.fillPath();
+      });
     });
 
     // Shooting an orb pod releases it as a colored bullet flying at the
