@@ -1533,13 +1533,15 @@
       // see handleCollisions() - without touching the others or the
       // bullet itself.
       trailSprites: {},
-      // Bars this bullet has already resolved a trail interaction with
-      // (damage or a mismatch fizzle) - a bullet lingers inside a bar's
-      // hit band for several frames while it crosses it (BULLET_SPEED
-      // isn't instant), and without this a color spent on frame 1 would
-      // read as a "mismatch" against that same bar on frame 2, wiping
-      // out any other colors it's still carrying. See handleCollisions().
-      resolvedTrailBars: []
+      // Once true, this bullet is done interacting with color bars for
+      // good - set the instant it resolves against the first (closest)
+      // one it reaches, whether that was a match or a mismatch fizzle, so
+      // it never gets a second bite at a further bar stacked behind that
+      // one in the same lane. Also doubles as protection against a bullet
+      // re-resolving the SAME bar across several frames while it lingers
+      // in its hit band (BULLET_SPEED isn't instant) - see
+      // handleCollisions().
+      trailResolved: false
     };
     b.sprite = this.add.sprite(b.x, b.y, 'bulletTex');
 
@@ -1719,29 +1721,35 @@
       if (hitBar) continue;
 
       // An ordinary bullet carrying a color trail (built up by flying
-      // through strips - see levelUpFirePower()/fireBullet()) chips away
-      // at whichever ONE matching-color segment it touches, instead of
-      // instant-killing it: each hit deals damage equal to that color's
-      // current level, and the segment dies once BRICK_SEGMENT_HP runs
-      // out. Only THAT color's own trail is spent on the hit - the
-      // bullet itself isn't consumed, so it keeps flying with whatever
-      // other colors it's still carrying, and can still go on to hit a
-      // formation enemy or shard below, same as any ordinary shot.
-      // Touching a segment whose color it does NOT carry is a miss, not a
-      // free pass-through, though: the bullet's WHOLE pulse (every trail
-      // it's carrying, not just the mismatched one) fizzles out right
-      // there - absorbed with a brief flash of light, doing no damage -
-      // leaving the bullet to keep flying afterward as a plain, trail-
-      // less shot. A bullet with no active trail at all has nothing to
-      // absorb, so it just passes through untouched, same as always.
-      var hasActiveTrail = !!b.trailLevels && STRIP_COLOR_KEYS.some(function (key) { return b.trailLevels[key] > 0; }); // a powerup-released bullet (activatePowerup()) carries no trailLevels at all - not a pulse-cannon shot
+      // through strips - see levelUpFirePower()/fireBullet()) interacts
+      // with AT MOST ONE bar, ever: the first (closest, "bottom") one its
+      // path reaches, whichever lane it's in. That single encounter either
+      // matches or it doesn't - it does not keep re-rolling against every
+      // further bar stacked behind it in the same lane (every row shares
+      // the same fixed color per lane - see spawnColorBars() - so a multi-
+      // color bullet that only spent ONE color on a match at the bottom
+      // bar would otherwise sail on and mismatch its remaining color(s)
+      // against the NEXT bar up in that same lane, fizzling somewhere
+      // other than the bottom brick - not the intended read). On a match,
+      // it chips that ONE segment's hp down by the matching color's
+      // level (dies once BRICK_SEGMENT_HP runs out) and spends just that
+      // one color's trail - the bullet keeps flying with whatever other
+      // colors it's still carrying (can still hit a formation enemy or
+      // shard below), but b.trailResolved below means those other colors
+      // are done interacting with bars for good, not just with this one.
+      // On a mismatch, the bullet's WHOLE pulse (every trail it's still
+      // carrying, not just the one that doesn't match) fizzles out right
+      // there instead - a brief flash of light at the point of contact,
+      // doing no damage - leaving the bullet to keep flying on afterward
+      // as a plain, trail-less shot. A bullet with no active trail at all
+      // has nothing to absorb, so it just passes through untouched, same
+      // as always.
+      var hasActiveTrail = !b.trailResolved && !!b.trailLevels && STRIP_COLOR_KEYS.some(function (key) { return b.trailLevels[key] > 0; }); // a powerup-released bullet (activatePowerup()) carries no trailLevels at all - not a pulse-cannon shot
       if (hasActiveTrail) {
-        if (!b.resolvedTrailBars) b.resolvedTrailBars = []; // defensive - a hand-built test bullet may not set this
         var trailHandled = false;
         for (var tbi = 0; tbi < state.colorBars.length && !trailHandled; tbi++) {
           var tbar = state.colorBars[tbi];
           if (!tbar.alive) continue;
-          if (b.resolvedTrailBars.indexOf(tbar) !== -1) continue; // already resolved (damage or fizzle) - don't re-evaluate while still passing through it
           var tbarWithinY = Math.abs(b.y - tbar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
           if (!tbarWithinY) continue;
           var trailLevel = b.trailLevels[tbar.colorKey] || 0;
@@ -1776,9 +1784,12 @@
               for (var fkey in b.trailSprites) b.trailSprites[fkey].destroy();
               b.trailSprites = {};
               STRIP_COLOR_KEYS.forEach(function (key) { b.trailLevels[key] = 0; });
-              this.triggerBrickFizzle(tseg.sprite.x, tseg.sprite.y);
+              // Positioned at the segment's bottom edge (closer to the
+              // ship, further from the bar's own center) - where the
+              // pulse actually made contact, coming from below.
+              this.triggerBrickFizzle(tseg.sprite.x, tseg.sprite.y + state.colorBarHeight / 2);
             }
-            b.resolvedTrailBars.push(tbar);
+            b.trailResolved = true; // this bullet is done interacting with bars, win or lose, for the rest of its life
             trailHandled = true;
           }
         }
