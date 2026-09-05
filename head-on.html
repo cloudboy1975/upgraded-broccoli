@@ -1607,15 +1607,21 @@
       if (hitOrb) continue;
 
       // A powerup-released bullet (carries a colorKey) can also destroy a
-      // matching color bar above the formation - one bullet, one bar,
-      // consumed on the hit exactly like an ordinary shot on an enemy.
-      // With N banked colors of a color and M same-color bars on screen,
-      // the bullets naturally spread the kills across up to min(N, M) of
-      // them without needing to pierce: the first bullet to reach a given
-      // bar claims it and stops there, while the others (not yet at that
-      // bar's height, or arriving a frame later once it's already gone)
-      // keep flying on to whichever bar they reach next. Ordinary
-      // tap-fired bullets have no colorKey and never interact with these.
+      // matching color bar above the formation - one bullet, one WHOLE bar
+      // (every segment at once, not just the one it lines up with),
+      // consumed on the hit exactly like an ordinary shot on an enemy. This
+      // is deliberately blunter than an ordinary trailed shot (which only
+      // ever chips one segment) - banked powerup ammo is the valuable,
+      // limited resource, so it should feel like it: one shot clears a
+      // whole brick, in contrast to the pulse cannon's segment-by-segment
+      // whittling. With N banked colors of a color and M same-color bars on
+      // screen, the bullets naturally spread the kills across up to
+      // min(N, M) of them without needing to pierce: the first bullet to
+      // reach a given bar claims it and stops there, while the others (not
+      // yet at that bar's height, or arriving a frame later once it's
+      // already gone) keep flying on to whichever bar they reach next.
+      // Ordinary tap-fired bullets have no colorKey and never interact with
+      // these.
       var hitBar = false;
       if (b.colorKey) {
         for (var cbi = 0; cbi < state.colorBars.length && !hitBar; cbi++) {
@@ -1623,29 +1629,22 @@
           if (!bar.alive || bar.colorKey !== b.colorKey) continue;
           var barWithinY = Math.abs(b.y - bar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
           if (!barWithinY) continue;
-          // Which one of the bar's segments the bullet's x actually lines
-          // up with - it can only ever touch one at a time, since they
-          // sit flush across the bar's width with no gaps.
-          for (var segi = 0; segi < bar.segments.length; segi++) {
-            var seg = bar.segments[segi];
-            if (!seg.alive) continue;
-            var segWithinX = Math.abs(b.x - seg.sprite.x) <= BRICK_SEGMENT_WIDTH / 2 + BULLET_RADIUS;
-            if (segWithinX) {
-              destroyBulletSprites(b); state.bullets.splice(bi, 1);
-              seg.sprite.destroy(); seg.crackSprite.destroy(); seg.alive = false;
-              if (bar.segments.every(function (s2) { return !s2.alive; })) {
-                bar.alive = false;
-                // Clearing every bar on screen (all rows, all colors) is a
-                // reward, not an end to the pressure - bring a fresh, harder
-                // set back instead of leaving the drift threat gone for good.
-                if (state.colorBars.every(function (b2) { return !b2.alive; })) {
-                  this.respawnColorBars();
-                }
-              }
-              hitBar = true;
-              break;
-            }
+          // Whole-bar footprint, not a single segment's - same blunt
+          // hit test the flying core already uses against these bars.
+          var barWithinX = Math.abs(b.x - bar.x) <= COLOR_BAR_WIDTH / 2 + BULLET_RADIUS;
+          if (!barWithinX) continue;
+          destroyBulletSprites(b); state.bullets.splice(bi, 1);
+          bar.segments.forEach(function (seg) {
+            if (seg.alive) { seg.sprite.destroy(); seg.crackSprite.destroy(); seg.alive = false; }
+          });
+          bar.alive = false;
+          // Clearing every bar on screen (all rows, all colors) is a
+          // reward, not an end to the pressure - bring a fresh, harder
+          // set back instead of leaving the drift threat gone for good.
+          if (state.colorBars.every(function (b2) { return !b2.alive; })) {
+            this.respawnColorBars();
           }
+          hitBar = true;
         }
       }
       if (hitBar) continue;
