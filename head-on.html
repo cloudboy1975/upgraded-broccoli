@@ -495,17 +495,24 @@
   // separately destroyable pieces, each with its own BRICK_SEGMENT_HP.
   // Two independent ways to damage one, both requiring a color match: a
   // powerup-released bullet (carries a colorKey, spent from orb-banked
-  // ammo) instant-kills whichever ONE segment it touches, consumed on
-  // impact; an ordinary bullet carrying a matching color trail (built up
-  // via strips - see levelUpFirePower()) chips that segment's own hp
-  // down by that color's current level per hit instead - only that ONE
-  // color's trail is spent on the hit, not the whole bullet, so it keeps
-  // flying (still able to hit an enemy afterward) with any other colors
-  // it's still carrying. A mismatched color, or an ordinary bullet with
-  // no trail at all, passes through untouched either way. The bar itself
-  // (drifting, reaching the bottom, breaking into shards) still moves
-  // and dies as one whole unit exactly as before - segmentation only
-  // changes how it takes damage from being shot.
+  // ammo) instant-kills the WHOLE bar - every segment at once - and is
+  // consumed on impact, the valuable/blunt payoff of banked ammo; an
+  // ordinary bullet carrying a matching color trail (the "pulse cannon",
+  // built up via strips - see levelUpFirePower()) instead chips just the
+  // ONE segment it touches down by that color's current level per hit -
+  // only that one color's trail is spent, not the whole bullet, so it
+  // keeps flying (still able to hit an enemy afterward) with any other
+  // colors it's still carrying. A pulse-cannon trail that touches a
+  // segment whose bar color it does NOT carry fizzles out right there
+  // instead: the bullet's entire pulse (every color's trail, not just
+  // the mismatched one) is absorbed into that segment with a brief flash
+  // of light (see triggerBrickFizzle()/updateBrickFizzles()), doing no
+  // damage - the bullet itself keeps flying on afterward as a plain,
+  // trail-less shot. An ordinary bullet with no trail at all (nothing to
+  // absorb) just passes through untouched, same as always. The bar
+  // itself (drifting, reaching the bottom, breaking into shards) still
+  // moves and dies as one whole unit exactly as before - segmentation
+  // only changes how it takes damage from being shot.
   var COLOR_BAR_WIDTH = GAME_WIDTH / 3;
   var COLOR_BAR_HEIGHT = 16;
   var COLOR_BAR_Y = 28;
@@ -519,6 +526,15 @@
   var BRICK_SEGMENT_COUNT = 3; // segments per bar - a later pass may make this scale with wave/level
   var BRICK_SEGMENT_HP = 3; // hits' worth of trail damage needed to destroy ONE segment this way - see handleCollisions()
   var BRICK_SEGMENT_WIDTH = (COLOR_BAR_WIDTH - 4) / BRICK_SEGMENT_COUNT; // the bar's own width (see colorBarTex_* below), divided evenly with no gaps
+
+  // Pulse-cannon fizzle: a thin bright strip that flashes across a
+  // segment's own width and fades away when a trailed bullet's pulse is
+  // absorbed by a color-mismatched segment - see the trail-vs-bar block
+  // in handleCollisions() and triggerBrickFizzle()/updateBrickFizzles().
+  var BRICK_FIZZLE_DURATION = 0.3; // seconds, brief - a miss, not a payoff
+  var BRICK_FIZZLE_GROW_FRACTION = 0.4; // fraction of the duration spent spreading to full width before it just fades
+  var BRICK_FIZZLE_HEIGHT = 3; // px - "very thin"
+  var COLOR_BRICK_FIZZLE = 0xffffff; // neutral white "light", not tied to any trail color - this is an absorption, not damage
 
   // Brick shards: what a color bar becomes when it reaches the bottom,
   // instead of ending the game outright. It breaks into BRICK_SHARD_COUNT
@@ -792,6 +808,21 @@
       g.destroy();
     })();
 
+    // Brick fizzle: a thin, bright, color-neutral strip (same idea as the
+    // crack overlay - one shared texture, reused regardless of the
+    // segment's own color) that flashes across a mismatched-color hit and
+    // fades - see triggerBrickFizzle()/updateBrickFizzles(). Baked at full
+    // segment width; grown from near-zero to full via displayWidth as it
+    // animates, same "bake once, scale per instance" trick used elsewhere.
+    (function () {
+      var w = Math.round(BRICK_SEGMENT_WIDTH), h = BRICK_FIZZLE_HEIGHT;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(COLOR_BRICK_FIZZLE, 1);
+      g.fillRect(0, 0, w, h);
+      g.generateTexture('brickFizzleTex', w, h);
+      g.destroy();
+    })();
+
     // Brick shards: a small solid (fully opaque, not translucent like the
     // collectible powerups - this is now a genuine enemy) four-pointed
     // kite shape, same palette as the bars they came from. Reads as a
@@ -862,6 +893,7 @@
       colorBarHeight: COLOR_BAR_HEIGHT, // shrinks a bit each time a full clear triggers a respawn - see respawnColorBars()
       colorBarRows: 1, // grows by one each time a full clear triggers a respawn
       brickShards: [], // enemy pieces a color bar breaks into when it reaches the bottom - see breakBrickIntoShards()/updateBrickShards()
+      brickFizzles: [], // short-lived flashes where a mismatched pulse-cannon trail was absorbed - see triggerBrickFizzle()/updateBrickFizzles()
       powerupSpawnTimer: randomPowerupSpawnInterval(), // shared between strips and orbs - see updatePowerupSpawns()
       lives: 3,
       score: 0,
@@ -951,6 +983,36 @@
   // killing it.
   MainScene.prototype.updateBrickCrack = function (segment) {
     segment.crackSprite.alpha = clamp(1 - segment.hp / BRICK_SEGMENT_HP, 0, 1);
+  };
+
+  // A pulse-cannon trail absorbed by a color-mismatched segment - see the
+  // trail-vs-bar block in handleCollisions(). Purely cosmetic (the
+  // absorption/no-damage decision is made by the caller); just the flash
+  // itself, sized to the segment it happened on.
+  MainScene.prototype.triggerBrickFizzle = function (x, y) {
+    var sprite = this.add.sprite(x, y, 'brickFizzleTex');
+    sprite.displayWidth = 0.001; // start effectively invisible-thin, not literally 0 (avoids a degenerate scale)
+    this.state.brickFizzles.push({ age: 0, sprite: sprite });
+  };
+
+  MainScene.prototype.updateBrickFizzles = function (dt) {
+    var fizzles = this.state.brickFizzles;
+    for (var i = fizzles.length - 1; i >= 0; i--) {
+      var fx = fizzles[i];
+      fx.age += dt;
+      var t = fx.age / BRICK_FIZZLE_DURATION;
+      if (t >= 1) {
+        fx.sprite.destroy();
+        fizzles.splice(i, 1);
+        continue;
+      }
+      // Spreads out to the segment's full width over the first slice of
+      // the duration, then holds at full width while it fades - "a thin
+      // light strip spreads out across the brick then disappears".
+      var growT = Math.min(1, t / BRICK_FIZZLE_GROW_FRACTION);
+      fx.sprite.displayWidth = BRICK_SEGMENT_WIDTH * growT;
+      fx.sprite.alpha = 1 - t;
+    }
   };
 
   // Rewards fully clearing every bar on screen (by shooting the matching
@@ -1470,7 +1532,14 @@
       // be dropped on its own when it spends itself on a matching bar -
       // see handleCollisions() - without touching the others or the
       // bullet itself.
-      trailSprites: {}
+      trailSprites: {},
+      // Bars this bullet has already resolved a trail interaction with
+      // (damage or a mismatch fizzle) - a bullet lingers inside a bar's
+      // hit band for several frames while it crosses it (BULLET_SPEED
+      // isn't instant), and without this a color spent on frame 1 would
+      // read as a "mismatch" against that same bar on frame 2, wiping
+      // out any other colors it's still carrying. See handleCollisions().
+      resolvedTrailBars: []
     };
     b.sprite = this.add.sprite(b.x, b.y, 'bulletTex');
 
@@ -1657,23 +1726,31 @@
       // out. Only THAT color's own trail is spent on the hit - the
       // bullet itself isn't consumed, so it keeps flying with whatever
       // other colors it's still carrying, and can still go on to hit a
-      // formation enemy or shard below, same as
-      // any ordinary shot. A mismatched color's trail (or no trail at
-      // all) does nothing here.
-      if (b.trailLevels) {
-        var trailHitSeg = false;
-        for (var tbi = 0; tbi < state.colorBars.length && !trailHitSeg; tbi++) {
+      // formation enemy or shard below, same as any ordinary shot.
+      // Touching a segment whose color it does NOT carry is a miss, not a
+      // free pass-through, though: the bullet's WHOLE pulse (every trail
+      // it's carrying, not just the mismatched one) fizzles out right
+      // there - absorbed with a brief flash of light, doing no damage -
+      // leaving the bullet to keep flying afterward as a plain, trail-
+      // less shot. A bullet with no active trail at all has nothing to
+      // absorb, so it just passes through untouched, same as always.
+      var hasActiveTrail = !!b.trailLevels && STRIP_COLOR_KEYS.some(function (key) { return b.trailLevels[key] > 0; }); // a powerup-released bullet (activatePowerup()) carries no trailLevels at all - not a pulse-cannon shot
+      if (hasActiveTrail) {
+        if (!b.resolvedTrailBars) b.resolvedTrailBars = []; // defensive - a hand-built test bullet may not set this
+        var trailHandled = false;
+        for (var tbi = 0; tbi < state.colorBars.length && !trailHandled; tbi++) {
           var tbar = state.colorBars[tbi];
           if (!tbar.alive) continue;
-          var trailLevel = b.trailLevels[tbar.colorKey] || 0;
-          if (trailLevel <= 0) continue;
+          if (b.resolvedTrailBars.indexOf(tbar) !== -1) continue; // already resolved (damage or fizzle) - don't re-evaluate while still passing through it
           var tbarWithinY = Math.abs(b.y - tbar.y) <= state.colorBarHeight / 2 + BULLET_RADIUS;
           if (!tbarWithinY) continue;
-          for (var tsegi = 0; tsegi < tbar.segments.length; tsegi++) {
+          var trailLevel = b.trailLevels[tbar.colorKey] || 0;
+          for (var tsegi = 0; tsegi < tbar.segments.length && !trailHandled; tsegi++) {
             var tseg = tbar.segments[tsegi];
             if (!tseg.alive) continue;
             var tsegWithinX = Math.abs(b.x - tseg.sprite.x) <= BRICK_SEGMENT_WIDTH / 2 + BULLET_RADIUS;
-            if (tsegWithinX) {
+            if (!tsegWithinX) continue;
+            if (trailLevel > 0) {
               tseg.hp -= trailLevel;
               b.trailLevels[tbar.colorKey] = 0;
               if (b.trailSprites[tbar.colorKey]) {
@@ -1691,9 +1768,18 @@
               } else {
                 this.updateBrickCrack(tseg);
               }
-              trailHitSeg = true;
-              break;
+            } else {
+              // Color mismatch - absorb the WHOLE pulse here (every color
+              // this bullet is carrying, not just the one that doesn't
+              // match), not just this one. No damage; the bullet itself
+              // survives and keeps flying on, trail-less from here on.
+              for (var fkey in b.trailSprites) b.trailSprites[fkey].destroy();
+              b.trailSprites = {};
+              STRIP_COLOR_KEYS.forEach(function (key) { b.trailLevels[key] = 0; });
+              this.triggerBrickFizzle(tseg.sprite.x, tseg.sprite.y);
             }
+            b.resolvedTrailBars.push(tbar);
+            trailHandled = true;
           }
         }
       }
@@ -2460,6 +2546,8 @@
     this.spawnColorBars(); // fresh, all-alive bars for a new game
     state.brickShards.forEach(function (sh) { sh.sprite.destroy(); });
     state.brickShards = [];
+    state.brickFizzles.forEach(function (fx) { fx.sprite.destroy(); });
+    state.brickFizzles = [];
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -2518,6 +2606,7 @@
       this.tryTriggerDive(dt);
       this.updateColorBars(dt);
       this.updateBrickShards(dt);
+      this.updateBrickFizzles(dt);
       this.handleCollisions();
       this.updateCore(dt);
       this.updateStarburstFx(dt);
