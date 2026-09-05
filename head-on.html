@@ -524,13 +524,13 @@
   var COLOR_BAR_MIN_HEIGHT = 6; // floor so repeated clears don't shrink them to nothing
   var COLOR_BAR_ROW_GAP = 22; // vertical spacing between stacked rows added on each respawn
   var BRICK_SEGMENT_COUNT = 3; // segments per bar - a later pass may make this scale with wave/level
-  var BRICK_SEGMENT_HP = 3; // hits' worth of trail damage needed to destroy ONE segment this way - see handleCollisions()
+  var BRICK_SEGMENT_HP = 3; // hits' worth of trail damage needed to destroy ONE segment this way - see pulseDamagesSegment()
   var BRICK_SEGMENT_WIDTH = (COLOR_BAR_WIDTH - 4) / BRICK_SEGMENT_COUNT; // the bar's own width (see colorBarTex_* below), divided evenly with no gaps
 
   // Pulse-cannon fizzle: a thin bright strip that flashes across a
   // segment's own width and fades away when a trailed bullet's pulse is
-  // absorbed by a color-mismatched segment - see the trail-vs-bar block
-  // in handleCollisions() and triggerBrickFizzle()/updateBrickFizzles().
+  // absorbed by a color-mismatched segment - see pulseFizzlesOut() and
+  // triggerBrickFizzle()/updateBrickFizzles().
   var BRICK_FIZZLE_DURATION = 0.3; // seconds, brief - a miss, not a payoff
   var BRICK_FIZZLE_GROW_FRACTION = 0.4; // fraction of the duration spent spreading to full width before it just fades
   var BRICK_FIZZLE_HEIGHT = 3; // px - "very thin"
@@ -619,6 +619,17 @@
   // has flown away, clean it up" test for free-flying objects.
   function isOffPlayfield(x, y, margin) {
     return x < -margin || x > GAME_WIDTH + margin || y < -margin || y > GAME_HEIGHT + margin;
+  }
+
+  // "Aim once" - a velocity toward where the ship is at THIS moment, at a
+  // fixed speed. Deliberately not a live homing lock: freezing the
+  // trajectory at launch is what gives the player a real dodge window, and
+  // it's the shared idiom behind the swoop diver, an attacking brick shard,
+  // and a shot-open orb pod alike.
+  function aimAtShip(state, fromX, fromY, speed) {
+    var dx = state.ship.x - fromX, dy = SHIP_Y - fromY;
+    var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    return { vx: (dx / dist) * speed, vy: (dy / dist) * speed };
   }
 
   // ---- Color-bar teardown ------------------------------------------------------
@@ -994,9 +1005,7 @@
   // comment above for why the bar itself still moves/dies as one unit.
   MainScene.prototype.spawnColorBars = function () {
     var state = this.state;
-    state.colorBars.forEach(function (bar) {
-      bar.segments.forEach(function (seg) { seg.sprite.destroy(); seg.crackSprite.destroy(); });
-    });
+    state.colorBars.forEach(killBar); // tear the old set down before building the new one
     state.colorBars = [];
     for (var row = 0; row < state.colorBarRows; row++) {
       var y = COLOR_BAR_Y - row * COLOR_BAR_ROW_GAP; // later rows start higher above the screen, queued up behind the first
@@ -1029,10 +1038,10 @@
     segment.crackSprite.alpha = clamp(1 - segment.hp / BRICK_SEGMENT_HP, 0, 1);
   };
 
-  // A pulse-cannon trail absorbed by a color-mismatched segment - see the
-  // trail-vs-bar block in handleCollisions(). Purely cosmetic (the
-  // absorption/no-damage decision is made by the caller); just the flash
-  // itself, sized to the segment it happened on.
+  // A pulse-cannon trail absorbed by a color-mismatched segment - see
+  // pulseFizzlesOut(). Purely cosmetic (the absorption/no-damage decision
+  // is the caller's); just the flash itself, sized to the segment it
+  // happened on.
   MainScene.prototype.triggerBrickFizzle = function (x, y) {
     var sprite = this.add.sprite(x, y, 'brickFizzleTex');
     sprite.displayWidth = 0.001; // start effectively invisible-thin, not literally 0 (avoids a degenerate scale)
@@ -1155,13 +1164,10 @@
         sh.x = clamp(sh.x + sh.vx * dt, BRICK_SHARD_RADIUS, GAME_WIDTH - BRICK_SHARD_RADIUS);
         sh.y += sh.vy * dt;
         if (sh.age >= BRICK_SHARD_FLY_DURATION) {
-          // Commit to a dive - lock a direction toward the ship's position
-          // at THIS moment, not a live homing lock, same "aim once" idiom
-          // as the swoop diver, so a dodge afterward actually works.
-          var dx = state.ship.x - sh.x, dy = SHIP_Y - sh.y;
-          var dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          sh.vx = (dx / dist) * BRICK_SHARD_ATTACK_SPEED;
-          sh.vy = (dy / dist) * BRICK_SHARD_ATTACK_SPEED;
+          // Commit to a dive, locking the direction now - see aimAtShip().
+          var aim = aimAtShip(state, sh.x, sh.y, BRICK_SHARD_ATTACK_SPEED);
+          sh.vx = aim.vx;
+          sh.vy = aim.vy;
           sh.phase = 'attack';
           sh.age = 0;
         }
@@ -1577,7 +1583,7 @@
       trailLevels: { red: state.colorLevels.red, green: state.colorLevels.green, blue: state.colorLevels.blue },
       // Keyed by color (not a plain array) so a single color's segment can
       // be dropped on its own when it spends itself on a matching bar -
-      // see handleCollisions() - without touching the others or the
+      // see pulseDamagesSegment() - without touching the others or the
       // bullet itself.
       trailSprites: {},
       // Once true, this bullet is done interacting with color bars for
@@ -1587,7 +1593,7 @@
       // one in the same lane. Also doubles as protection against a bullet
       // re-resolving the SAME bar across several frames while it lingers
       // in its hit band (BULLET_SPEED isn't instant) - see
-      // handleCollisions().
+      // pulseTrailVsColorBars().
       trailResolved: false
     };
     b.sprite = this.add.sprite(b.x, b.y, 'bulletTex');
@@ -1626,7 +1632,7 @@
   // Destroys a bullet's own sprite plus any trail segments it's still
   // carrying - every place a bullet gets removed goes through this so a
   // trail never outlives its bullet. A color already spent against a bar
-  // (see handleCollisions()) has its entry deleted from trailSprites
+  // (see pulseDamagesSegment()) has its entry deleted from trailSprites
   // ahead of time, so this only ever touches what's left.
   function destroyBulletSprites(b) {
     if (b.trailSprites) {
@@ -2260,7 +2266,7 @@
       // just clipping it once.
       var overlappingBand = s.y > bandEnterY && s.y < bandExitY;
       if (overlappingBand && !s.missed) {
-        if (Math.abs(state.ship.x - s.x) <= STRIP_TOUCH_RANGE) {
+        if (spanHit(state.ship.x, s.x, STRIP_TOUCH_RANGE)) {
           // Fill the ship proportionately with how far through the pass
           // the strip is - visible, moment-to-moment feedback for "stay
           // under it", not just a pass/fail check at the end.
@@ -2426,13 +2432,12 @@
   // touching the falling pod directly.
   MainScene.prototype.releaseOrbBullet = function (orb) {
     var state = this.state;
-    var dx = state.ship.x - orb.x, dy = SHIP_Y - orb.y;
-    var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    var aim = aimAtShip(state, orb.x, orb.y, ORB_BULLET_SPEED);
     state.orbBullets.push({
       colorKey: orb.colorKey,
       x: orb.x, y: orb.y,
-      vx: (dx / dist) * ORB_BULLET_SPEED,
-      vy: (dy / dist) * ORB_BULLET_SPEED,
+      vx: aim.vx,
+      vy: aim.vy,
       age: 0,
       sprite: this.add.sprite(orb.x, orb.y, 'powerupDotTex_' + orb.colorKey)
     });
@@ -2643,8 +2648,15 @@
     var state = this.state;
     var dt = Math.min(delta / 1000, MAX_DT);
 
+    // Nothing below the phase gate runs once the game is over - which is
+    // why endGame() clears the bullets outright rather than leaving them
+    // frozen mid-flight behind the overlay.
     if (state.phase === 'playing') {
       state.clock += dt;
+
+      // Move first: everything that advances on its own this frame, so the
+      // collision pass below sees one consistent set of final positions
+      // rather than resolving hits against half-stale ones.
       updateShip(state, dt);
       updateBullets(state, dt);
       updateIdleBob(state);
@@ -2654,7 +2666,17 @@
       this.updateColorBars(dt);
       this.updateBrickShards(dt);
       this.updateBrickFizzles(dt);
+
+      // Then resolve contact. Note this owns the DAMAGE collisions only -
+      // the collection ones (a strip passing over the ship, touching an orb
+      // pod, an orb bullet arriving) live inside their own update methods
+      // below, since those are about tracking a pass over several frames,
+      // not about one hit landing.
       this.handleCollisions();
+
+      // Then the systems that read what just happened: a core released by a
+      // kill this frame starts flying, the one-shot FX play out, and the
+      // powerup economy ticks.
       this.updateCore(dt);
       this.updateStarburstFx(dt);
       this.updateShipBreakFx(dt);
