@@ -2351,9 +2351,20 @@
   };
 
   MainScene.prototype.endGame = function () {
-    this.state.phase = 'gameover';
-    document.getElementById('overlayScore').textContent = this.state.score;
-    document.getElementById('overlayBest').textContent = this.state.highScore;
+    var state = this.state;
+    // The whole gameplay loop (see update()) stops the instant phase
+    // leaves 'playing', including updateBullets() - so any bullet still
+    // mid-flight would otherwise just freeze exactly where it was,
+    // motionless but fully visible, for as long as the game-over overlay
+    // is up (looks exactly like a stuck/broken sprite, especially with
+    // its glowing trail still attached - reported as "bullets getting
+    // stuck on display"). Clear them out the same way resetGame() does,
+    // right as the game actually ends, so nothing hangs there.
+    state.bullets.forEach(function (b) { destroyBulletSprites(b); });
+    state.bullets = [];
+    state.phase = 'gameover';
+    document.getElementById('overlayScore').textContent = state.score;
+    document.getElementById('overlayBest').textContent = state.highScore;
     document.getElementById('gameOverOverlay').classList.add('visible');
   };
 
