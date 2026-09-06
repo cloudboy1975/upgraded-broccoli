@@ -487,32 +487,64 @@
   // to spend, they're a permanent (until death) fire upgrade instead.
   var FIRE_LONG_PRESS_MS = 350;
 
+  // The powerup bolt: what holding fire past FIRE_LONG_PRESS_MS spends
+  // banked orb colors on (see activatePowerup()/spawnPowerupBolt()). One
+  // bolt per DISTINCT banked color, not per orb - banking the same color
+  // twice makes that bolt last longer, not spawn a second copy of it.
+  // Multiple different colors banked at once each get their own bolt,
+  // spread a few px either side of the ship (POWERUP_BOLT_X_GAP, same
+  // small-offset idiom the old multi-color volley used) rather than one
+  // blended beam - a shared beam has no single duration once colors carry
+  // different banked counts, so keeping them independent avoids that
+  // entirely and stays easy to read on screen.
+  //
+  // A bolt tracks the ship's x every frame for its whole lifetime (unlike
+  // a bullet's "aim once" frozen trajectory) and reaches from the ship to
+  // the top of the screen, so strafing during a long bolt sweeps it
+  // sideways into other lanes. Every POWERUP_BOLT_TICK_MS it deals
+  // POWERUP_BOLT_TICK_DAMAGE to EVERY alive segment of EVERY alive bar of
+  // its own color that's currently in its lane - every stacked row, not
+  // just the closest one (deliberately the opposite of the pulse cannon's
+  // bottom-bar-only rule - this is a sustained area effect down the whole
+  // column, not a precision shot). A bar's segments all take that damage
+  // together each tick, so a bar dies as one unit on whichever tick
+  // finishes off its last segment, the same "whole brick" flavor the old
+  // instant-kill bullet had, just spread over time instead of one hit.
+  var POWERUP_BOLT_MS_PER_COUNT = 1000; // lifetime added per banked orb of that color
+  var POWERUP_BOLT_TICK_MS = 200; // how often it deals damage
+  var POWERUP_BOLT_TICK_DAMAGE = 1; // hp per tick, per segment - BRICK_SEGMENT_HP=3 means one banked orb (5 ticks) already kills anything it sits over
+  var POWERUP_BOLT_X_GAP = 10; // px between adjacent bolts when more than one color is active - matches the old multi-shot spread
+  var POWERUP_BOLT_WIDTH = 12; // visual width - a thin bolt, not a full bar-width wall
+  var POWERUP_BOLT_FLICKER_SPEED = 22; // rad/sec - faster/twitchier than the pulse cannon's own trail pulse, reads as electrical rather than a smooth glow
+  var POWERUP_BOLT_FLICKER_DEPTH = 0.3;
+
   // Color bars: destructible "generator" targets gating real progress,
   // sitting in the open canvas space between the HUD and the formation's
   // top row. Each bar is made of BRICK_SEGMENT_COUNT independent
   // segments sitting flush against each other (no gap) - same overall
   // footprint as a single bar always had, just divided into that many
   // separately destroyable pieces, each with its own BRICK_SEGMENT_HP.
-  // Two independent ways to damage one, both requiring a color match: a
-  // powerup-released bullet (carries a colorKey, spent from orb-banked
-  // ammo) instant-kills the WHOLE bar - every segment at once - and is
-  // consumed on impact, the valuable/blunt payoff of banked ammo; an
-  // ordinary bullet carrying a matching color trail (the "pulse cannon",
-  // built up via strips - see levelUpFirePower()) instead chips just the
-  // ONE segment it touches down by that color's current level per hit -
-  // only that one color's trail is spent, not the whole bullet, so it
-  // keeps flying (still able to hit an enemy afterward) with any other
-  // colors it's still carrying. A pulse-cannon trail that touches a
-  // segment whose bar color it does NOT carry fizzles out right there
-  // instead: the bullet's entire pulse (every color's trail, not just
-  // the mismatched one) is absorbed into that segment with a brief flash
-  // of light (see triggerBrickFizzle()/updateBrickFizzles()), doing no
-  // damage - the bullet itself keeps flying on afterward as a plain,
-  // trail-less shot. An ordinary bullet with no trail at all (nothing to
-  // absorb) just passes through untouched, same as always. The bar
-  // itself (drifting, reaching the bottom, breaking into shards) still
-  // moves and dies as one whole unit exactly as before - segmentation
-  // only changes how it takes damage from being shot.
+  // Two independent ways to damage one, both requiring a color match: the
+  // powerup bolt (above, spent from orb-banked ammo) sweeps every bar of
+  // its color in its whole column, chipping every segment of each down
+  // together over its lifetime - the valuable, sustained payoff of banked
+  // ammo; an ordinary bullet carrying a matching color trail (the "pulse
+  // cannon", built up via strips - see levelUpFirePower()) instead chips
+  // just the ONE segment it touches, on the ONE (closest) bar in its
+  // lane, down by that color's current level per hit - only that one
+  // color's trail is spent, not the whole bullet, so it keeps flying
+  // (still able to hit an enemy afterward) with any other colors it's
+  // still carrying. A pulse-cannon trail that touches a segment whose bar
+  // color it does NOT carry fizzles out right there instead: the
+  // bullet's entire pulse (every color's trail, not just the mismatched
+  // one) is absorbed into that segment with a brief flash of light (see
+  // triggerBrickFizzle()/updateBrickFizzles()), doing no damage - the
+  // bullet itself keeps flying on afterward as a plain, trail-less shot.
+  // An ordinary bullet with no trail at all (nothing to absorb) just
+  // passes through untouched, same as always. The bar itself (drifting,
+  // reaching the bottom, breaking into shards) still moves and dies as
+  // one whole unit exactly as before - segmentation only changes how it
+  // takes damage from being shot.
   var COLOR_BAR_WIDTH = GAME_WIDTH / 3;
   var COLOR_BAR_HEIGHT = 16;
   var COLOR_BAR_Y = 28;
@@ -544,8 +576,8 @@
   // direction toward the ship's position at that moment and dives,
   // exactly like a formation diver from there on - can kill the ship on
   // contact, or be blocked by an orbiting shield dot same as any other
-  // diver). Shootable in every phase; a powerup bullet pierces through
-  // shards same as it does formation enemies.
+  // diver). Shootable in every phase, one bullet one kill, same as a
+  // formation enemy.
   var BRICK_SHARD_COUNT = 3;
   var BRICK_SHARD_RADIUS = 9;
   var BRICK_SHARD_SCORE = 60; // between straight (50) and swoop (80) - a mid-tier threat
@@ -903,6 +935,38 @@
     // ship (see releaseOrbBullet()) - it reuses powerupDotTex_<color>, the
     // same colored-dot texture the player's own banked-powerup shots use,
     // so no separate texture is needed here.
+
+    // Powerup bolt: one per color, a jagged zigzag path baked at a
+    // reference height and stretched via displayHeight at runtime (same
+    // "bake once, scale to fit" trick every other variable-length texture
+    // here uses) to reach from the ship to the top of the screen. Drawn
+    // as two layered strokes along the same path - a wide, faint outer
+    // glow and a narrower, near-full-brightness core - the same
+    // glow+core layering idea bulletTrailTex_* uses for its nested arcs,
+    // just two layers instead of three since a bolt reads as one jagged
+    // line rather than a rippling wave. A fixed hand-authored zigzag
+    // (like brickSegCrackTex's fracture lines) rather than randomized at
+    // bake time, so every instance of a given color's bolt looks the same.
+    var boltH = 120;
+    var boltPath = [
+      [0.50, 0], [0.15, 0.14], [0.70, 0.28], [0.20, 0.42],
+      [0.75, 0.56], [0.25, 0.70], [0.65, 0.84], [0.40, 1.0]
+    ];
+    STRIP_COLOR_KEYS.forEach(function (key) {
+      bakeTexture(self, 'powerupBoltTex_' + key, POWERUP_BOLT_WIDTH, boltH, function (g) {
+        function strokeBolt(width, alpha) {
+          g.lineStyle(width, STRIP_COLORS[key], alpha);
+          g.beginPath();
+          g.moveTo(boltPath[0][0] * POWERUP_BOLT_WIDTH, boltPath[0][1] * boltH);
+          for (var i = 1; i < boltPath.length; i++) {
+            g.lineTo(boltPath[i][0] * POWERUP_BOLT_WIDTH, boltPath[i][1] * boltH);
+          }
+          g.strokePath();
+        }
+        strokeBolt(POWERUP_BOLT_WIDTH * 0.9, 0.35); // outer glow
+        strokeBolt(POWERUP_BOLT_WIDTH * 0.35, 0.95); // bright core
+      });
+    });
   };
 
   MainScene.prototype.initState = function () {
@@ -922,6 +986,7 @@
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       colorLevels: { red: 0, green: 0, blue: 0 }, // per-color fire-power levels flying through a strip builds up - see levelUpFirePower()/fireBullet()
       powerup: { colors: [], dots: [], angle: 0 }, // orb-banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
+      powerupBolts: [], // sustained colored lightning bolts spent from banked ammo - see spawnPowerupBolt()/updatePowerupBolts()
       orbs: [], // falling touch-to-collect diamond pods - see spawnOrb()/updateOrbs()
       orbBullets: [], // colored bullets released by shooting an orb instead of collecting it - see releaseOrbBullet()/updateOrbBullets()
       colorBars: [], // destructible per-color test targets above the formation - see spawnColorBars()
@@ -1693,7 +1758,6 @@
       var b = state.bullets[i];
       if (this.bulletVsOrbitingCore(b, i)) continue;
       if (this.bulletVsOrbPods(b, i)) continue;
-      if (this.bulletVsColorBars(b, i)) continue;
       this.pulseTrailVsColorBars(b); // never consumes the bullet - see below
       if (this.bulletVsFormation(b, i)) continue;
       if (this.bulletVsBrickShards(b, i)) continue;
@@ -1731,36 +1795,6 @@
     return false;
   };
 
-  // A powerup-released bullet (carries a colorKey) destroys a matching color
-  // bar outright - one bullet, one WHOLE bar, every segment at once - and is
-  // consumed on the hit like an ordinary shot on an enemy. Deliberately
-  // blunter than the pulse cannon, which only ever chips one segment: banked
-  // powerup ammo is the scarce resource, so it should feel like it.
-  //
-  // With N banked shots of a color and M same-color bars on screen, the
-  // volley spreads its kills across up to min(N, M) of them without needing
-  // to pierce - the first bullet to reach a given bar claims it and stops
-  // there, while the others (not yet at that bar's height, or arriving a
-  // frame later once it's already gone) fly on to whichever bar they reach
-  // next. Ordinary tap-fired bullets have no colorKey and never come here.
-  MainScene.prototype.bulletVsColorBars = function (b, bi) {
-    var state = this.state;
-    if (!b.colorKey) return false;
-    for (var i = 0; i < state.colorBars.length; i++) {
-      var bar = state.colorBars[i];
-      if (!bar.alive || bar.colorKey !== b.colorKey) continue;
-      // Whole-bar footprint, not a single segment's - the same blunt hit
-      // test the flying core already uses against these bars.
-      if (!spanHit(b.y, bar.y, state.colorBarHeight / 2 + BULLET_RADIUS)) continue;
-      if (!spanHit(b.x, bar.x, COLOR_BAR_WIDTH / 2 + BULLET_RADIUS)) continue;
-      destroyBulletSprites(b); state.bullets.splice(bi, 1);
-      killBar(bar);
-      this.respawnBarsIfCleared();
-      return true;
-    }
-    return false;
-  };
-
   // The pulse cannon: an ordinary bullet carrying color trails built up by
   // flying through strips (see levelUpFirePower()/fireBullet()). It interacts
   // with AT MOST ONE bar, ever - the first (closest, "bottom") one its path
@@ -1778,9 +1812,7 @@
   // Never consumes the bullet either way - it flies on to whatever's above.
   MainScene.prototype.pulseTrailVsColorBars = function (b) {
     var state = this.state;
-    // A powerup-released bullet carries no trailLevels at all - it's the
-    // other mechanic entirely, handled by bulletVsColorBars() above.
-    if (b.trailResolved || !b.trailLevels) return;
+    if (b.trailResolved || !b.trailLevels) return; // defensive - every real bullet gets trailLevels from fireBullet(), but a hand-built test one might not
     var carriesAnyColor = STRIP_COLOR_KEYS.some(function (key) { return b.trailLevels[key] > 0; });
     if (!carriesAnyColor) return; // nothing to spend, nothing to absorb - passes straight through
 
@@ -1849,29 +1881,22 @@
       if (state.core && state.core.attached && state.core.carrierSlot === slot) {
         this.releaseCore(state.core, slot.x, slot.y);
       }
-      // A powerup-released bullet is the "powerful" shot - it punches
-      // through and keeps scanning, so it can chain down a whole column.
-      // Ordinary tap-fired bullets die on their first hit.
-      if (b.colorKey) continue;
       destroyBulletSprites(b); state.bullets.splice(bi, 1);
       return true;
     }
     return false;
   };
 
-  // Brick shards are shootable in every phase, same rules as a formation
-  // enemy - a powerup bullet pierces on through, an ordinary one is consumed.
-  // Iterated back to front so splicing a dead shard out doesn't skip the
-  // next one for a piercing bullet.
+  // Brick shards are shootable in every phase, same rule as a formation
+  // enemy: one bullet, one kill, consumed on the hit.
   MainScene.prototype.bulletVsBrickShards = function (b, bi) {
     var state = this.state;
-    for (var i = state.brickShards.length - 1; i >= 0; i--) {
+    for (var i = 0; i < state.brickShards.length; i++) {
       var shard = state.brickShards[i];
       if (!circleHit(b.x, b.y, shard.x, shard.y, BRICK_SHARD_RADIUS + BULLET_RADIUS)) continue;
       shard.sprite.destroy();
       state.brickShards.splice(i, 1);
       this.addScore(BRICK_SHARD_SCORE);
-      if (b.colorKey) continue;
       destroyBulletSprites(b); state.bullets.splice(bi, 1);
       return true;
     }
@@ -2448,20 +2473,23 @@
     }
   };
 
-  // v1: whatever's banked just flies off like ordinary ammo, colored per
-  // dot, sharing the normal bullet collision path entirely. Tier-specific
-  // effects (what one, two, or three colors actually DO) are a later step
-  // once that's decided - this just proves the collect-and-spend loop.
+  // Spends every banked color at once, one bolt per DISTINCT color - not
+  // per orb, so 3 banked reds make one longer-lasting red bolt rather than
+  // 3 separate ones. See the POWERUP_BOLT_* comment above for the full
+  // mechanic.
   MainScene.prototype.activatePowerup = function () {
     var state = this.state;
     var pu = state.powerup;
     if (pu.colors.length === 0) return;
     var self = this;
-    pu.colors.forEach(function (colorKey, i) {
-      var offset = (i - (pu.colors.length - 1) / 2) * 10; // small spread so multiple shots aren't stacked
-      var b = { x: state.ship.x + offset, y: SHIP_Y - state.ship.radius, vy: -BULLET_SPEED, ttl: BULLET_LIFETIME, colorKey: colorKey };
-      b.sprite = self.add.sprite(b.x, b.y, 'powerupDotTex_' + colorKey);
-      state.bullets.push(b);
+    var counts = {}; // colorKey -> how many of that color were banked
+    var distinctColors = [];
+    pu.colors.forEach(function (colorKey) {
+      if (!counts[colorKey]) { counts[colorKey] = 0; distinctColors.push(colorKey); }
+      counts[colorKey]++;
+    });
+    distinctColors.forEach(function (colorKey, i) {
+      self.spawnPowerupBolt(colorKey, counts[colorKey], i, distinctColors.length);
     });
     this.clearPowerup();
   };
@@ -2471,6 +2499,88 @@
     pu.dots.forEach(function (d) { d.sprite.destroy(); });
     pu.colors = [];
     pu.dots = [];
+  };
+
+  // One bolt: offset a few px either side of the ship's center when more
+  // than one color is active (i is this color's index among the distinct
+  // colors spawned together, n is how many), same small-spread idiom the
+  // old multi-shot volley used. The offset is fixed for the bolt's whole
+  // life - only the ship's own x moves it after that (see
+  // updatePowerupBolts()). Sized to reach from the ship up to the top of
+  // the screen; that length never changes since the ship's y doesn't, so
+  // it's set once here rather than recomputed every frame.
+  MainScene.prototype.spawnPowerupBolt = function (colorKey, count, i, n) {
+    var state = this.state;
+    var xOffset = (i - (n - 1) / 2) * POWERUP_BOLT_X_GAP;
+    var bottomY = SHIP_Y - state.ship.radius;
+    var sprite = this.add.sprite(state.ship.x + xOffset, bottomY, 'powerupBoltTex_' + colorKey);
+    sprite.setOrigin(0.5, 1); // anchored at its own bottom tip, growing upward from there
+    sprite.displayWidth = POWERUP_BOLT_WIDTH;
+    sprite.displayHeight = bottomY; // reaches from the ship (y=bottomY) to the top of the screen (y=0)
+    state.powerupBolts.push({
+      colorKey: colorKey,
+      xOffset: xOffset,
+      age: 0,
+      duration: count * (POWERUP_BOLT_MS_PER_COUNT / 1000),
+      tickAccum: 0,
+      flickerPhase: Math.random() * Math.PI * 2,
+      sprite: sprite
+    });
+  };
+
+  MainScene.prototype.updatePowerupBolts = function (dt) {
+    var state = this.state;
+    var tickSeconds = POWERUP_BOLT_TICK_MS / 1000;
+    for (var i = state.powerupBolts.length - 1; i >= 0; i--) {
+      var bolt = state.powerupBolts[i];
+      bolt.age += dt;
+      if (bolt.age >= bolt.duration) {
+        bolt.sprite.destroy();
+        state.powerupBolts.splice(i, 1);
+        continue;
+      }
+
+      // Tracks the ship every frame, not an "aim once" frozen trajectory -
+      // strafing during a long bolt sweeps it into other lanes.
+      bolt.sprite.x = state.ship.x + bolt.xOffset;
+
+      // Flickers like electricity rather than sitting at a flat brightness.
+      var swing = Math.sin(state.clock * POWERUP_BOLT_FLICKER_SPEED + bolt.flickerPhase) * 0.5 + 0.5;
+      bolt.sprite.alpha = 1 - POWERUP_BOLT_FLICKER_DEPTH + POWERUP_BOLT_FLICKER_DEPTH * swing;
+
+      bolt.tickAccum += dt;
+      while (bolt.tickAccum >= tickSeconds) {
+        bolt.tickAccum -= tickSeconds;
+        this.applyPowerupBoltDamage(bolt);
+      }
+    }
+  };
+
+  // One damage tick: every alive segment of every alive bar of this
+  // bolt's color, anywhere in its current lane - every stacked row, not
+  // just the closest one (see the POWERUP_BOLT_* comment for why this is
+  // deliberately unlike the pulse cannon). A bar's segments are chipped
+  // together, so it dies as one unit on whichever tick finishes the last
+  // of them, same "whole brick" flavor the old instant-kill bullet had.
+  MainScene.prototype.applyPowerupBoltDamage = function (bolt) {
+    var state = this.state;
+    var self = this;
+    var anyBarDied = false;
+    state.colorBars.forEach(function (bar) {
+      if (!bar.alive || bar.colorKey !== bolt.colorKey) return;
+      if (!spanHit(bolt.sprite.x, bar.x, COLOR_BAR_WIDTH / 2)) return;
+      bar.segments.forEach(function (seg) {
+        if (!seg.alive) return;
+        seg.hp -= POWERUP_BOLT_TICK_DAMAGE;
+        if (seg.hp <= 0) killSegment(seg);
+        else self.updateBrickCrack(seg);
+      });
+      if (bar.segments.every(function (seg) { return !seg.alive; })) {
+        bar.alive = false;
+        anyBarDied = true;
+      }
+    });
+    if (anyBarDied) this.respawnBarsIfCleared();
   };
 
   // Spends exactly one banked color/dot - specifically the one whose orbit
@@ -2528,6 +2638,12 @@
     // right as the game actually ends, so nothing hangs there.
     state.bullets.forEach(function (b) { destroyBulletSprites(b); });
     state.bullets = [];
+    // Same freeze risk applies to an active powerup bolt - more so, even:
+    // a multi-color-banked bolt can run several seconds, so the odds of
+    // one being mid-flight at the moment of death are real, not an edge
+    // case.
+    state.powerupBolts.forEach(function (bolt) { bolt.sprite.destroy(); });
+    state.powerupBolts = [];
     state.phase = 'gameover';
     document.getElementById('overlayScore').textContent = state.score;
     document.getElementById('overlayBest').textContent = state.highScore;
@@ -2568,6 +2684,8 @@
     this.shipFillMaskGfx.clear();
     this.clearPowerup();
     this.clearFirePower();
+    state.powerupBolts.forEach(function (bolt) { bolt.sprite.destroy(); });
+    state.powerupBolts = [];
     state.orbs.forEach(function (o) { o.hostSprite.destroy(); });
     state.orbs = [];
     state.orbBullets.forEach(function (h) { h.sprite.destroy(); });
@@ -2629,8 +2747,8 @@
     var dt = Math.min(delta / 1000, MAX_DT);
 
     // Nothing below the phase gate runs once the game is over - which is
-    // why endGame() clears the bullets outright rather than leaving them
-    // frozen mid-flight behind the overlay.
+    // why endGame() clears bullets and powerup bolts outright rather than
+    // leaving either frozen mid-flight behind the overlay.
     if (state.phase === 'playing') {
       state.clock += dt;
 
@@ -2664,6 +2782,7 @@
       this.updateStrips(dt);
       this.updateShipFill(dt);
       this.updatePowerupDots(dt);
+      this.updatePowerupBolts(dt);
       this.updateOrbs(dt);
       this.updateOrbBullets(dt);
       this.checkWaveClear(dt);
