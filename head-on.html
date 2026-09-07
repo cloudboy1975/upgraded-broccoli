@@ -366,10 +366,16 @@
   var ZIGZAG_FREQ = 5.2;
   var ZIGZAG_AMPLITUDE = 50;
 
+  // colorKey: which of the powerup bolt's three colors this enemy type
+  // dies to (see applyPowerupBoltVsFormation()) - by color FAMILY, not an
+  // exact hex match against STRIP_COLORS/COLOR_BAR. straight's green is
+  // already exact; swoop's sky-blue and zigzag's pink are their own
+  // distinct enemy-sprite colors, just close enough in family to read as
+  // blue/red respectively, so nothing is left with no bolt that can touch it.
   var ENEMY_TYPES = {
-    straight: { radius: 14, speed: 95,  score: 50,  color: 0x22c55e },
-    swoop:    { radius: 14, speed: 112, score: 80,  color: 0x38bdf8 },
-    zigzag:   { radius: 12, speed: 128, score: 120, color: 0xf472b6 }
+    straight: { radius: 14, speed: 95,  score: 50,  color: 0x22c55e, colorKey: 'green' },
+    swoop:    { radius: 14, speed: 112, score: 80,  color: 0x38bdf8, colorKey: 'blue' },
+    zigzag:   { radius: 12, speed: 128, score: 120, color: 0xf472b6, colorKey: 'red' }
   };
   var ENEMY_TEX = { straight: 'enemyStraightTex', swoop: 'enemySwoopTex', zigzag: 'enemyZigzagTex' };
 
@@ -513,6 +519,14 @@
   // life (or a long enough bolt to sit there through several segments'
   // worth of ticks) - it is not a free whole-brick kill the way the old
   // instant-kill bullet was.
+  //
+  // Formation enemies are a different story: they have no hp to chip, so a
+  // bolt kills a matching-color one outright the instant it touches it
+  // (applyPowerupBoltVsFormation(), checked every frame, not on the 200ms
+  // damage tick) - same score/core-release handling as an ordinary bullet
+  // kill. "Matching color" is by FAMILY (see the ENEMY_TYPES comment),
+  // since the three enemy sprites' own colors (green/sky-blue/pink) aren't
+  // an exact match to the bolt palette.
   var POWERUP_BOLT_MS_PER_COUNT = 1000; // lifetime added per banked orb of that color
   var POWERUP_BOLT_TICK_MS = 200; // how often it deals damage
   var POWERUP_BOLT_TICK_DAMAGE = 1; // hp per tick, per segment it's actually over - BRICK_SEGMENT_HP=3 means one banked orb (5 ticks) already kills whichever segment it sits over
@@ -1259,7 +1273,7 @@
           alive: true, diving: false,
           age: 0, phase: Math.random() * Math.PI * 2,
           spawnX: baseX,
-          type: type, radius: cfg.radius, color: cfg.color, score: cfg.score
+          type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
         };
         slot.sprite = this.add.sprite(baseX, baseY, ENEMY_TEX[type]);
         state.formation.push(slot);
@@ -2551,10 +2565,37 @@
       var swing = Math.sin(state.clock * POWERUP_BOLT_FLICKER_SPEED + bolt.flickerPhase) * 0.5 + 0.5;
       bolt.sprite.alpha = 1 - POWERUP_BOLT_FLICKER_DEPTH + POWERUP_BOLT_FLICKER_DEPTH * swing;
 
+      // Formation enemies die outright on contact (they have no hp to
+      // chip), so this checks every frame rather than waiting on the
+      // 200ms damage tick below - brushing past one is enough.
+      this.applyPowerupBoltVsFormation(bolt);
+
       bolt.tickAccum += dt;
       while (bolt.tickAccum >= tickSeconds) {
         bolt.tickAccum -= tickSeconds;
         this.applyPowerupBoltDamage(bolt);
+      }
+    }
+  };
+
+  // Instant kill, not chip damage: any alive formation enemy (idle or
+  // diving - a diver's x can wander off the fixed column grid, so this is
+  // a live positional check, not "whichever column this started in") whose
+  // own colorKey (color FAMILY - see the ENEMY_TYPES comment) matches this
+  // bolt, currently within the bolt's own width, dies right there - same
+  // score/core-release handling as an ordinary bullet kill (bulletVsFormation),
+  // just triggered by touch instead of by a bullet being consumed.
+  MainScene.prototype.applyPowerupBoltVsFormation = function (bolt) {
+    var state = this.state;
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      if (!slot.alive || slot.colorKey !== bolt.colorKey) continue;
+      if (!spanHit(bolt.sprite.x, slot.x, slot.radius + POWERUP_BOLT_WIDTH / 2)) continue;
+      slot.sprite.destroy();
+      slot.alive = false;
+      this.addScore(slot.score);
+      if (state.core && state.core.attached && state.core.carrierSlot === slot) {
+        this.releaseCore(state.core, slot.x, slot.y);
       }
     }
   };
