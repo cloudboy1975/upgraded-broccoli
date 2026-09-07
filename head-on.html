@@ -502,17 +502,20 @@
   // a bullet's "aim once" frozen trajectory) and reaches from the ship to
   // the top of the screen, so strafing during a long bolt sweeps it
   // sideways into other lanes. Every POWERUP_BOLT_TICK_MS it deals
-  // POWERUP_BOLT_TICK_DAMAGE to EVERY alive segment of EVERY alive bar of
-  // its own color that's currently in its lane - every stacked row, not
-  // just the closest one (deliberately the opposite of the pulse cannon's
-  // bottom-bar-only rule - this is a sustained area effect down the whole
-  // column, not a precision shot). A bar's segments all take that damage
-  // together each tick, so a bar dies as one unit on whichever tick
-  // finishes off its last segment, the same "whole brick" flavor the old
-  // instant-kill bullet had, just spread over time instead of one hit.
+  // POWERUP_BOLT_TICK_DAMAGE to whichever segment(s) its own (narrow)
+  // width actually spans, in every alive bar of its color currently in
+  // its lane - every stacked row, not just the closest one (deliberately
+  // the opposite of the pulse cannon's bottom-bar-only rule, since this
+  // reaches every row down the column - but WITHIN a bar it's a precision
+  // hit on one segment, same as the pulse cannon, not a whole-bar wipe).
+  // A stationary bolt just keeps re-damaging the one segment under it, so
+  // clearing an entire bar takes strafing across it during the bolt's
+  // life (or a long enough bolt to sit there through several segments'
+  // worth of ticks) - it is not a free whole-brick kill the way the old
+  // instant-kill bullet was.
   var POWERUP_BOLT_MS_PER_COUNT = 1000; // lifetime added per banked orb of that color
   var POWERUP_BOLT_TICK_MS = 200; // how often it deals damage
-  var POWERUP_BOLT_TICK_DAMAGE = 1; // hp per tick, per segment - BRICK_SEGMENT_HP=3 means one banked orb (5 ticks) already kills anything it sits over
+  var POWERUP_BOLT_TICK_DAMAGE = 1; // hp per tick, per segment it's actually over - BRICK_SEGMENT_HP=3 means one banked orb (5 ticks) already kills whichever segment it sits over
   var POWERUP_BOLT_X_GAP = 10; // px between adjacent bolts when more than one color is active - matches the old multi-shot spread
   var POWERUP_BOLT_WIDTH = 12; // visual width - a thin bolt, not a full bar-width wall
   var POWERUP_BOLT_FLICKER_SPEED = 22; // rad/sec - faster/twitchier than the pulse cannon's own trail pulse, reads as electrical rather than a smooth glow
@@ -2556,12 +2559,16 @@
     }
   };
 
-  // One damage tick: every alive segment of every alive bar of this
-  // bolt's color, anywhere in its current lane - every stacked row, not
-  // just the closest one (see the POWERUP_BOLT_* comment for why this is
-  // deliberately unlike the pulse cannon). A bar's segments are chipped
-  // together, so it dies as one unit on whichever tick finishes the last
-  // of them, same "whole brick" flavor the old instant-kill bullet had.
+  // One damage tick: only the segment(s) the bolt's own width actually
+  // spans, in every alive bar of this bolt's color anywhere in its current
+  // lane - every stacked row, not just the closest one (see the
+  // POWERUP_BOLT_* comment for why that part is deliberately unlike the
+  // pulse cannon). Within a single bar, though, it's narrow and precise
+  // like the pulse cannon's own segment check: a thin bolt sitting still
+  // only ever chips the one segment under it, not the whole bar at once -
+  // clearing every segment in a bar means sweeping the bolt across it (by
+  // strafing) or holding it there long enough via a longer-duration bolt,
+  // not a single stationary hit.
   MainScene.prototype.applyPowerupBoltDamage = function (bolt) {
     var state = this.state;
     var self = this;
@@ -2571,6 +2578,7 @@
       if (!spanHit(bolt.sprite.x, bar.x, COLOR_BAR_WIDTH / 2)) return;
       bar.segments.forEach(function (seg) {
         if (!seg.alive) return;
+        if (!spanHit(bolt.sprite.x, seg.sprite.x, BRICK_SEGMENT_WIDTH / 2 + POWERUP_BOLT_WIDTH / 2)) return;
         seg.hp -= POWERUP_BOLT_TICK_DAMAGE;
         if (seg.hp <= 0) killSegment(seg);
         else self.updateBrickCrack(seg);
