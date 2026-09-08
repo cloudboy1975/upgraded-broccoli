@@ -395,10 +395,18 @@
 
   // Shooting the orbiting dot directly - not its carrier - triggers a
   // starburst instead: every currently alive enemy dies at once, same
-  // "the trigger never hurts the player" rule as the chain release.
+  // "the trigger never hurts the player" rule as the chain release. It
+  // also deals STARBURST_BRICK_DAMAGE to every alive segment of every
+  // alive color bar on screen - every color, every lane, every stacked
+  // row, no gating at all (unlike the powerup bolt's own lane/color-
+  // limited chip) - since a starburst is already the big, rare payoff
+  // shot, not something worth being stingy with. Shared by both ways of
+  // setting one off (shooting the dot, or ramming it as the sacrifice -
+  // see shipVsOrbitingCore) since they already share triggerStarburst().
   var STARBURST_FX_DURATION = 0.45; // seconds
   var STARBURST_FX_MAX_RADIUS = 260;
   var COLOR_STARBURST = 0xfbbf24;
+  var STARBURST_BRICK_DAMAGE = 2; // hp dealt to every alive segment, everywhere, on a starburst
 
   // Ship break-apart: a placeholder death beat, retro-Asteroids style -
   // the ship's own outline splits into its 4 edges, each tumbling and
@@ -2119,7 +2127,8 @@
 
   // Every currently alive enemy dies at once - idle or diving, doesn't
   // matter. Never touches the ship; this is a reward for hitting a small
-  // moving target, not a risk.
+  // moving target, not a risk. Also chips every brick segment in play -
+  // see damageAllBrickSegments() and the STARBURST_BRICK_DAMAGE comment.
   MainScene.prototype.triggerStarburst = function (x, y) {
     var state = this.state;
     var self = this;
@@ -2129,8 +2138,34 @@
       slot.alive = false;
       self.addScore(slot.score);
     });
+    this.damageAllBrickSegments(STARBURST_BRICK_DAMAGE);
     if (state.starburstFx) state.starburstFx.gfx.destroy();
     state.starburstFx = { x: x, y: y, age: 0, gfx: this.add.graphics() };
+  };
+
+  // Every alive segment of every alive color bar currently on screen takes
+  // `amount` damage, together, in one pass - no color or lane gating at
+  // all (unlike the powerup bolt's own chip, which only ever touches one
+  // lane/color at a time). Shared teardown (killSegment/respawnBarsIfCleared)
+  // is the same the bolt and pulse cannon already use.
+  MainScene.prototype.damageAllBrickSegments = function (amount) {
+    var self = this;
+    var state = this.state;
+    var anyBarDied = false;
+    state.colorBars.forEach(function (bar) {
+      if (!bar.alive) return;
+      bar.segments.forEach(function (seg) {
+        if (!seg.alive) return;
+        seg.hp -= amount;
+        if (seg.hp <= 0) killSegment(seg);
+        else self.updateBrickCrack(seg);
+      });
+      if (bar.segments.every(function (seg) { return !seg.alive; })) {
+        bar.alive = false;
+        anyBarDied = true;
+      }
+    });
+    if (anyBarDied) self.respawnBarsIfCleared();
   };
 
   MainScene.prototype.updateStarburstFx = function (dt) {
@@ -2565,10 +2600,11 @@
       var swing = Math.sin(state.clock * POWERUP_BOLT_FLICKER_SPEED + bolt.flickerPhase) * 0.5 + 0.5;
       bolt.sprite.alpha = 1 - POWERUP_BOLT_FLICKER_DEPTH + POWERUP_BOLT_FLICKER_DEPTH * swing;
 
-      // Formation enemies die outright on contact (they have no hp to
-      // chip), so this checks every frame rather than waiting on the
-      // 200ms damage tick below - brushing past one is enough.
+      // Formation enemies and brick shards both die outright on contact
+      // (neither has hp to chip), so this checks every frame rather than
+      // waiting on the 200ms damage tick below - brushing past one is enough.
       this.applyPowerupBoltVsFormation(bolt);
+      this.applyPowerupBoltVsBrickShards(bolt);
 
       bolt.tickAccum += dt;
       while (bolt.tickAccum >= tickSeconds) {
@@ -2597,6 +2633,24 @@
       if (state.core && state.core.attached && state.core.carrierSlot === slot) {
         this.releaseCore(state.core, slot.x, slot.y);
       }
+    }
+  };
+
+  // Brick shards die outright on contact too, no hp to chip - same as a
+  // formation enemy - but NOT color-gated: an ordinary bullet has never
+  // cared what color a shard carries either (see bulletVsBrickShards), so
+  // the bolt doesn't start now. Backward iteration since a hit splices the
+  // array out from under this same loop, and unlike a bullet the bolt
+  // isn't consumed on a hit - it can clear several shards it's sweeping
+  // through in one frame, not just the first.
+  MainScene.prototype.applyPowerupBoltVsBrickShards = function (bolt) {
+    var state = this.state;
+    for (var i = state.brickShards.length - 1; i >= 0; i--) {
+      var shard = state.brickShards[i];
+      if (!spanHit(bolt.sprite.x, shard.x, BRICK_SHARD_RADIUS + POWERUP_BOLT_WIDTH / 2)) continue;
+      shard.sprite.destroy();
+      state.brickShards.splice(i, 1);
+      this.addScore(BRICK_SHARD_SCORE);
     }
   };
 
