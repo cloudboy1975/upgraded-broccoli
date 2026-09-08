@@ -534,7 +534,10 @@
   // damage tick) - same score/core-release handling as an ordinary bullet
   // kill. "Matching color" is by FAMILY (see the ENEMY_TYPES comment),
   // since the three enemy sprites' own colors (green/sky-blue/pink) aren't
-  // an exact match to the bolt palette.
+  // an exact match to the bolt palette. Brick shards get the same
+  // matching-color-only contact kill (applyPowerupBoltVsBrickShards()),
+  // but as a plain equality check - a shard's colorKey is the bar's own
+  // literal red/green/blue, not an approximate family match.
   var POWERUP_BOLT_MS_PER_COUNT = 1000; // lifetime added per banked orb of that color
   var POWERUP_BOLT_TICK_MS = 200; // how often it deals damage
   var POWERUP_BOLT_TICK_DAMAGE = 1; // hp per tick, per segment it's actually over - BRICK_SEGMENT_HP=3 means one banked orb (5 ticks) already kills whichever segment it sits over
@@ -2637,16 +2640,18 @@
   };
 
   // Brick shards die outright on contact too, no hp to chip - same as a
-  // formation enemy - but NOT color-gated: an ordinary bullet has never
-  // cared what color a shard carries either (see bulletVsBrickShards), so
-  // the bolt doesn't start now. Backward iteration since a hit splices the
+  // formation enemy, and same rule: only a matching color kills one. A
+  // shard's colorKey is the bar's own literal red/green/blue (not an
+  // approximate family match the way an enemy sprite's color is), so this
+  // is a plain equality check. Backward iteration since a hit splices the
   // array out from under this same loop, and unlike a bullet the bolt
-  // isn't consumed on a hit - it can clear several shards it's sweeping
-  // through in one frame, not just the first.
+  // isn't consumed on a hit - it can clear several matching shards it's
+  // sweeping through in one frame, not just the first.
   MainScene.prototype.applyPowerupBoltVsBrickShards = function (bolt) {
     var state = this.state;
     for (var i = state.brickShards.length - 1; i >= 0; i--) {
       var shard = state.brickShards[i];
+      if (shard.colorKey !== bolt.colorKey) continue;
       if (!spanHit(bolt.sprite.x, shard.x, BRICK_SHARD_RADIUS + POWERUP_BOLT_WIDTH / 2)) continue;
       shard.sprite.destroy();
       state.brickShards.splice(i, 1);
