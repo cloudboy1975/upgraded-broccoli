@@ -597,16 +597,18 @@
   var COLOR_BRICK_FIZZLE = 0xffffff; // neutral white "light", not tied to any trail color - this is an absorption, not damage
 
   // Brick shards: what a color bar becomes when it reaches the bottom,
-  // instead of ending the game outright. It breaks into BRICK_SHARD_COUNT
-  // pieces, each running through three phases - 'spin' (a brief top-like
-  // spin in place, the telegraph), 'fly' (wanders upward across the
-  // screen, still spinning, still shootable), then 'attack' (locks a
-  // direction toward the ship's position at that moment and dives,
-  // exactly like a formation diver from there on - can kill the ship on
-  // contact, or be blocked by an orbiting shield dot same as any other
-  // diver). Shootable in every phase, one bullet one kill, same as a
-  // formation enemy.
-  var BRICK_SHARD_COUNT = 3;
+  // instead of ending the game outright. It breaks into one shard per
+  // segment still alive at that moment (see breakBrickIntoShards()) - a
+  // bar the player has already chipped down produces proportionally
+  // fewer, so a nearly-dead bar reaching the bottom is a smaller threat
+  // than a fully intact one, not the same fixed release either way. Each
+  // shard runs through three phases - 'spin' (a brief top-like spin in
+  // place, the telegraph), 'fly' (wanders upward across the screen, still
+  // spinning, still shootable), then 'attack' (locks a direction toward
+  // the ship's position at that moment and dives, exactly like a
+  // formation diver from there on - can kill the ship on contact, or be
+  // blocked by an orbiting shield dot same as any other diver). Shootable
+  // in every phase, one bullet one kill, same as a formation enemy.
   var BRICK_SHARD_RADIUS = 9;
   var BRICK_SHARD_SCORE = 60; // between straight (50) and swoop (80) - a mid-tier threat
   var BRICK_SHARD_SPIN_DURATION = 0.6; // seconds of pure in-place spin before it starts moving
@@ -1193,14 +1195,21 @@
     }
   };
 
-  // Breaks a bar that reached the bottom into BRICK_SHARD_COUNT pieces,
-  // spread a little either side of where it crossed. Each starts in the
-  // 'spin' phase - see updateBrickShards() for what that (and 'fly' and
-  // 'attack') actually do.
+  // Breaks a bar that reached the bottom into one shard per segment still
+  // alive right now - a bar the player already chipped down (pulse cannon,
+  // powerup bolt) produces proportionally fewer shards, not the same fixed
+  // release regardless of damage taken. Called BEFORE killBar() clears the
+  // bar's own segments, so bar.segments still reflects real remaining
+  // damage here. Spread a little either side of where it crossed, centered
+  // on however many are actually being produced this time (not a fixed
+  // width), so a 1- or 2-shard release doesn't look off-center. Each
+  // starts in the 'spin' phase - see updateBrickShards() for what that
+  // (and 'fly' and 'attack') actually do.
   MainScene.prototype.breakBrickIntoShards = function (bar) {
     var state = this.state;
-    for (var i = 0; i < BRICK_SHARD_COUNT; i++) {
-      var offset = (i - (BRICK_SHARD_COUNT - 1) / 2) * (BRICK_SHARD_RADIUS * 1.6);
+    var count = bar.segments.filter(function (seg) { return seg.alive; }).length;
+    for (var i = 0; i < count; i++) {
+      var offset = (i - (count - 1) / 2) * (BRICK_SHARD_RADIUS * 1.6);
       var x = clamp(bar.x + offset, BRICK_SHARD_RADIUS, GAME_WIDTH - BRICK_SHARD_RADIUS);
       var y = clamp(bar.y, BRICK_SHARD_RADIUS, GAME_HEIGHT - BRICK_SHARD_RADIUS);
       state.brickShards.push({
