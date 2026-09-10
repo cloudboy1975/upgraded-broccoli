@@ -502,15 +502,27 @@
   var FIRE_LONG_PRESS_MS = 350;
 
   // The powerup bolt: what holding fire past FIRE_LONG_PRESS_MS spends
-  // banked orb colors on (see activatePowerup()/spawnPowerupBolt()). One
-  // bolt per DISTINCT banked color, not per orb - banking the same color
-  // twice makes that bolt last longer, not spawn a second copy of it.
-  // Multiple different colors banked at once each get their own bolt,
-  // spread a few px either side of the ship (POWERUP_BOLT_X_GAP, same
-  // small-offset idiom the old multi-color volley used) rather than one
-  // blended beam - a shared beam has no single duration once colors carry
-  // different banked counts, so keeping them independent avoids that
-  // entirely and stays easy to read on screen.
+  // banked orb colors on (see tickPowerupDrain()/spawnPowerupBolt()). The
+  // bank DRAINS over the length of the hold rather than emptying all at
+  // once: each tick spends exactly one orb of every distinct color still
+  // banked and buys that color one more second of lightning. The first
+  // tick lands at FIRE_LONG_PRESS_MS and each further one a whole second
+  // later, so a spend is always a whole second - a brief hold buys one
+  // second, a two-second hold buys two, and letting go early keeps what
+  // you didn't spend. Colors run dry independently: 2 red + 1 blue held
+  // through two ticks spends red twice and blue once, so blue's single
+  // second plays out while red keeps going.
+  //
+  // Crucially, an orb you haven't spent yet is still a shield. Only the
+  // orb actually spent on a tick loses its orbiting dot (spendBankedOrb()),
+  // so the rest keep circling and keep blocking hazards even while an
+  // already-spent color is mid-burst.
+  //
+  // Each distinct color gets its own bolt in a fixed slot either side of
+  // the ship (POWERUP_BOLT_X_GAP apart, see spawnPowerupBolt()) rather
+  // than one blended beam - separate beams keep each color's own remaining
+  // seconds readable, and a fixed slot means a beam never slides sideways
+  // just because another color ran out.
   //
   // A bolt tracks the ship's x every frame for its whole lifetime (unlike
   // a bullet's "aim once" frozen trajectory) and reaches from the ship to
@@ -1022,7 +1034,7 @@
       strips: [], // falling colored powerup strips - see spawnStrip()/updateStrips()
       shipFill: { level: 0, color: null, mode: 'idle' }, // 'idle' | 'filling' | 'fading' - see updateStrips()/updateShipFill()
       colorLevels: { red: 0, green: 0, blue: 0 }, // per-color fire-power levels flying through a strip builds up - see levelUpFirePower()/fireBullet()
-      powerup: { colors: [], dots: [], angle: 0 }, // orb-banked colors + their ship-orbiting dots - see collectColor()/activatePowerup()
+      powerup: { colors: [], dots: [], angle: 0 }, // orb-banked colors + their ship-orbiting dots (each dot is one unspent orb's shield) - see collectColor()/tickPowerupDrain()
       powerupBolts: [], // sustained colored lightning bolts spent from banked ammo - see spawnPowerupBolt()/updatePowerupBolts()
       orbs: [], // falling touch-to-collect diamond pods - see spawnOrb()/updateOrbs()
       orbBullets: [], // colored bullets released by shooting an orb instead of collecting it - see releaseOrbBullet()/updateOrbBullets()
@@ -1041,7 +1053,7 @@
       input: { left: false, right: false, fire: false },
       fireHeld: false, // true while fire is held down across frames - drives the tap-vs-long-press split
       fireHeldMs: 0,
-      firePowerupTriggered: false, // guards activatePowerup() to firing at most once per hold
+      nextPowerupTickMs: FIRE_LONG_PRESS_MS, // fireHeldMs at which the next drain tick is due - see tickPowerupDrain()
       difficulty: { elapsed: 0 },
       clock: 0 // free-running seconds, drives the idle formation bob
     };
@@ -1753,7 +1765,13 @@
 
   // Holding fire no longer auto-repeats - a press still fires one shot
   // immediately (same feel as before), but holding past FIRE_LONG_PRESS_MS
-  // spends whatever colors are banked instead of continuing to shoot.
+  // starts DRAINING whatever colors are banked, one orb of each per tick,
+  // for as long as the hold lasts. The first tick lands at the same
+  // FIRE_LONG_PRESS_MS threshold that used to spend the whole bank at once
+  // (so a brief hold still buys a full second of lightning), and each
+  // further tick is one whole second of held time later - never a
+  // fractional spend. A `while` rather than an `if` so a long frame can't
+  // silently swallow a tick it should have paid for.
   MainScene.prototype.updateFiring = function (dt) {
     var state = this.state;
     if (state.phase !== 'playing') return;
@@ -1762,18 +1780,18 @@
         this.fireBullet();
         state.fireHeld = true;
         state.fireHeldMs = 0;
-        state.firePowerupTriggered = false;
+        state.nextPowerupTickMs = FIRE_LONG_PRESS_MS;
       } else {
         state.fireHeldMs += dt * 1000;
-        if (!state.firePowerupTriggered && state.fireHeldMs >= FIRE_LONG_PRESS_MS) {
-          this.activatePowerup();
-          state.firePowerupTriggered = true;
+        while (state.powerup.colors.length > 0 && state.fireHeldMs >= state.nextPowerupTickMs) {
+          this.tickPowerupDrain();
+          state.nextPowerupTickMs += POWERUP_BOLT_MS_PER_COUNT;
         }
       }
     } else {
       state.fireHeld = false;
       state.fireHeldMs = 0;
-      state.firePowerupTriggered = false;
+      state.nextPowerupTickMs = FIRE_LONG_PRESS_MS;
     }
   };
 
@@ -2544,27 +2562,62 @@
     }
   };
 
-  // Spends every banked color at once, one bolt per DISTINCT color - not
-  // per orb, so 3 banked reds make one longer-lasting red bolt rather than
-  // 3 separate ones. See the POWERUP_BOLT_* comment above for the full
-  // mechanic.
-  MainScene.prototype.activatePowerup = function () {
-    var state = this.state;
-    var pu = state.powerup;
-    if (pu.colors.length === 0) return;
+  // One second's worth of drain: spends exactly ONE banked orb of each
+  // distinct color still banked, and gives that color's bolt one more
+  // second of life. Colors run dry independently - 2 red + 1 blue held
+  // for two ticks spends red twice and blue once, and the second tick
+  // simply has no blue left to spend, so blue's single second just plays
+  // out while red gets a second one. See the POWERUP_BOLT_* comment above.
+  MainScene.prototype.tickPowerupDrain = function () {
+    var pu = this.state.powerup;
     var self = this;
-    var counts = {}; // colorKey -> how many of that color were banked
+    var seen = {};
     var distinctColors = [];
     pu.colors.forEach(function (colorKey) {
-      if (!counts[colorKey]) { counts[colorKey] = 0; distinctColors.push(colorKey); }
-      counts[colorKey]++;
+      if (seen[colorKey]) return;
+      seen[colorKey] = true;
+      distinctColors.push(colorKey);
     });
-    distinctColors.forEach(function (colorKey, i) {
-      self.spawnPowerupBolt(colorKey, counts[colorKey], i, distinctColors.length);
+    distinctColors.forEach(function (colorKey) {
+      self.spendBankedOrb(colorKey);
+      self.extendOrSpawnPowerupBolt(colorKey);
     });
-    this.clearPowerup();
   };
 
+  // Spends one orb of this color and, with it, the ONE orbiting dot that
+  // was that orb's shield. colors and dots are parallel arrays (pushed
+  // together in collectColor()), so removing both at the same index keeps
+  // them in sync - the same rule consumeShieldDot() follows. Every other
+  // banked orb keeps its dot, and keeps blocking hazards, right up until
+  // its own tick comes: the shield you haven't spent yet is still a
+  // shield, even while an already-spent color is mid-burst.
+  MainScene.prototype.spendBankedOrb = function (colorKey) {
+    var pu = this.state.powerup;
+    var i = pu.colors.indexOf(colorKey);
+    if (i === -1) return; // defensive - callers only pass colors they just read out of pu.colors
+    pu.dots[i].sprite.destroy();
+    pu.colors.splice(i, 1);
+    pu.dots.splice(i, 1);
+  };
+
+  // A color already mid-burst just gets another second added to its
+  // existing bolt rather than a second bolt stacked on top of it, so a
+  // sustained hold reads as one continuous beam that keeps going for as
+  // long as that color holds out. updateFiring() runs before
+  // updatePowerupBolts() in the frame, so a bolt about to expire on this
+  // exact frame is extended before anything checks its age.
+  MainScene.prototype.extendOrSpawnPowerupBolt = function (colorKey) {
+    var bolts = this.state.powerupBolts;
+    for (var i = 0; i < bolts.length; i++) {
+      if (bolts[i].colorKey !== colorKey) continue;
+      bolts[i].duration += POWERUP_BOLT_MS_PER_COUNT / 1000;
+      return;
+    }
+    this.spawnPowerupBolt(colorKey);
+  };
+
+  // Wipes the whole bank at once, dots and all - death and restart only,
+  // NOT the drain (which spends one orb at a time via spendBankedOrb()).
   MainScene.prototype.clearPowerup = function () {
     var pu = this.state.powerup;
     pu.dots.forEach(function (d) { d.sprite.destroy(); });
@@ -2572,17 +2625,24 @@
     pu.dots = [];
   };
 
-  // One bolt: offset a few px either side of the ship's center when more
-  // than one color is active (i is this color's index among the distinct
-  // colors spawned together, n is how many), same small-spread idiom the
-  // old multi-shot volley used. The offset is fixed for the bolt's whole
-  // life - only the ship's own x moves it after that (see
-  // updatePowerupBolts()). Sized to reach from the ship up to the top of
-  // the screen; that length never changes since the ship's y doesn't, so
-  // it's set once here rather than recomputed every frame.
-  MainScene.prototype.spawnPowerupBolt = function (colorKey, count, i, n) {
+  // One bolt, always starting at exactly one second - further seconds are
+  // added by extendOrSpawnPowerupBolt() as the hold keeps paying for them,
+  // since how long a hold will last isn't knowable up front.
+  //
+  // Each color owns a FIXED slot either side of the ship's center (red
+  // left, green middle, blue right, POWERUP_BOLT_X_GAP apart) rather than
+  // being spread against whichever other colors happen to be firing right
+  // now: bolts start and stop independently as their colors run dry, and a
+  // beam that slid sideways because some other color finished would read
+  // as a glitch. The offset is fixed for the bolt's whole life - only the
+  // ship's own x moves it after that (see updatePowerupBolts()). Sized to
+  // reach from the ship up to the top of the screen; that length never
+  // changes since the ship's y doesn't, so it's set once here rather than
+  // recomputed every frame.
+  MainScene.prototype.spawnPowerupBolt = function (colorKey) {
     var state = this.state;
-    var xOffset = (i - (n - 1) / 2) * POWERUP_BOLT_X_GAP;
+    var slot = STRIP_COLOR_KEYS.indexOf(colorKey);
+    var xOffset = (slot - (STRIP_COLOR_KEYS.length - 1) / 2) * POWERUP_BOLT_X_GAP;
     var bottomY = SHIP_Y - state.ship.radius;
     var sprite = this.add.sprite(state.ship.x + xOffset, bottomY, 'powerupBoltTex_' + colorKey);
     sprite.setOrigin(0.5, 1); // anchored at its own bottom tip, growing upward from there
@@ -2592,7 +2652,7 @@
       colorKey: colorKey,
       xOffset: xOffset,
       age: 0,
-      duration: count * (POWERUP_BOLT_MS_PER_COUNT / 1000),
+      duration: POWERUP_BOLT_MS_PER_COUNT / 1000,
       tickAccum: 0,
       flickerPhase: Math.random() * Math.PI * 2,
       sprite: sprite
@@ -2834,7 +2894,7 @@
     state.waveClearTimer = 0;
     state.fireHeld = false;
     state.fireHeldMs = 0;
-    state.firePowerupTriggered = false;
+    state.nextPowerupTickMs = FIRE_LONG_PRESS_MS;
     state.difficulty.elapsed = 0;
 
     this.shipSprite.x = state.ship.x;
