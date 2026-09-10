@@ -632,7 +632,14 @@
   // same payoff as touching the pod directly. Not a hazard: it can't hurt
   // the ship, it's just a second way to deliver the same pickup.
   var ORB_RADIUS = 11;
-  var ORB_BULLET_RADIUS = 4;
+  // Matches ORB_RADIUS: catching the released bullet should feel exactly
+  // as forgiving as touching the pod directly did, not a smaller, harder
+  // target now that it's airborne and moving - it isn't a hazard, there's
+  // no benefit to it being hard to catch. The bullet's visible sprite
+  // stays the small POWERUP_DOT_RADIUS dot it always was; this only
+  // widens the invisible catch margin around it (previously a much
+  // tighter 4px, which read as "too hard to catch").
+  var ORB_BULLET_RADIUS = ORB_RADIUS;
   var ORB_FALL_SPEED = 130;
   var ORB_BULLET_SPEED = 260; // straight-line speed once released
   var ORB_BULLET_LIFETIME = 2.5; // seconds before an unclaimed released bullet fizzles
