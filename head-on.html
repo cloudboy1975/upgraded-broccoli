@@ -621,7 +621,15 @@
   // formation diver from there on - can kill the ship on contact, or be
   // blocked by an orbiting shield dot same as any other diver). Shootable
   // in every phase, one bullet one kill, same as a formation enemy.
+  //
+  // 'spin' and 'fly' can't touch the ship at all, only 'attack' can (see
+  // shipVsAttackingShards()) - so the sprite itself carries that
+  // distinction rather than making the player infer it purely from
+  // motion: harmless (spin/fly) renders at BRICK_SHARD_HARMLESS_ALPHA,
+  // and snaps to fully opaque the instant it commits to attacking, the
+  // same frame it locks its dive direction.
   var BRICK_SHARD_RADIUS = 9;
+  var BRICK_SHARD_HARMLESS_ALPHA = 0.55; // spin/fly - translucent, but still clearly a solid enemy, not a collectible (STRIP_ALPHA=0.45 is reserved for those)
   var BRICK_SHARD_SCORE = 60; // between straight (50) and swoop (80) - a mid-tier threat
   var BRICK_SHARD_SPIN_DURATION = 0.6; // seconds of pure in-place spin before it starts moving
   var BRICK_SHARD_SPIN_SPEED = 14; // rad/sec - fast, reads as a spinning top
@@ -941,10 +949,11 @@
       g.fillRect(0, 0, segWidth, BRICK_FIZZLE_HEIGHT);
     });
 
-    // Brick shards: a small solid (fully opaque, not translucent like the
-    // collectible powerups - this is now a genuine enemy) four-pointed
-    // kite shape, same palette as the bars they came from. Reads as a
-    // little spinning top when rotated fast.
+    // Brick shards: a small solid four-pointed kite shape, same palette as
+    // the bars they came from. Reads as a little spinning top when rotated
+    // fast. Baked fully opaque - updateBrickShards() dims it with alpha
+    // while harmless (spin/fly) and restores full opacity on attack,
+    // rather than baking two separate textures per color.
     STRIP_COLOR_KEYS.forEach(function (key) {
       var r = BRICK_SHARD_RADIUS;
       var size = r * 2;
@@ -1281,6 +1290,10 @@
       sh.sprite.x = sh.x;
       sh.sprite.y = sh.y;
       sh.sprite.rotation = sh.rotation;
+      // Harmless (spin/fly) reads as translucent; attacking snaps to fully
+      // opaque the same frame it commits, alongside locking its dive
+      // direction above - the visual and the actual threat change together.
+      sh.sprite.alpha = sh.phase === 'attack' ? 1 : BRICK_SHARD_HARMLESS_ALPHA;
 
       if (sh.y > GAME_HEIGHT + 30 || sh.y < -30 || sh.x < -30 || sh.x > GAME_WIDTH + 30) {
         sh.sprite.destroy();
