@@ -1074,7 +1074,7 @@
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
-  var COLOR_ENEMY_BULLET = 0xff3b3b; // a clear "hostile" red - distinct from every friendly color already in play
+  var COLOR_ENEMY_BULLET = 0xff7a1a; // fire orange - was a red too close to STRIP_COLORS.red (0xef4444), which reads as a friendly orb bullet, not a hazard
   var COLOR_STAR = 0x94a3b8;
   var COLOR_BG = 0x1e293b;
 
@@ -1246,15 +1246,19 @@
       g.fillStyle(COLOR_BULLET, 1);
       g.fillCircle(BULLET_RADIUS, BULLET_RADIUS, BULLET_RADIUS);
     });
-    // Enemy bullet: same idea, hostile red, with a soft low-alpha halo (the
-    // glow+core idiom used everywhere else in this file) so it still reads
-    // against a busy screen at a size this small.
+    // Enemy bullet: a little drip of fire - soft orange glow, solid orange
+    // body, tiny hot-white center (same glow+core+hot-center idiom, and the
+    // same hot color, as the core's own fireball look), so it still reads
+    // against a busy screen at a size this small and unmistakably as
+    // "flame", not as a friendly colored orb bullet.
     bakeTexture(self, 'enemyBulletTex', ENEMY_BULLET_RADIUS * 4, ENEMY_BULLET_RADIUS * 4, function (g) {
       var cx = ENEMY_BULLET_RADIUS * 2, cy = ENEMY_BULLET_RADIUS * 2;
       g.fillStyle(COLOR_ENEMY_BULLET, 0.35);
       g.fillCircle(cx, cy, ENEMY_BULLET_RADIUS * 2);
       g.fillStyle(COLOR_ENEMY_BULLET, 1);
       g.fillCircle(cx, cy, ENEMY_BULLET_RADIUS);
+      g.fillStyle(COLOR_CORE_HOT, 0.9);
+      g.fillCircle(cx, cy, ENEMY_BULLET_RADIUS * 0.4);
     });
     // Core, orbiting look: a small glowing ember - soft outer glow, a
     // solid orange body, and a hot near-white center. CORE_GLOW_RADIUS is
