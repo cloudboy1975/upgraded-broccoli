@@ -156,6 +156,106 @@
     touch-action: none;
   }
 
+  /* ---- Hidden sortie lab -------------------------------------------------
+     A dev-only tuning panel for the enemy attack patterns. Deliberately
+     not discoverable in normal play: opened with the backquote key, or by
+     triple-tapping the HUD's "Best" label (the mobile way in, since a
+     phone has no keyboard). Sits above everything and scrolls on its own,
+     while the game keeps running live underneath so changes can be felt
+     immediately rather than judged from a paused screenshot. */
+  .lab {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    background: rgba(8, 12, 24, 0.97);
+    color: var(--text);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px;
+    touch-action: pan-y;
+    font-size: 0.8rem;
+  }
+  .lab.visible { display: block; }
+  .lab-inner { max-width: 460px; margin: 0 auto; }
+  .lab h2 {
+    margin: 0 0 2px;
+    font-size: 1rem;
+    letter-spacing: 0.02em;
+  }
+  .lab-sub { color: var(--muted); font-size: 0.72rem; margin-bottom: 12px; }
+  .lab-section {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: rgba(30, 41, 59, 0.5);
+  }
+  .lab-section h3 {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .lab-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 7px;
+  }
+  .lab-row:last-child { margin-bottom: 0; }
+  .lab-row label { flex: 0 0 128px; color: var(--muted); }
+  .lab-row input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--accent); }
+  .lab-row input[type="checkbox"] { accent-color: var(--accent); }
+  .lab-row .lab-val {
+    flex: 0 0 46px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .lab-pattern {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  }
+  .lab-pattern:last-child { border-bottom: none; }
+  .lab-pattern input[type="checkbox"] { accent-color: var(--accent); flex: 0 0 auto; }
+  .lab-pattern .lab-name { flex: 1 1 auto; }
+  .lab-pattern .lab-tier {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .lab-btn {
+    border: 1px solid var(--line);
+    background: var(--bg-2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 4px 9px;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lab-btn.primary { background: var(--accent); border-color: var(--accent); color: #06240f; }
+  .lab-btn.wide { width: 100%; padding: 8px; }
+  .lab-readout {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  /* Two columns rather than space-padded text, so a long value (the whole
+     remaining bag, say) wraps under itself instead of under its own label. */
+  .lab-readout div { display: flex; gap: 8px; }
+  .lab-readout .lab-k { flex: 0 0 58px; }
+  .lab-readout b { color: var(--text); font-weight: 600; flex: 1 1 auto; min-width: 0; word-break: break-word; }
+  .lab-actions { display: flex; gap: 8px; }
+
   .zone {
     flex: 1;
     border: none;
@@ -285,7 +385,7 @@
           <span class="turn-dot playing" id="phaseDot"></span>
           <span>Score<b id="scoreVal">0</b></span>
           <span>Lives<b id="livesVal">3</b></span>
-          <span>Best<b id="bestVal">0</b></span>
+          <span id="bestTap">Best<b id="bestVal">0</b></span>
         </div>
       </div>
       <div class="overlay" id="gameOverOverlay">
@@ -310,6 +410,47 @@
     </div>
 
     <footer>Prototype &mdash; not linked from the games hub yet. &middot; <a href="index.html">More games</a> &middot; build 2026-09-03 08:00 UTC</footer>
+  </div>
+
+  <!-- The lab's contents are built at boot from the same SORTIE_PATTERNS
+       and TUNING tables the game itself reads, so a pattern or knob added
+       there shows up here automatically instead of quietly going missing.
+       Only the empty containers live in markup. -->
+  <div class="lab" id="lab" aria-hidden="true">
+    <div class="lab-inner">
+      <h2>Sortie lab</h2>
+      <div class="lab-sub">Live &mdash; the game keeps running underneath, and settings persist in this browser.</div>
+
+      <div class="lab-section">
+        <h3>Rhythm</h3>
+        <div id="labRhythm"></div>
+      </div>
+      <div class="lab-section">
+        <h3>Dive speed</h3>
+        <div id="labSpeed"></div>
+      </div>
+      <div class="lab-section">
+        <h3>Telegraph</h3>
+        <div id="labTelegraph"></div>
+      </div>
+      <div class="lab-section">
+        <h3>Tier unlocks</h3>
+        <div id="labTiers"></div>
+      </div>
+      <div class="lab-section">
+        <h3>Pattern book</h3>
+        <div id="labPatterns"></div>
+      </div>
+      <div class="lab-section">
+        <h3>Live</h3>
+        <div class="lab-readout" id="labReadout"></div>
+      </div>
+
+      <div class="lab-actions">
+        <button type="button" class="lab-btn wide" id="labResetBtn">Reset to defaults</button>
+        <button type="button" class="lab-btn wide primary" id="labCloseBtn">Close</button>
+      </div>
+    </div>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -354,8 +495,218 @@
   var DIVE_INTERVAL_START = 1.7; // seconds between dive waves
   var DIVE_INTERVAL_MIN = 0.9;
   var DIVE_RAMP_SECONDS = 45; // time to ramp from START to MIN
-  var DIVE_TWO_AT_ONCE_AFTER = 25; // seconds elapsed before waves can send 2 divers at once
   var WAVE_CLEAR_PAUSE = 1.4; // pause before the next full formation spawns
+
+  // ---- The sortie pattern book ------------------------------------------
+  // Dives used to be "every N seconds, pick one or two idle slots at
+  // random" - three fixed trajectories (one per row) fired by a metronome.
+  // That's learnable only in the sense a coin flip is: WHICH ship dove was
+  // pure noise, and two-at-once was two independent coin flips rather than
+  // a shape. Repetitive and rudimentary at the same time.
+  //
+  // Now the game launches SORTIES: named, choreographed groups drawn from a
+  // shuffle bag. Three ideas carry the design.
+  //
+  //  1. A NAMED BOOK. Every launch is one of SORTIE_PATTERNS below - a
+  //     column train, a pincer, an echelon sweep. Each has its own
+  //     silhouette on screen, so the thing to learn is "that's the vee, the
+  //     gap opens behind the point" rather than tracking N unrelated dots.
+  //  2. A SHUFFLE BAG, NOT A DICE ROLL. Unlocked patterns go into a bag,
+  //     the bag is shuffled, and sorties are DRAWN from it until it empties
+  //     and refills - the same randomizer Tetris uses for its pieces. That
+  //     kills droughts AND floods: every pattern shows up once per cycle
+  //     (so the book is actually learnable), and you can never eat three
+  //     walls back to back (so it never spikes into chaos).
+  //  3. ESCALATION BY VARIETY, NOT PRESSURE. Tiers unlock on a timer and
+  //     only ADD to the bag - the gentle patterns stay in forever, so the
+  //     bag always holds guaranteed breathers. The game gets richer rather
+  //     than just faster, which is what keeps it off the "prohibitively
+  //     hard" path while still escalating.
+  //
+  // Each pattern also carries its own cooldown multiplier: a big sortie
+  // buys a longer rest behind it. That's the main anti-brutality valve -
+  // the old code used one flat interval no matter how many ships it had
+  // just thrown at you.
+  //
+  // Every number here is a DEFAULT. The live values live in TUNING below
+  // and are editable at runtime from the hidden control panel (backquote,
+  // or triple-tap the HUD's Best label), so all of this can be re-tuned by
+  // feel without an edit-reload cycle.
+  var SORTIE_TIER_UNLOCK_SECONDS = [0, 20, 45, 75]; // elapsed seconds at which each tier joins the bag
+  var SORTIE_TELEGRAPH_LEAD = 0.45; // seconds a slot flashes in formation before it actually drops
+  var SORTIE_SPREAD_MIN = GAME_WIDTH * 0.35; // how far apart two slots must be to read as a pincer rather than a clump
+
+  function sortieByX(list) {
+    return list.slice().sort(function (a, b) { return a.x - b.x; });
+  }
+
+  // n slots spread as evenly as possible across the x range. The
+  // "find the gap" shapes want separation; picking at random would keep
+  // clumping them into one side of the screen.
+  function sortiePickSpread(list, n) {
+    var sorted = sortieByX(list);
+    if (n <= 1) return sorted.slice(0, 1);
+    if (sorted.length <= n) return sorted;
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var slot = sorted[Math.round(i * (sorted.length - 1) / (n - 1))];
+      if (out.indexOf(slot) === -1) out.push(slot); // rounding can land twice on one index in a short list
+    }
+    return out;
+  }
+
+  function sortiePickRandom(list, n) {
+    var pool = list.slice(), out = [];
+    while (out.length < n && pool.length) {
+      out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    return out;
+  }
+
+  function sortieGroupBy(list, key) {
+    var groups = {};
+    list.forEach(function (slot) {
+      var k = slot[key];
+      (groups[k] = groups[k] || []).push(slot);
+    });
+    return Object.keys(groups).map(function (k) { return groups[k]; });
+  }
+
+  function sortiePickOne(groups) {
+    return groups[Math.floor(Math.random() * groups.length)];
+  }
+
+  // select() returns the sortie's members in LAUNCH ORDER, or null when the
+  // formation is too thin for that shape to read (caller falls through to
+  // the next pattern in the bag, so a half-cleared wave degrades to the
+  // simple stuff instead of firing a "wall" of two).
+  var SORTIE_PATTERNS = [
+    {
+      id: 'lone', label: 'Lone diver', tier: 0, stagger: 0, cooldown: 0.85, min: 1,
+      select: function (ctx) { return sortiePickRandom(ctx.idle, 1); }
+    },
+    {
+      id: 'trickle', label: 'Split pair', tier: 0, stagger: 0.45, cooldown: 1.0, min: 2,
+      select: function (ctx) { return sortiePickSpread(ctx.idle, 2); }
+    },
+    {
+      id: 'column', label: 'Column train', tier: 1, stagger: 0.30, cooldown: 1.15, min: 2,
+      select: function (ctx) {
+        // One lane, closest rank first. You know exactly where it's coming
+        // from; the question is whether you clear the lane in time. Closest
+        // first (row descending) so they ARRIVE evenly spaced rather than
+        // bunching up on the way down.
+        var cols = sortieGroupBy(ctx.idle, 'col').filter(function (c) { return c.length >= 2; });
+        if (!cols.length) return null;
+        return sortiePickOne(cols).slice().sort(function (a, b) { return b.row - a.row; });
+      }
+    },
+    {
+      id: 'pincer', label: 'Pincer', tier: 1, stagger: 0, cooldown: 1.1, min: 2,
+      select: function (ctx) {
+        var sorted = sortieByX(ctx.idle);
+        var left = sorted[0], right = sorted[sorted.length - 1];
+        if (!left || !right || right.x - left.x < SORTIE_SPREAD_MIN) return null;
+        return [left, right];
+      }
+    },
+    {
+      id: 'echelon', label: 'Echelon sweep', tier: 2, stagger: 0.22, cooldown: 1.25, min: 3,
+      select: function (ctx) {
+        // Three from ONE rank, in column order - a diagonal that walks
+        // across the screen. Direction flips so it isn't always left-to-right.
+        var rows = sortieGroupBy(ctx.idle, 'row').filter(function (r) { return r.length >= 3; });
+        if (!rows.length) return null;
+        var picked = sortiePickSpread(sortiePickOne(rows), 3);
+        if (picked.length < 3) return null;
+        return Math.random() < 0.5 ? picked : picked.reverse();
+      }
+    },
+    {
+      id: 'vee', label: 'Vee', tier: 2, stagger: 0.28, cooldown: 1.25, min: 3,
+      select: function (ctx) {
+        // The point commits first and the wings follow, so the safe gap is
+        // behind the point - readable early if you know the shape.
+        var sorted = sortieByX(ctx.idle);
+        if (sorted.length < 3) return null;
+        var left = sorted[0], right = sorted[sorted.length - 1];
+        var mid = sorted[Math.floor(sorted.length / 2)];
+        if (mid === left || mid === right) return null;
+        return [mid, left, right];
+      }
+    },
+    {
+      id: 'wall', label: 'Wall', tier: 3, stagger: 0, cooldown: 1.6, min: 4,
+      select: function (ctx) {
+        var picked = sortiePickSpread(ctx.idle, 4);
+        return picked.length >= 4 ? picked : null;
+      }
+    },
+    {
+      id: 'cascade', label: 'Cascade', tier: 3, stagger: 0.16, cooldown: 1.45, min: 4,
+      select: function (ctx) {
+        // A fast ripple across every lane - the tightest stagger in the
+        // book, so it reads as one travelling wave rather than four
+        // separate decisions.
+        var picked = sortiePickSpread(ctx.idle, 5);
+        if (picked.length < 4) return null;
+        return Math.random() < 0.5 ? picked : picked.reverse();
+      }
+    }
+  ];
+
+  // ---- Live tuning ------------------------------------------------------
+  // Everything the sortie system reads at runtime, in one mutable object so
+  // the hidden control panel can retune the game between (or during) waves
+  // without a reload. The constants above stay the single source of
+  // DEFAULT truth - this is seeded from them and can always be reset back.
+  function sortieDefaultTuning() {
+    var enabled = {};
+    SORTIE_PATTERNS.forEach(function (p) { enabled[p.id] = true; });
+    return {
+      diveIntervalStart: DIVE_INTERVAL_START,
+      diveIntervalMin: DIVE_INTERVAL_MIN,
+      diveRampSeconds: DIVE_RAMP_SECONDS,
+      staggerScale: 1,    // multiplies every pattern's own stagger
+      cooldownScale: 1,   // multiplies every pattern's own cooldown
+      diverSpeedStart: 1, // diver speed multiplier at t=0...
+      diverSpeedMax: 1.12, // ...and once fully ramped. Deliberately mild: escalation is meant to come from the book, not from raw speed
+      telegraph: true,    // draw the pre-launch flash (purely visual - the lead time below applies either way)
+      telegraphLead: SORTIE_TELEGRAPH_LEAD,
+      tierUnlock: SORTIE_TIER_UNLOCK_SECONDS.slice(),
+      enabled: enabled
+    };
+  }
+
+  var TUNING_KEY = 'headon-tuning-v1';
+  var TUNING = sortieDefaultTuning();
+
+  // Merged key-by-key rather than replaced wholesale, so a saved blob from
+  // an older build (missing keys added since) still loads cleanly instead
+  // of leaving the game with undefined timings.
+  function loadTuning() {
+    try {
+      var raw = localStorage.getItem(TUNING_KEY);
+      if (!raw) return;
+      var saved = JSON.parse(raw);
+      Object.keys(TUNING).forEach(function (k) {
+        if (!(k in saved)) return;
+        if (k === 'enabled') {
+          Object.keys(TUNING.enabled).forEach(function (id) {
+            if (id in saved.enabled) TUNING.enabled[id] = !!saved.enabled[id];
+          });
+        } else if (k === 'tierUnlock') {
+          if (Array.isArray(saved.tierUnlock)) TUNING.tierUnlock = saved.tierUnlock.slice();
+        } else {
+          TUNING[k] = saved[k];
+        }
+      });
+    } catch (e) {} // a corrupt or unavailable store just means "use defaults"
+  }
+  function saveTuning() {
+    try { localStorage.setItem(TUNING_KEY, JSON.stringify(TUNING)); } catch (e) {}
+  }
+  loadTuning();
 
   var ENEMY_DESPAWN_Y = GAME_HEIGHT - 8; // a diver past this has flown by uncaught - gone, no penalty
 
@@ -1116,8 +1467,11 @@
       score: 0,
       highScore: loadHighScore(),
       wave: 1,
-      diveTimer: DIVE_INTERVAL_START,
+      diveTimer: TUNING.diveIntervalStart,
       waveClearTimer: 0, // > 0 while waiting to spawn the next formation
+      sortieBag: [], // shuffle bag of pattern ids, drawn from and refilled - see drawSortie()
+      sortieBagTier: -1, // tier the current bag was built at, so a newly unlocked tier reshuffles immediately
+      lastSortie: null, // { id, size, at } of the most recent launch, for the control panel readout
       input: { left: false, right: false, fire: false },
       fireHeld: false, // true while fire is held down across frames - drives the tap-vs-long-press split
       fireHeldMs: 0,
@@ -1382,6 +1736,7 @@
           baseX: baseX, baseY: baseY,
           x: baseX, y: baseY,
           alive: true, diving: false,
+          launchIn: 0, launchTotal: 0, sortieId: null, // >0 while staged for a sortie but not yet dropped - see updatePendingLaunches()
           age: 0, phase: Math.random() * Math.PI * 2,
           spawnX: baseX,
           type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
@@ -1407,12 +1762,108 @@
   };
 
   MainScene.prototype.diveInterval = function () {
-    var t = Math.min(this.state.difficulty.elapsed / DIVE_RAMP_SECONDS, 1);
-    return DIVE_INTERVAL_START + (DIVE_INTERVAL_MIN - DIVE_INTERVAL_START) * t;
+    var t = Math.min(this.state.difficulty.elapsed / TUNING.diveRampSeconds, 1);
+    return TUNING.diveIntervalStart + (TUNING.diveIntervalMin - TUNING.diveIntervalStart) * t;
   };
 
-  MainScene.prototype.diveWaveSize = function () {
-    return this.state.difficulty.elapsed > DIVE_TWO_AT_ONCE_AFTER ? 2 : 1;
+  // How fast divers fall, as a multiplier ramped over the same window as
+  // the dive interval. Deliberately a narrow band - the escalation this
+  // game wants comes from the pattern book getting richer, not from
+  // everything eventually moving too fast to read.
+  MainScene.prototype.diverSpeedScale = function () {
+    var t = Math.min(this.state.difficulty.elapsed / TUNING.diveRampSeconds, 1);
+    return TUNING.diverSpeedStart + (TUNING.diverSpeedMax - TUNING.diverSpeedStart) * t;
+  };
+
+  // Highest tier whose unlock time has passed. Tiers only ever ADD to the
+  // bag, so this is an index into "how deep into the book we are", not a
+  // difficulty mode that swaps one set of patterns for another.
+  MainScene.prototype.sortieTier = function () {
+    var elapsed = this.state.difficulty.elapsed;
+    var tier = 0;
+    for (var i = 0; i < TUNING.tierUnlock.length; i++) {
+      if (elapsed >= TUNING.tierUnlock[i]) tier = i;
+    }
+    return tier;
+  };
+
+  MainScene.prototype.unlockedPatterns = function () {
+    var tier = this.sortieTier();
+    return SORTIE_PATTERNS.filter(function (p) {
+      return p.tier <= tier && TUNING.enabled[p.id];
+    });
+  };
+
+  // Refills and reshuffles the bag from whatever is unlocked right now.
+  // Called when the bag runs dry (and whenever the unlocked set changes, so
+  // a freshly unlocked tier doesn't have to wait out the old bag).
+  MainScene.prototype.refillSortieBag = function () {
+    var ids = this.unlockedPatterns().map(function (p) { return p.id; });
+    for (var i = ids.length - 1; i > 0; i--) { // Fisher-Yates
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = ids[i]; ids[i] = ids[j]; ids[j] = tmp;
+    }
+    this.state.sortieBag = ids;
+    this.state.sortieBagTier = this.sortieTier();
+  };
+
+  // Draws pattern ids from the bag until one of them can actually stage a
+  // sortie with the slots currently idle. A pattern that can't (a "wall"
+  // with three ships left) is consumed and skipped rather than retried, so
+  // a thinning formation quietly degrades toward the simple shapes instead
+  // of stalling. Returns { pattern, members } or null.
+  MainScene.prototype.drawSortie = function (idle) {
+    var state = this.state;
+    var ctx = { idle: idle };
+    var attempts = 0;
+    var maxAttempts = SORTIE_PATTERNS.length * 2 + 2;
+    // A tier that unlocked since the bag was filled reshuffles it now, so
+    // new patterns show up as soon as they're earned rather than waiting
+    // out the remainder of an old bag.
+    if (state.sortieBagTier !== this.sortieTier()) this.refillSortieBag();
+    while (attempts++ < maxAttempts) {
+      if (!state.sortieBag || !state.sortieBag.length) this.refillSortieBag();
+      if (!state.sortieBag.length) return null; // every pattern disabled in the panel
+      var id = state.sortieBag.shift();
+      var pattern = SORTIE_PATTERNS.filter(function (p) { return p.id === id; })[0];
+      if (!pattern || !TUNING.enabled[pattern.id] || idle.length < pattern.min) continue;
+      var members = pattern.select(ctx);
+      if (members && members.length) return { pattern: pattern, members: members };
+    }
+    return null;
+  };
+
+  // Stages one sortie: every member gets a launch delay rather than
+  // dropping on the spot, which is what turns a group into choreography.
+  // The shared telegraphLead means even the FIRST member flashes in
+  // formation before it commits, so a sortie is always something you can
+  // read and react to rather than something that just appears.
+  MainScene.prototype.launchSortie = function (sortie) {
+    var lead = TUNING.telegraphLead;
+    var stagger = sortie.pattern.stagger * TUNING.staggerScale;
+    sortie.members.forEach(function (slot, i) {
+      slot.launchIn = lead + stagger * i;
+      slot.launchTotal = slot.launchIn; // kept so the telegraph can pulse harder as the drop approaches
+      slot.sortieId = sortie.pattern.id;
+    });
+    this.state.lastSortie = { id: sortie.pattern.id, size: sortie.members.length, at: this.state.difficulty.elapsed };
+  };
+
+  // Stages one named pattern on demand, bypassing both the bag and the
+  // timer - the control panel's "fire" buttons, and the hook the sortie
+  // tests drive so they can assert one shape at a time deterministically
+  // instead of waiting for a draw to happen to produce it.
+  MainScene.prototype.forceSortie = function (id) {
+    var state = this.state;
+    var pattern = SORTIE_PATTERNS.filter(function (p) { return p.id === id; })[0];
+    if (!pattern) return null;
+    var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; });
+    if (idle.length < pattern.min) return null;
+    var members = pattern.select({ idle: idle });
+    if (!members || !members.length) return null;
+    this.launchSortie({ pattern: pattern, members: members });
+    state.diveTimer = this.diveInterval() * pattern.cooldown * TUNING.cooldownScale;
+    return { id: pattern.id, size: members.length };
   };
 
   MainScene.prototype.tryTriggerDive = function (dt) {
@@ -1420,20 +1871,55 @@
     if (state.waveClearTimer > 0) return; // formation's empty, waiting for the next wave
     state.diveTimer -= dt;
     if (state.diveTimer > 0) return;
-    state.diveTimer = this.diveInterval();
 
-    var idle = state.formation.filter(function (s) { return s.alive && !s.diving; });
-    if (idle.length === 0) return;
-    var count = Math.min(this.diveWaveSize(), idle.length);
-    for (var i = 0; i < count; i++) {
-      var pick = idle.splice(Math.floor(Math.random() * idle.length), 1)[0];
-      pick.diving = true;
-      pick.age = 0;
-      pick.spawnX = pick.x; // dive formulas anchor to wherever it was (mid-bob) when it broke formation
-      pick.phase = Math.random() * Math.PI * 2;
-      pick.diveTargetX = state.ship.x; // swoop curves toward this fixed point, not the ship's live position
-    }
+    // A slot already counting down to its own launch is spoken for - it
+    // must not be picked into a second sortie on top of the first.
+    var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; });
+    if (idle.length === 0) { state.diveTimer = this.diveInterval(); return; }
+
+    var sortie = this.drawSortie(idle);
+    if (!sortie) { state.diveTimer = this.diveInterval(); return; }
+    this.launchSortie(sortie);
+
+    // The sortie's own cooldown buys rest proportional to what it just
+    // threw - the whole reason a four-ship wall doesn't get followed a
+    // beat later by another one.
+    state.diveTimer = this.diveInterval() * sortie.pattern.cooldown * TUNING.cooldownScale;
   };
+
+  // Counts down staged launches and flips them into real dives. Runs before
+  // updateDivers() so a slot whose timer expires this frame starts moving
+  // this frame. The dive's anchors (break-off x, target x) are captured
+  // HERE, at launch, not when the sortie was staged - so a late member of a
+  // staggered sortie aims at where the ship is when IT drops, which is what
+  // makes a cascade feel like it's chasing you rather than replaying a
+  // decision made a second ago.
+  function updatePendingLaunches(state, dt) {
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      if (!slot.alive || slot.diving || !slot.launchIn) continue;
+      slot.launchIn -= dt;
+      if (slot.launchIn > 0) {
+        if (TUNING.telegraph) {
+          // Pulses faster and wider the closer the drop gets, so "about to
+          // go" reads differently from "just got picked".
+          var progress = 1 - slot.launchIn / (slot.launchTotal || 1);
+          var pulse = Math.sin(state.clock * (14 + 16 * progress)) * 0.5 + 0.5;
+          slot.sprite.setScale(1 + pulse * (0.10 + 0.16 * progress));
+          slot.sprite.alpha = 0.75 + 0.25 * pulse;
+        }
+        continue;
+      }
+      slot.launchIn = 0;
+      slot.sprite.setScale(1);
+      slot.sprite.alpha = 1;
+      slot.diving = true;
+      slot.age = 0;
+      slot.spawnX = slot.x; // dive formulas anchor to wherever it was (mid-bob) when it broke formation
+      slot.phase = Math.random() * Math.PI * 2;
+      slot.diveTargetX = state.ship.x; // swoop curves toward this fixed point, not the ship's live position
+    }
+  }
 
   function updateIdleBob(state) {
     state.formation.forEach(function (slot) {
@@ -1447,10 +1933,10 @@
 
   // Same three dive-pattern formulas as earlier prototypes, just anchored
   // to a formation slot's break-off point instead of an off-screen spawn.
-  function updateDiver(slot, dt, shipX) {
+  function updateDiver(slot, dt, shipX, speedScale) {
     slot.age += dt;
     var cfg = ENEMY_TYPES[slot.type];
-    slot.y += cfg.speed * dt;
+    slot.y += cfg.speed * speedScale * dt;
 
     if (slot.type === 'straight') {
       // A light, constant pull toward the ship's current x - reads as a
@@ -1477,11 +1963,11 @@
     if (slot.type === 'zigzag') slot.sprite.rotation = Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * 0.4;
   }
 
-  function updateDivers(state, dt) {
+  function updateDivers(state, dt, speedScale) {
     for (var i = 0; i < state.formation.length; i++) {
       var slot = state.formation[i];
       if (!slot.alive || !slot.diving) continue;
-      updateDiver(slot, dt, state.ship.x);
+      updateDiver(slot, dt, state.ship.x, speedScale);
       if (slot.y > ENEMY_DESPAWN_Y) {
         slot.sprite.destroy();
         slot.alive = false;
@@ -1688,13 +2174,22 @@
   function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
   function isFireKey(code) { return code === 'Space' || code === 'ArrowUp' || code === 'KeyW'; }
 
+  // The tuning lab (further down) covers the canvas and steals the
+  // keyboard while it's open: its sliders answer to the arrow keys and its
+  // buttons to space, which are exactly the ship's controls. Rather than
+  // sniffing at the event target one widget at a time, ship input is simply
+  // off for as long as the panel is up - you're tuning, not flying.
+  var labOpen = false;
+
   document.addEventListener('keydown', function (e) {
+    if (labOpen) return;
     if (isFireKey(e.code)) e.preventDefault();
     if (isLeftKey(e.code)) { kbLeft = true; composeInput(); }
     else if (isRightKey(e.code)) { kbRight = true; composeInput(); }
     else if (isFireKey(e.code)) { kbFire = true; composeInput(); }
   });
   document.addEventListener('keyup', function (e) {
+    if (labOpen) return;
     if (isLeftKey(e.code)) { kbLeft = false; composeInput(); }
     else if (isRightKey(e.code)) { kbRight = false; composeInput(); }
     else if (isFireKey(e.code)) { kbFire = false; composeInput(); }
@@ -2976,8 +3471,11 @@
     state.lives = 3;
     state.score = 0;
     state.wave = 1;
-    state.diveTimer = DIVE_INTERVAL_START;
+    state.diveTimer = TUNING.diveIntervalStart;
     state.waveClearTimer = 0;
+    state.sortieBag = []; // a fresh run starts the book over rather than resuming mid-bag
+    state.sortieBagTier = -1;
+    state.lastSortie = null;
     state.fireHeld = false;
     state.fireHeldMs = 0;
     state.nextPowerupTickMs = FIRE_LONG_PRESS_MS;
@@ -3007,8 +3505,20 @@
   };
 
   MainScene.prototype.exposeDebugHooks = function () {
+    var self = this;
     window.__headOnDebugState = this.state;
-    window.__headOnDebug = { scene: this };
+    window.__headOnDebug = {
+      scene: this,
+      // Advances the staging clock by an exact dt without waiting on a real
+      // frame. Phaser clamps dt per frame in a throttled headless page, so
+      // wall-clock waiting can't pin an exact countdown - the sortie tests
+      // step this instead, then prove the stepped model against one
+      // real-time run at the end.
+      step: function (dt) {
+        self.state.clock += dt;
+        updatePendingLaunches(self.state, dt);
+      }
+    };
   };
 
   // ---- Game loop ------------------------------------------------------
@@ -3028,7 +3538,8 @@
       updateShip(state, dt);
       updateBullets(state, dt);
       updateIdleBob(state);
-      updateDivers(state, dt);
+      updatePendingLaunches(state, dt);
+      updateDivers(state, dt, this.diverSpeedScale());
       this.updateFiring(dt);
       this.tryTriggerDive(dt);
       this.updateColorBars(dt);
@@ -3075,6 +3586,215 @@
     var resetBestBtn = document.getElementById('resetBestBtn');
     overlayRestartBtn.addEventListener('click', function () { if (mainScene) mainScene.resetGame(); });
     resetBestBtn.addEventListener('click', function () { if (mainScene) mainScene.resetBest(); });
+  })();
+
+  // ---- Hidden sortie lab ------------------------------------------------
+  // A live control panel over TUNING, for feeling out attack-pattern
+  // pacing by hand instead of guessing at constants and reloading. Every
+  // row is generated from the tables above, so the panel can't drift out of
+  // sync with the game. Changes apply on the spot and persist per browser.
+  (function buildLab() {
+    var lab = document.getElementById('lab');
+    var readout = document.getElementById('labReadout');
+    var syncers = []; // each pulls one widget back into line with TUNING
+
+    function fmt(v, step) { return step < 1 ? v.toFixed(2) : String(Math.round(v)); }
+
+    // get/set are optional: a knob that isn't a plain top-level TUNING key
+    // (the tier unlock times live in an array) supplies its own pair.
+    function addSlider(spec) {
+      var row = document.createElement('div');
+      row.className = 'lab-row';
+      var label = document.createElement('label');
+      label.textContent = spec.label;
+      var input = document.createElement('input');
+      input.type = 'range';
+      input.min = spec.min;
+      input.max = spec.max;
+      input.step = spec.step;
+      var val = document.createElement('span');
+      val.className = 'lab-val';
+
+      function read() { return spec.get ? spec.get() : TUNING[spec.key]; }
+      function show() { val.textContent = fmt(read(), spec.step) + spec.unit; }
+      input.addEventListener('input', function () {
+        var v = parseFloat(input.value);
+        if (spec.set) spec.set(v); else TUNING[spec.key] = v;
+        show();
+        saveTuning();
+        if (spec.rebag && mainScene) mainScene.refillSortieBag();
+      });
+
+      row.appendChild(label);
+      row.appendChild(input);
+      row.appendChild(val);
+      document.getElementById(spec.section).appendChild(row);
+      syncers.push(function () { input.value = read(); show(); });
+    }
+
+    function addCheckbox(sectionId, labelText, get, set) {
+      var row = document.createElement('div');
+      row.className = 'lab-row';
+      var label = document.createElement('label');
+      label.textContent = labelText;
+      var input = document.createElement('input');
+      input.type = 'checkbox';
+      input.addEventListener('change', function () { set(input.checked); saveTuning(); });
+      row.appendChild(label);
+      row.appendChild(input);
+      document.getElementById(sectionId).appendChild(row);
+      syncers.push(function () { input.checked = !!get(); });
+    }
+
+    [
+      { section: 'labRhythm', key: 'diveIntervalStart', label: 'First interval', min: 0.4, max: 4, step: 0.05, unit: 's' },
+      { section: 'labRhythm', key: 'diveIntervalMin', label: 'Fastest interval', min: 0.2, max: 3, step: 0.05, unit: 's' },
+      { section: 'labRhythm', key: 'diveRampSeconds', label: 'Ramp length', min: 10, max: 240, step: 5, unit: 's' },
+      { section: 'labRhythm', key: 'cooldownScale', label: 'Rest after sortie', min: 0.3, max: 2.5, step: 0.05, unit: '×' },
+      { section: 'labRhythm', key: 'staggerScale', label: 'Stagger spacing', min: 0, max: 2.5, step: 0.05, unit: '×' },
+      { section: 'labSpeed', key: 'diverSpeedStart', label: 'Speed at start', min: 0.6, max: 1.6, step: 0.01, unit: '×' },
+      { section: 'labSpeed', key: 'diverSpeedMax', label: 'Speed when ramped', min: 0.6, max: 2, step: 0.01, unit: '×' },
+      { section: 'labTelegraph', key: 'telegraphLead', label: 'Warning time', min: 0, max: 1.2, step: 0.05, unit: 's' }
+    ].forEach(addSlider);
+
+    addCheckbox('labTelegraph', 'Flash before drop',
+      function () { return TUNING.telegraph; },
+      function (v) { TUNING.telegraph = v; });
+
+    // Tier 0 is always on from the first second, so it has no slider -
+    // only the three unlocks after it are movable.
+    TUNING.tierUnlock.forEach(function (_, i) {
+      if (i === 0) return;
+      addSlider({
+        section: 'labTiers', label: 'Tier ' + i + ' at', min: 0, max: 180, step: 5, unit: 's',
+        get: function () { return TUNING.tierUnlock[i]; },
+        set: function (v) { TUNING.tierUnlock[i] = v; },
+        rebag: true // moving an unlock can change what's legal right now
+      });
+    });
+
+    SORTIE_PATTERNS.forEach(function (p) {
+      var row = document.createElement('div');
+      row.className = 'lab-pattern';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.addEventListener('change', function () {
+        TUNING.enabled[p.id] = cb.checked;
+        saveTuning();
+        // The bag was shuffled from the old book; it holds ids that are no
+        // longer legal (or is missing one just re-enabled), so redeal it.
+        if (mainScene) mainScene.refillSortieBag();
+      });
+
+      var name = document.createElement('span');
+      name.className = 'lab-name';
+      name.textContent = p.label;
+
+      var tier = document.createElement('span');
+      tier.className = 'lab-tier';
+      tier.textContent = 'T' + p.tier + ' · needs ' + p.min;
+
+      // Stages this one shape immediately, bypassing both bag and timer -
+      // the whole point of the panel is watching a pattern on demand
+      // instead of waiting for the draw to happen to produce it.
+      var fire = document.createElement('button');
+      fire.type = 'button';
+      fire.className = 'lab-btn';
+      fire.textContent = 'Fire';
+      fire.addEventListener('click', function () {
+        if (!mainScene) return;
+        if (mainScene.forceSortie(p.id)) return;
+        fire.textContent = 'too few'; // not enough idle ships up there for this shape
+        setTimeout(function () { fire.textContent = 'Fire'; }, 800);
+      });
+
+      row.appendChild(cb);
+      row.appendChild(name);
+      row.appendChild(tier);
+      row.appendChild(fire);
+      document.getElementById('labPatterns').appendChild(row);
+      syncers.push(function () { cb.checked = !!TUNING.enabled[p.id]; });
+    });
+
+    function syncAll() { syncers.forEach(function (fn) { fn(); }); }
+
+    function addLine(key, value) {
+      var line = document.createElement('div');
+      var k = document.createElement('span');
+      k.className = 'lab-k';
+      k.textContent = key;
+      var b = document.createElement('b');
+      b.textContent = value;
+      line.appendChild(k);
+      line.appendChild(b);
+      readout.appendChild(line);
+    }
+
+    function renderReadout() {
+      if (!labOpen || !mainScene) return;
+      var state = mainScene.state;
+      var last = state.lastSortie;
+      var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; }).length;
+      readout.textContent = '';
+      addLine('elapsed', state.difficulty.elapsed.toFixed(1) + 's');
+      addLine('tier', mainScene.sortieTier() + ' of ' + (TUNING.tierUnlock.length - 1));
+      addLine('interval', mainScene.diveInterval().toFixed(2) + 's, next in ' + Math.max(0, state.diveTimer).toFixed(2) + 's');
+      addLine('speed', mainScene.diverSpeedScale().toFixed(2) + '×');
+      addLine('idle', idle + ' of ' + state.formation.filter(function (s) { return s.alive; }).length + ' alive');
+      addLine('bag', state.sortieBag.length ? state.sortieBag.join(', ') : '(empty — reshuffles on next draw)');
+      addLine('last', last ? last.id + ' ×' + last.size + ' at ' + last.at.toFixed(1) + 's' : '(none yet)');
+    }
+    setInterval(renderReadout, 150); // cheap, and returns immediately while closed
+
+    function setLabOpen(open) {
+      labOpen = open;
+      lab.classList.toggle('visible', open);
+      lab.setAttribute('aria-hidden', open ? 'false' : 'true');
+      // Whatever was held when the panel came up would otherwise stay held
+      // behind it, leaving the ship strafing into a wall while you tune.
+      if (open) { forceReleaseAllInput(); syncAll(); renderReadout(); }
+    }
+
+    document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
+    document.getElementById('labResetBtn').addEventListener('click', function () {
+      var defaults = sortieDefaultTuning();
+      Object.keys(defaults).forEach(function (k) { TUNING[k] = defaults[k]; });
+      saveTuning();
+      syncAll();
+      renderReadout();
+      if (mainScene) mainScene.refillSortieBag();
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.code === 'Backquote') { e.preventDefault(); setLabOpen(!labOpen); }
+      else if (e.code === 'Escape' && labOpen) setLabOpen(false);
+    });
+
+    // The way in on a phone, which has no backquote key: three quick taps
+    // on the HUD's "Best" readout - a spot nothing else reacts to, and one
+    // you won't hit by accident mid-game since both thumbs live down on the
+    // control bar.
+    var taps = 0, tapTimer = null;
+    document.getElementById('bestTap').addEventListener('pointerup', function () {
+      taps++;
+      clearTimeout(tapTimer);
+      if (taps >= 3) { taps = 0; setLabOpen(true); return; }
+      tapTimer = setTimeout(function () { taps = 0; }, 600);
+    });
+
+    window.__headOnTuning = {
+      tuning: TUNING,
+      defaults: sortieDefaultTuning,
+      save: saveTuning,
+      storageKey: TUNING_KEY,
+      patterns: SORTIE_PATTERNS.map(function (p) {
+        return { id: p.id, label: p.label, tier: p.tier, min: p.min, stagger: p.stagger, cooldown: p.cooldown };
+      }),
+      setLabOpen: setLabOpen,
+      isLabOpen: function () { return labOpen; },
+      sync: syncAll
+    };
   })();
 
   // ---- Boot ------------------------------------------------------
