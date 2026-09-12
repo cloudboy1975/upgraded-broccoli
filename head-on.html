@@ -1807,28 +1807,55 @@
     this.state.sortieBagTier = this.sortieTier();
   };
 
-  // Draws pattern ids from the bag until one of them can actually stage a
-  // sortie with the slots currently idle. A pattern that can't (a "wall"
-  // with three ships left) is consumed and skipped rather than retried, so
-  // a thinning formation quietly degrades toward the simple shapes instead
-  // of stalling. Returns { pattern, members } or null.
+  // Takes the first entry in the bag that can actually stage a sortie with
+  // the slots currently idle, and removes ONLY that one.
+  //
+  // A shape that can't go right now (a "wall" with three ships left, a
+  // "pincer" with nobody out on the flanks) stays in the bag, in place, and
+  // is reconsidered on the next draw. It must not be consumed: the
+  // formation is thin for most of every wave, and the shapes that need
+  // bodies are exactly the interesting ones, so discarding them here
+  // quietly burned them off without their ever being seen - measured at a
+  // 40-50% burn rate on echelon, vee and cascade. Skipping in place instead
+  // means they simply wait for the top of the next wave, when the formation
+  // can support them again.
   MainScene.prototype.drawSortie = function (idle) {
     var state = this.state;
     var ctx = { idle: idle };
-    var attempts = 0;
-    var maxAttempts = SORTIE_PATTERNS.length * 2 + 2;
     // A tier that unlocked since the bag was filled reshuffles it now, so
     // new patterns show up as soon as they're earned rather than waiting
     // out the remainder of an old bag.
     if (state.sortieBagTier !== this.sortieTier()) this.refillSortieBag();
-    while (attempts++ < maxAttempts) {
-      if (!state.sortieBag || !state.sortieBag.length) this.refillSortieBag();
-      if (!state.sortieBag.length) return null; // every pattern disabled in the panel
-      var id = state.sortieBag.shift();
+    if (!state.sortieBag || !state.sortieBag.length) this.refillSortieBag();
+
+    var found = this.takeStageableFromBag(idle, ctx);
+    if (found) return found;
+
+    // Nothing left in the bag fits this formation - it's down to the big
+    // shapes and there aren't the bodies for them. Start a fresh cycle
+    // rather than stalling the dive timer; the lone diver's min of 1 means
+    // this always finds something while a single ship is still idle.
+    this.refillSortieBag();
+    return this.takeStageableFromBag(idle, ctx);
+  };
+
+  MainScene.prototype.takeStageableFromBag = function (idle, ctx) {
+    var bag = this.state.sortieBag;
+    for (var i = 0; i < bag.length; i++) {
+      var id = bag[i];
       var pattern = SORTIE_PATTERNS.filter(function (p) { return p.id === id; })[0];
-      if (!pattern || !TUNING.enabled[pattern.id] || idle.length < pattern.min) continue;
+      // Disabled in the panel is checked here so a stale id can never be
+      // dealt, but it isn't pruned from the bag: this scan stops at the
+      // first shape it can stage, so it only ever sees the front of the
+      // bag, and pruning from here would clear some stale ids and miss
+      // others. Turning a pattern off in the panel refills the bag outright
+      // - that is what actually takes it out of circulation.
+      if (!pattern || !TUNING.enabled[pattern.id]) continue;
+      if (idle.length < pattern.min) continue;
       var members = pattern.select(ctx);
-      if (members && members.length) return { pattern: pattern, members: members };
+      if (!members || !members.length) continue;
+      bag.splice(i, 1);
+      return { pattern: pattern, members: members };
     }
     return null;
   };
