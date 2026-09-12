@@ -434,6 +434,10 @@
         <div id="labTelegraph"></div>
       </div>
       <div class="lab-section">
+        <h3>Enemy fire</h3>
+        <div id="labFire"></div>
+      </div>
+      <div class="lab-section">
         <h3>Tier unlocks</h3>
         <div id="labTiers"></div>
       </div>
@@ -475,6 +479,13 @@
   var BULLET_RADIUS = 3;
   var BULLET_SPEED = 420;
   var BULLET_LIFETIME = 1.2; // seconds
+
+  // A diving enemy's own return fire - a slow drip, not a barrage, so a
+  // sortie reads as something to dogfight through rather than a wall to
+  // outrun. Only diving ships fire (idle formation stays out of reach, same
+  // rule shipVsDivers() already uses); see fireEnemyBullet()/TUNING.
+  var ENEMY_BULLET_RADIUS = 3;
+  var ENEMY_BULLET_LIFETIME = 3; // seconds - generous; the speed and screen bounds retire it long before this matters
 
   var RESPAWN_INVULN_MS = 1500;
   var MAX_DT = 0.05;
@@ -674,7 +685,16 @@
       telegraph: true,    // draw the pre-launch flash (purely visual - the lead time below applies either way)
       telegraphLead: SORTIE_TELEGRAPH_LEAD,
       tierUnlock: SORTIE_TIER_UNLOCK_SECONDS.slice(),
-      enabled: enabled
+      enabled: enabled,
+      // Only a DIVING ship fires - see fireEnemyBullet(). Deliberately a
+      // drip: slow, low-lead shots meant to make dodging a sortie feel like
+      // a running dogfight rather than a one-way shooting gallery, not to
+      // threaten on their own the way a diver's own body does.
+      enemyFireEnabled: true,
+      enemyFireInterval: 1.6, // average seconds between shots, per diving ship
+      enemyFireJitter: 0.4,   // +/- this fraction of the interval, so a sortie's shots don't all land on the same beat
+      enemyBulletSpeed: 150,  // px/sec - well under the player's own BULLET_SPEED
+      enemyFireAim: 0.35      // 0 = straight down, 1 = aimed at the ship's exact position at the moment of firing (frozen, not homing)
     };
   }
 
@@ -1054,6 +1074,7 @@
 
   var COLOR_SHIP = 0xe2e8f0;
   var COLOR_BULLET = 0x22c55e;
+  var COLOR_ENEMY_BULLET = 0xff3b3b; // a clear "hostile" red - distinct from every friendly color already in play
   var COLOR_STAR = 0x94a3b8;
   var COLOR_BG = 0x1e293b;
 
@@ -1224,6 +1245,16 @@
     bakeTexture(self, 'bulletTex', BULLET_RADIUS * 2, BULLET_RADIUS * 2, function (g) {
       g.fillStyle(COLOR_BULLET, 1);
       g.fillCircle(BULLET_RADIUS, BULLET_RADIUS, BULLET_RADIUS);
+    });
+    // Enemy bullet: same idea, hostile red, with a soft low-alpha halo (the
+    // glow+core idiom used everywhere else in this file) so it still reads
+    // against a busy screen at a size this small.
+    bakeTexture(self, 'enemyBulletTex', ENEMY_BULLET_RADIUS * 4, ENEMY_BULLET_RADIUS * 4, function (g) {
+      var cx = ENEMY_BULLET_RADIUS * 2, cy = ENEMY_BULLET_RADIUS * 2;
+      g.fillStyle(COLOR_ENEMY_BULLET, 0.35);
+      g.fillCircle(cx, cy, ENEMY_BULLET_RADIUS * 2);
+      g.fillStyle(COLOR_ENEMY_BULLET, 1);
+      g.fillCircle(cx, cy, ENEMY_BULLET_RADIUS);
     });
     // Core, orbiting look: a small glowing ember - soft outer glow, a
     // solid orange body, and a hot near-white center. CORE_GLOW_RADIUS is
@@ -1446,6 +1477,7 @@
         radius: SHIP_RADIUS
       },
       bullets: [],
+      enemyBullets: [], // return fire from diving ships - see fireEnemyBullet()/updateEnemyBullets()
       formation: [], // grid slots - see spawnFormation()
       core: null, // the orbiting/released red dot bonus - see spawnFormation()/updateCore()
       starburstFx: null, // visual-only expanding ring when the core is shot directly
@@ -1737,6 +1769,13 @@
           x: baseX, y: baseY,
           alive: true, diving: false,
           launchIn: 0, launchTotal: 0, sortieId: null, // >0 while staged for a sortie but not yet dropped - see updatePendingLaunches()
+          // A non-zero default so a slot never opens fire the instant it
+          // starts diving - only the real drop path (updatePendingLaunches)
+          // re-arms this at the actual moment of the dive, but an idle slot
+          // still carries a sane value here for as long as it never dives at
+          // all, which matters whenever anything (a test, a future feature)
+          // flips diving straight to true without going through that path.
+          fireIn: randomEnemyFireInterval() * 0.5,
           age: 0, phase: Math.random() * Math.PI * 2,
           spawnX: baseX,
           type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
@@ -1945,6 +1984,7 @@
       slot.spawnX = slot.x; // dive formulas anchor to wherever it was (mid-bob) when it broke formation
       slot.phase = Math.random() * Math.PI * 2;
       slot.diveTargetX = state.ship.x; // swoop curves toward this fixed point, not the ship's live position
+      slot.fireIn = randomEnemyFireInterval() * 0.5; // first shot lands sooner than a full interval, so the drip starts as soon as it commits
     }
   }
 
@@ -1990,11 +2030,29 @@
     if (slot.type === 'zigzag') slot.sprite.rotation = Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * 0.4;
   }
 
-  function updateDivers(state, dt, speedScale) {
+  // Draws one shot interval, with jitter, from the live TUNING - re-read on
+  // every call (not baked into the slot) so retuning the panel mid-run
+  // changes the very next shot, not just future dives.
+  function randomEnemyFireInterval() {
+    var base = TUNING.enemyFireInterval;
+    var jitter = base * TUNING.enemyFireJitter;
+    return Math.max(0.2, base + (Math.random() * 2 - 1) * jitter);
+  }
+
+  function updateDivers(state, dt, speedScale, scene) {
     for (var i = 0; i < state.formation.length; i++) {
       var slot = state.formation[i];
       if (!slot.alive || !slot.diving) continue;
       updateDiver(slot, dt, state.ship.x, speedScale);
+      // The timer always runs and always resets on schedule, whether or
+      // not enemy fire is actually enabled right now - so flipping the
+      // panel's checkbox back on mid-dive resumes the same cadence instead
+      // of unloading a backlog of shots that piled up while it was off.
+      slot.fireIn -= dt;
+      if (slot.fireIn <= 0) {
+        slot.fireIn = randomEnemyFireInterval();
+        if (TUNING.enemyFireEnabled) scene.fireEnemyBullet(slot);
+      }
       if (slot.y > ENEMY_DESPAWN_Y) {
         slot.sprite.destroy();
         slot.alive = false;
@@ -2313,6 +2371,31 @@
     state.bullets.push(b);
   };
 
+  // One shot from a diving ship, aimed at wherever the ship IS right now
+  // and then frozen - a real threat to react to, not a homing missile.
+  // TUNING.enemyFireAim blends the direction between straight down (0) and
+  // a direct line to the ship (1); the speed itself never changes with aim,
+  // only which way it points.
+  MainScene.prototype.fireEnemyBullet = function (slot) {
+    var state = this.state;
+    var toShipX = state.ship.x - slot.x;
+    var toShipY = SHIP_Y - slot.y;
+    var toShipLen = Math.sqrt(toShipX * toShipX + toShipY * toShipY) || 1;
+    var aim = TUNING.enemyFireAim;
+    var dirX = (toShipX / toShipLen) * aim;
+    var dirY = (1 - aim) + (toShipY / toShipLen) * aim;
+    var dirLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+    var speed = TUNING.enemyBulletSpeed;
+    var b = {
+      x: slot.x, y: slot.y + slot.radius,
+      vx: (dirX / dirLen) * speed,
+      vy: (dirY / dirLen) * speed,
+      ttl: ENEMY_BULLET_LIFETIME
+    };
+    b.sprite = this.add.sprite(b.x, b.y, 'enemyBulletTex');
+    state.enemyBullets.push(b);
+  };
+
   // ---- Physics update ------------------------------------------------------
   function updateShip(state, dt) {
     var ship = state.ship;
@@ -2354,6 +2437,25 @@
         }
       }
       if (b.ttl <= 0 || b.y < -10) { destroyBulletSprites(b); state.bullets.splice(i, 1); }
+    }
+  }
+
+  // Enemy return fire: straight-line travel (a frozen velocity set once at
+  // the moment of firing, same "aim once" idiom as a swoop's dive target -
+  // it does not track the ship after that), retired by lifetime or by
+  // leaving the screen on any side (a high-aim shot can leave sideways).
+  function updateEnemyBullets(state, dt) {
+    for (var i = state.enemyBullets.length - 1; i >= 0; i--) {
+      var b = state.enemyBullets[i];
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.ttl -= dt;
+      b.sprite.x = b.x;
+      b.sprite.y = b.y;
+      if (b.ttl <= 0 || b.y > GAME_HEIGHT + 10 || b.x < -10 || b.x > GAME_WIDTH + 10) {
+        b.sprite.destroy();
+        state.enemyBullets.splice(i, 1);
+      }
     }
   }
 
@@ -2567,6 +2669,7 @@
   MainScene.prototype.handleShipHazards = function () {
     this.shipVsDivers();
     this.shipVsAttackingShards();
+    this.shipVsEnemyBullets();
     this.shipVsOrbitingCore();
     this.shipVsFlyingCore();
   };
@@ -2625,6 +2728,28 @@
       if (circleHit(shard.x, shard.y, state.ship.x, SHIP_Y, state.ship.radius + BRICK_SHARD_RADIUS)) {
         shard.sprite.destroy();
         state.brickShards.splice(i, 1);
+        this.shipHit();
+        return;
+      }
+    }
+  };
+
+  // A diving ship's own return fire. Same shield rule as every other
+  // hazard: a banked orb you haven't spent yet still blocks a shot aimed
+  // right at it.
+  MainScene.prototype.shipVsEnemyBullets = function () {
+    var state = this.state;
+    if (isInvulnerable(state)) return;
+    for (var i = 0; i < state.enemyBullets.length; i++) {
+      var b = state.enemyBullets[i];
+      if (this.shieldDotBlocks(b.x, b.y, ENEMY_BULLET_RADIUS)) {
+        b.sprite.destroy();
+        state.enemyBullets.splice(i, 1);
+        return;
+      }
+      if (circleHit(b.x, b.y, state.ship.x, SHIP_Y, state.ship.radius + ENEMY_BULLET_RADIUS)) {
+        b.sprite.destroy();
+        state.enemyBullets.splice(i, 1);
         this.shipHit();
         return;
       }
@@ -3430,6 +3555,9 @@
     // right as the game actually ends, so nothing hangs there.
     state.bullets.forEach(function (b) { destroyBulletSprites(b); });
     state.bullets = [];
+    // Same freeze risk applies to enemy fire in flight when the game ends.
+    state.enemyBullets.forEach(function (b) { b.sprite.destroy(); });
+    state.enemyBullets = [];
     // Same freeze risk applies to an active powerup bolt - more so, even:
     // a multi-color-banked bolt can run several seconds, so the odds of
     // one being mid-flight at the moment of death are real, not an edge
@@ -3461,6 +3589,8 @@
     var state = this.state;
     state.bullets.forEach(function (b) { destroyBulletSprites(b); });
     state.bullets = [];
+    state.enemyBullets.forEach(function (b) { b.sprite.destroy(); });
+    state.enemyBullets = [];
     if (state.core && state.core.sprite) state.core.sprite.destroy();
     state.core = null;
     if (state.starburstFx) state.starburstFx.gfx.destroy();
@@ -3564,9 +3694,10 @@
       // rather than resolving hits against half-stale ones.
       updateShip(state, dt);
       updateBullets(state, dt);
+      updateEnemyBullets(state, dt);
       updateIdleBob(state);
       updatePendingLaunches(state, dt);
-      updateDivers(state, dt, this.diverSpeedScale());
+      updateDivers(state, dt, this.diverSpeedScale(), this);
       this.updateFiring(dt);
       this.tryTriggerDive(dt);
       this.updateColorBars(dt);
@@ -3681,12 +3812,20 @@
       { section: 'labRhythm', key: 'staggerScale', label: 'Stagger spacing', min: 0, max: 2.5, step: 0.05, unit: '×' },
       { section: 'labSpeed', key: 'diverSpeedStart', label: 'Speed at start', min: 0.6, max: 1.6, step: 0.01, unit: '×' },
       { section: 'labSpeed', key: 'diverSpeedMax', label: 'Speed when ramped', min: 0.6, max: 2, step: 0.01, unit: '×' },
-      { section: 'labTelegraph', key: 'telegraphLead', label: 'Warning time', min: 0, max: 1.2, step: 0.05, unit: 's' }
+      { section: 'labTelegraph', key: 'telegraphLead', label: 'Warning time', min: 0, max: 1.2, step: 0.05, unit: 's' },
+      { section: 'labFire', key: 'enemyFireInterval', label: 'Shot interval', min: 0.4, max: 4, step: 0.1, unit: 's' },
+      { section: 'labFire', key: 'enemyFireJitter', label: 'Interval jitter', min: 0, max: 1, step: 0.05, unit: '×' },
+      { section: 'labFire', key: 'enemyBulletSpeed', label: 'Bullet speed', min: 60, max: 320, step: 5, unit: 'px/s' },
+      { section: 'labFire', key: 'enemyFireAim', label: 'Aim at ship', min: 0, max: 1, step: 0.05, unit: '' }
     ].forEach(addSlider);
 
     addCheckbox('labTelegraph', 'Flash before drop',
       function () { return TUNING.telegraph; },
       function (v) { TUNING.telegraph = v; });
+
+    addCheckbox('labFire', 'Divers return fire',
+      function () { return TUNING.enemyFireEnabled; },
+      function (v) { TUNING.enemyFireEnabled = v; });
 
     // Tier 0 is always on from the first second, so it has no slider -
     // only the three unlocks after it are movable.
@@ -3769,6 +3908,7 @@
       addLine('interval', mainScene.diveInterval().toFixed(2) + 's, next in ' + Math.max(0, state.diveTimer).toFixed(2) + 's');
       addLine('speed', mainScene.diverSpeedScale().toFixed(2) + '×');
       addLine('idle', idle + ' of ' + state.formation.filter(function (s) { return s.alive; }).length + ' alive');
+      addLine('fire', state.enemyBullets.length + ' in flight');
       addLine('bag', state.sortieBag.length ? state.sortieBag.join(', ') : '(empty — reshuffles on next draw)');
       addLine('last', last ? last.id + ' ×' + last.size + ' at ' + last.at.toFixed(1) + 's' : '(none yet)');
     }
