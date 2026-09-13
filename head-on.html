@@ -480,6 +480,15 @@
         <div id="labDiag"></div>
       </div>
       <div class="lab-section">
+        <h3>Recording</h3>
+        <div id="labTrace"></div>
+        <div class="lab-readout" id="labTraceStatus"></div>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide" id="labTraceClearBtn">Clear</button>
+          <button type="button" class="lab-btn wide primary" id="labTraceDownloadBtn">Download trace</button>
+        </div>
+      </div>
+      <div class="lab-section">
         <h3>Live</h3>
         <div class="lab-readout" id="labReadout"></div>
       </div>
@@ -760,8 +769,81 @@
   }
   function saveTuning() {
     try { localStorage.setItem(TUNING_KEY, JSON.stringify(TUNING)); } catch (e) {}
+    // A panel edit made mid-recording changes what every event AFTER this
+    // point means, so it has to land IN the trace, not just in localStorage
+    // - otherwise a downloaded trace would silently misreport which values
+    // were actually live when a later sortie or hit happened.
+    traceEvent('tuning', { tuning: JSON.parse(JSON.stringify(TUNING)) });
   }
   loadTuning();
+
+  // ---- Diagnostic trace recorder ----------------------------------------
+  // A structured, downloadable event log for comparing real play against
+  // the sortie/enemy-fire design intent - see the lab's Recording section.
+  // Off by default and never persisted (unlike every TUNING value) - it's a
+  // deliberate, session-scoped action, not a standing preference, and
+  // nobody wants it silently running forever after a stray reload.
+  //
+  // Events use their own monotonic clock (t, seconds since recording
+  // started) rather than state.difficulty.elapsed, which resets to 0 on
+  // every restart - a multi-life recording session needs one continuous
+  // timeline, not several overlapping ones. `run` still tags which
+  // life/attempt each event belongs to, and most events also carry the
+  // run's own `elapsed` where relevant (what tier/pattern timing actually
+  // keys off of).
+  var trace = {
+    recording: false,
+    sessionStartMs: 0,
+    runIndex: 0,
+    lastTier: -1,
+    nextSampleAt: 0,
+    events: []
+  };
+  var TRACE_SAMPLE_INTERVAL = 0.2; // seconds between position/input samples (5Hz) - dense enough to reconstruct dodging, not so dense the file balloons over a multi-minute session
+
+  function traceEvent(type, data) {
+    if (!trace.recording) return;
+    var e = { t: +((performance.now() - trace.sessionStartMs) / 1000).toFixed(3), run: trace.runIndex, type: type };
+    if (data) { for (var k in data) e[k] = data[k]; }
+    trace.events.push(e);
+  }
+
+  // Turning recording ON always starts fresh (clears any prior events) -
+  // the intended workflow is one deliberate arc per checkbox-on: play,
+  // download, hand it over. Turning it OFF just pauses; nothing is
+  // cleared, so a stray uncheck (or a deliberate pause) doesn't lose data,
+  // and Download still works right up until the next ON wipes the slate.
+  function setTraceRecording(on) {
+    trace.recording = on;
+    if (!on) return;
+    trace.sessionStartMs = performance.now();
+    trace.runIndex = 1;
+    trace.lastTier = -1;
+    trace.nextSampleAt = 0;
+    trace.events = [];
+    traceEvent('tuning', { tuning: JSON.parse(JSON.stringify(TUNING)) });
+    // Distinct from 'run_start' (which resetGame() logs on every actual
+    // fresh life, including the very next restart) - recording can start
+    // mid-life, so this captures exactly what was already in progress at
+    // the moment the checkbox was checked.
+    var s = mainScene ? mainScene.state : null;
+    traceEvent('recording_start', s ? { lives: s.lives, score: s.score, wave: s.wave, elapsed: s.difficulty.elapsed } : {});
+  }
+
+  function clearTrace() { trace.events = []; }
+
+  function downloadTrace() {
+    var payload = { meta: { exportedAt: new Date().toISOString() }, events: trace.events };
+    var blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'headon-trace-' + Date.now() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
 
   var ENEMY_DESPAWN_Y = GAME_HEIGHT - 8; // a diver past this has flown by uncaught - gone, no penalty
 
@@ -1943,7 +2025,7 @@
   // The shared telegraphLead means even the FIRST member flashes in
   // formation before it commits, so a sortie is always something you can
   // read and react to rather than something that just appears.
-  MainScene.prototype.launchSortie = function (sortie) {
+  MainScene.prototype.launchSortie = function (sortie, forced) {
     var lead = TUNING.telegraphLead;
     var stagger = sortie.pattern.stagger * TUNING.staggerScale;
     sortie.members.forEach(function (slot, i) {
@@ -1952,6 +2034,11 @@
       slot.sortieId = sortie.pattern.id;
     });
     this.state.lastSortie = { id: sortie.pattern.id, size: sortie.members.length, at: this.state.difficulty.elapsed };
+    // forced marks a sortie staged from the lab's own "Fire" buttons (or a
+    // test), not drawn by the natural bag/timer - worth keeping distinct in
+    // a trace, since deliberately poking a shape mid-session isn't the same
+    // signal as it coming up organically during real play.
+    traceEvent('sortie', { id: sortie.pattern.id, size: sortie.members.length, tier: this.sortieTier(), elapsed: this.state.difficulty.elapsed, forced: !!forced });
   };
 
   // Stages one named pattern on demand, bypassing both the bag and the
@@ -1966,7 +2053,7 @@
     if (idle.length < pattern.min) return null;
     var members = pattern.select({ idle: idle });
     if (!members || !members.length) return null;
-    this.launchSortie({ pattern: pattern, members: members });
+    this.launchSortie({ pattern: pattern, members: members }, true);
     state.diveTimer = this.diveInterval() * pattern.cooldown * TUNING.cooldownScale;
     return { id: pattern.id, size: members.length };
   };
@@ -2110,6 +2197,7 @@
       state.diveTimer = this.diveInterval();
       this.spawnFormation();
       state.waveClearTimer = 0;
+      traceEvent('wave_clear', { wave: state.wave, elapsed: state.difficulty.elapsed });
     }
   };
 
@@ -2744,7 +2832,7 @@
       }
       if (circleHit(diver.x, diver.y, state.ship.x, SHIP_Y, state.ship.radius + diver.radius)) {
         diver.sprite.destroy(); diver.alive = false;
-        this.shipHit();
+        this.shipHit('diver', { sortieId: diver.sortieId, diverType: diver.type });
         return;
       }
     }
@@ -2767,7 +2855,7 @@
       if (circleHit(shard.x, shard.y, state.ship.x, SHIP_Y, state.ship.radius + BRICK_SHARD_RADIUS)) {
         shard.sprite.destroy();
         state.brickShards.splice(i, 1);
-        this.shipHit();
+        this.shipHit('shard', { colorKey: shard.colorKey });
         return;
       }
     }
@@ -2789,7 +2877,7 @@
       if (circleHit(b.x, b.y, state.ship.x, SHIP_Y, state.ship.radius + ENEMY_BULLET_RADIUS)) {
         b.sprite.destroy();
         state.enemyBullets.splice(i, 1);
-        this.shipHit();
+        this.shipHit('enemy_fire');
         return;
       }
     }
@@ -2808,7 +2896,7 @@
     this.triggerStarburst(core.sprite.x, core.sprite.y);
     core.sprite.destroy();
     state.core = null;
-    this.shipHit();
+    this.shipHit('core_sacrifice');
   };
 
   // An already-released core is a real hazard, not just cover for enemies -
@@ -2823,7 +2911,7 @@
     if (!core || core.attached) return;
     if (!circleHit(core.x, core.y, state.ship.x, SHIP_Y, state.ship.radius + CORE_RADIUS)) return;
     this.consumeFlyingCore();
-    this.shipHit();
+    this.shipHit('flying_core');
   };
 
   // Flings the core off tangentially from its orbit at the moment of
@@ -3561,12 +3649,18 @@
     this.renderHud();
   };
 
-  MainScene.prototype.shipHit = function () {
+  MainScene.prototype.shipHit = function (cause, extra) {
     var state = this.state;
     this.clearPowerup(); // dying resets whatever orb colors were banked - no carrying progress through a death
     this.clearFirePower(); // and the ship's strip-earned fire power, same rule
     this.triggerShipBreak(state.ship.x, SHIP_Y); // placeholder death beat - see triggerShipBreak()
     state.lives--;
+    // Logged here, in the one place every hazard funnels through, rather
+    // than at each call site - cause/extra (e.g. which sortie a diver
+    // belonged to) is the only per-hazard detail, everything else is common.
+    var e = { cause: cause || 'unknown', livesLeft: state.lives, elapsed: state.difficulty.elapsed };
+    if (extra) { for (var k in extra) e[k] = extra[k]; }
+    traceEvent('hit', e);
     if (state.lives <= 0) {
       state.lives = 0;
       this.endGame();
@@ -3604,6 +3698,7 @@
     state.powerupBolts.forEach(function (bolt) { bolt.sprite.destroy(); });
     state.powerupBolts = [];
     state.phase = 'gameover';
+    traceEvent('game_over', { score: state.score, wave: state.wave, elapsed: state.difficulty.elapsed });
     document.getElementById('overlayScore').textContent = state.score;
     document.getElementById('overlayBest').textContent = state.highScore;
     document.getElementById('gameOverOverlay').classList.add('visible');
@@ -3661,6 +3756,36 @@
       activation + '\n' +
       lastLine + '\n' +
       fireLine;
+  };
+
+  // Logs a 'tier' event the frame a run's tier actually changes, not every
+  // frame - trace.lastTier starts at -1 (set on recording start and on
+  // every run_start), so tier 0 at t=0 is itself logged as a transition.
+  MainScene.prototype.updateTraceTier = function () {
+    if (!trace.recording) return;
+    var tier = this.sortieTier();
+    if (tier === trace.lastTier) return;
+    trace.lastTier = tier;
+    traceEvent('tier', { tier: tier, elapsed: this.state.difficulty.elapsed });
+  };
+
+  // A coarse position/input sample every TRACE_SAMPLE_INTERVAL - what
+  // reconstructs your actual dodging movement from the trace, not just the
+  // hit/miss outcomes.
+  MainScene.prototype.updateTraceSample = function () {
+    if (!trace.recording) return;
+    var now = (performance.now() - trace.sessionStartMs) / 1000;
+    if (now < trace.nextSampleAt) return;
+    trace.nextSampleAt = now + TRACE_SAMPLE_INTERVAL;
+    var state = this.state;
+    traceEvent('sample', {
+      elapsed: state.difficulty.elapsed,
+      shipX: Math.round(state.ship.x),
+      left: state.input.left, right: state.input.right, fire: state.input.fire,
+      fireBullets: state.enemyBullets.length,
+      idle: state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; }).length,
+      alive: state.formation.filter(function (s) { return s.alive; }).length
+    });
   };
 
   // ---- Reset / restart ------------------------------------------------------
@@ -3722,6 +3847,18 @@
 
     document.getElementById('gameOverOverlay').classList.remove('visible');
     this.renderHud();
+
+    // Every resetGame() is a fresh life - the very first boot-time call
+    // included, though trace.recording is always false that early since
+    // nothing has turned it on yet. run 1 is whatever was already in
+    // progress when recording started (see setTraceRecording()'s own
+    // 'recording_start'); this always increments first, so the first
+    // ACTUAL fresh life after that lands on run 2, not a second run 1.
+    if (trace.recording) {
+      trace.runIndex++;
+      trace.lastTier = -1; // a fresh run starts back at tier 0 - let the next frame's check log that transition, not carry over the old run's tier
+      traceEvent('run_start', {});
+    }
   };
 
   // ---- Background ------------------------------------------------------
@@ -3769,6 +3906,12 @@
         updateEnemyBullets(self.state, dt);
         self.handleCollisions();
       }
+    };
+    window.__headOnTrace = {
+      data: trace,
+      setRecording: setTraceRecording,
+      clear: clearTrace,
+      download: downloadTrace
     };
   };
 
@@ -3821,6 +3964,8 @@
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
       this.updateDiagOverlay();
+      this.updateTraceTier();
+      this.updateTraceSample();
     }
 
     this.updateBackground(dt);
@@ -3937,6 +4082,30 @@
       function () { return TUNING.diagnosticOverlay; },
       function (v) { TUNING.diagnosticOverlay = v; applyDiagOverlayVisibility(); });
 
+    // Recording is deliberately NOT a TUNING field - it's a one-off session
+    // action, not a standing preference, so it never persists across a
+    // reload the way every other checkbox here does.
+    addCheckbox('labTrace', 'Recording',
+      function () { return trace.recording; },
+      function (v) { setTraceRecording(v); });
+
+    document.getElementById('labTraceClearBtn').addEventListener('click', function () {
+      clearTrace();
+      renderTraceStatus();
+    });
+    document.getElementById('labTraceDownloadBtn').addEventListener('click', function () {
+      downloadTrace();
+    });
+
+    function renderTraceStatus() {
+      if (!labOpen) return;
+      var el = document.getElementById('labTraceStatus');
+      if (!el) return;
+      if (!trace.events.length) { el.textContent = trace.recording ? 'recording - 0 events yet' : 'no events recorded'; return; }
+      var last = trace.events[trace.events.length - 1];
+      el.textContent = trace.events.length + ' events, ' + last.t.toFixed(1) + 's' + (trace.recording ? ' (recording)' : ' (paused)');
+    }
+
     // Tier 0 is always on from the first second, so it has no slider -
     // only the three unlocks after it are movable.
     TUNING.tierUnlock.forEach(function (_, i) {
@@ -4022,7 +4191,7 @@
       addLine('bag', state.sortieBag.length ? state.sortieBag.join(', ') : '(empty — reshuffles on next draw)');
       addLine('last', last ? last.id + ' ×' + last.size + ' at ' + last.at.toFixed(1) + 's' : '(none yet)');
     }
-    setInterval(renderReadout, 150); // cheap, and returns immediately while closed
+    setInterval(function () { renderReadout(); renderTraceStatus(); }, 150); // cheap, and both return immediately while closed
 
     function setLabOpen(open) {
       labOpen = open;
@@ -4030,7 +4199,7 @@
       lab.setAttribute('aria-hidden', open ? 'false' : 'true');
       // Whatever was held when the panel came up would otherwise stay held
       // behind it, leaving the ship strafing into a wall while you tune.
-      if (open) { forceReleaseAllInput(); syncAll(); renderReadout(); }
+      if (open) { forceReleaseAllInput(); syncAll(); renderReadout(); renderTraceStatus(); }
     }
 
     document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
