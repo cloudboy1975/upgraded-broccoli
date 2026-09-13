@@ -4030,14 +4030,18 @@
       syncers.push(function () { input.value = read(); show(); });
     }
 
-    function addCheckbox(sectionId, labelText, get, set) {
+    // skipSave: for the one checkbox here that isn't TUNING-backed
+    // (Recording) - calling saveTuning() after it anyway would be a no-op
+    // for localStorage, but its own trace-logging hook would then log a
+    // second, redundant snapshot right on top of setTraceRecording()'s own.
+    function addCheckbox(sectionId, labelText, get, set, skipSave) {
       var row = document.createElement('div');
       row.className = 'lab-row';
       var label = document.createElement('label');
       label.textContent = labelText;
       var input = document.createElement('input');
       input.type = 'checkbox';
-      input.addEventListener('change', function () { set(input.checked); saveTuning(); });
+      input.addEventListener('change', function () { set(input.checked); if (!skipSave) saveTuning(); });
       row.appendChild(label);
       row.appendChild(input);
       document.getElementById(sectionId).appendChild(row);
@@ -4087,7 +4091,8 @@
     // reload the way every other checkbox here does.
     addCheckbox('labTrace', 'Recording',
       function () { return trace.recording; },
-      function (v) { setTraceRecording(v); });
+      function (v) { setTraceRecording(v); },
+      true);
 
     document.getElementById('labTraceClearBtn').addEventListener('click', function () {
       clearTrace();
