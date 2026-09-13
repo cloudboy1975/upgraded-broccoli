@@ -109,6 +109,31 @@
   }
   .hud-stats b { color: var(--text); font-size: 0.85rem; margin-left: 3px; }
 
+  /* Optional developer overlay, toggled from the lab - see
+     MainScene.prototype.updateDiagOverlay(). Sits below the hud-bar (not at
+     true (0,0)) so it never overlaps the score/lives readout; pointer-events
+     none so it never steals a tap meant for the ship underneath it. */
+  .diag-overlay {
+    display: none;
+    position: absolute;
+    top: 44px;
+    left: 8px;
+    z-index: 2;
+    pointer-events: none;
+    max-width: calc(100% - 16px);
+    padding: 5px 7px;
+    border-radius: 6px;
+    background: rgba(8, 12, 24, 0.62);
+    color: #e8fff0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.62rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .diag-overlay.visible { display: block; }
+
   .canvas-wrap {
     width: 100%;
     max-width: 420px;
@@ -388,6 +413,11 @@
           <span id="bestTap">Best<b id="bestVal">0</b></span>
         </div>
       </div>
+      <!-- Toggled from the lab's own Diagnostics section - see
+           updateDiagOverlay(). Sits below the hud-bar rather than at true
+           (0,0) so it never overlaps the score/lives readout, and never
+           intercepts a tap (it's purely informational, over live gameplay). -->
+      <div class="diag-overlay" id="diagOverlay"></div>
       <div class="overlay" id="gameOverOverlay">
         <div class="overlay-title">Game Over</div>
         <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
@@ -444,6 +474,10 @@
       <div class="lab-section">
         <h3>Pattern book</h3>
         <div id="labPatterns"></div>
+      </div>
+      <div class="lab-section">
+        <h3>Diagnostics</h3>
+        <div id="labDiag"></div>
       </div>
       <div class="lab-section">
         <h3>Live</h3>
@@ -694,7 +728,8 @@
       enemyFireInterval: 1.6, // average seconds between shots, per diving ship
       enemyFireJitter: 0.4,   // +/- this fraction of the interval, so a sortie's shots don't all land on the same beat
       enemyBulletSpeed: 150,  // px/sec - well under the player's own BULLET_SPEED
-      enemyFireAim: 0.35      // 0 = straight down, 1 = aimed at the ship's exact position at the moment of firing (frozen, not homing)
+      enemyFireAim: 0.35,     // 0 = straight down, 1 = aimed at the ship's exact position at the moment of firing (frozen, not homing)
+      diagnosticOverlay: false // draws elapsed/tier/sortie-activation text over the live game - see updateDiagOverlay()
     };
   }
 
@@ -3588,6 +3623,46 @@
     document.getElementById('phaseDot').className = 'turn-dot ' + (state.phase === 'playing' ? 'playing' : 'gameover');
   };
 
+  // The lab's own "Live" readout only exists while the panel covers the
+  // screen; this puts the same kind of information (what's actually firing,
+  // and when) directly over live gameplay instead, gated behind
+  // TUNING.diagnosticOverlay so it costs nothing when off - see the
+  // Diagnostics section in the lab and applyDiagOverlayVisibility().
+  MainScene.prototype.updateDiagOverlay = function () {
+    if (!TUNING.diagnosticOverlay) return;
+    var el = document.getElementById('diagOverlay');
+    if (!el) return;
+    var state = this.state;
+    var tier = this.sortieTier();
+
+    // A sortie already staged and pulsing (telegraphed, not yet dropped) is
+    // more informative than the plain countdown to the next DRAW, so show
+    // that instead whenever one is actually pending right now.
+    var pending = state.formation.filter(function (s) { return s.alive && s.launchIn > 0; });
+    var activation;
+    if (pending.length) {
+      var soonest = pending.reduce(function (a, b) { return a.launchIn < b.launchIn ? a : b; });
+      activation = 'staging ' + soonest.sortieId + ' ×' + pending.length + ' in ' + soonest.launchIn.toFixed(2) + 's';
+    } else {
+      activation = 'next dive in ' + Math.max(0, state.diveTimer).toFixed(2) + 's';
+    }
+
+    var last = state.lastSortie;
+    var lastLine = last
+      ? 'last ' + last.id + ' ×' + last.size + ' (' + Math.max(0, state.difficulty.elapsed - last.at).toFixed(1) + 's ago)'
+      : 'last (none yet)';
+
+    var fireLine = TUNING.enemyFireEnabled
+      ? 'fire ' + state.enemyBullets.length + ' in flight'
+      : 'fire off';
+
+    el.textContent =
+      't ' + state.difficulty.elapsed.toFixed(1) + 's  tier ' + tier + '/' + (TUNING.tierUnlock.length - 1) + '\n' +
+      activation + '\n' +
+      lastLine + '\n' +
+      fireLine;
+  };
+
   // ---- Reset / restart ------------------------------------------------------
   MainScene.prototype.resetGame = function () {
     var state = this.state;
@@ -3678,6 +3753,21 @@
       step: function (dt) {
         self.state.clock += dt;
         updatePendingLaunches(self.state, dt);
+      },
+      // A second, wider driver alongside step() above - that one only
+      // covers the sortie telegraph timing it was built for. This one adds
+      // the diver/enemy-bullet/collision slice, for tests pinning enemy
+      // fire cadence or bullet travel exactly: real-time waits hit the same
+      // Phaser per-frame dt clamp, but there the throttling itself becomes
+      // the variable - a busy test runner delivers fewer real frames, and
+      // since each one still only advances sim time by up to MAX_DT
+      // regardless of the real gap since the last one, a real-time wait can
+      // silently advance LESS simulated time under load, not more.
+      stepDivers: function (dt) {
+        self.state.clock += dt;
+        updateDivers(self.state, dt, self.diverSpeedScale(), self);
+        updateEnemyBullets(self.state, dt);
+        self.handleCollisions();
       }
     };
   };
@@ -3730,6 +3820,7 @@
       this.updateOrbBullets(dt);
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
+      this.updateDiagOverlay();
     }
 
     this.updateBackground(dt);
@@ -3830,6 +3921,21 @@
     addCheckbox('labFire', 'Divers return fire',
       function () { return TUNING.enemyFireEnabled; },
       function (v) { TUNING.enemyFireEnabled = v; });
+
+    // Applied explicitly (rather than left to the next playing-phase frame)
+    // so the DOM element's own visibility always matches TUNING right away
+    // - from the checkbox, from Reset, and once at boot for a saved-true
+    // value from an earlier session - instead of waiting on update()'s
+    // per-frame refresh, which only runs while state.phase is 'playing'.
+    function applyDiagOverlayVisibility() {
+      var el = document.getElementById('diagOverlay');
+      if (el) el.classList.toggle('visible', TUNING.diagnosticOverlay);
+    }
+    applyDiagOverlayVisibility();
+
+    addCheckbox('labDiag', 'Show overlay in game',
+      function () { return TUNING.diagnosticOverlay; },
+      function (v) { TUNING.diagnosticOverlay = v; applyDiagOverlayVisibility(); });
 
     // Tier 0 is always on from the first second, so it has no slider -
     // only the three unlocks after it are movable.
@@ -3934,6 +4040,7 @@
       saveTuning();
       syncAll();
       renderReadout();
+      applyDiagOverlayVisibility();
       if (mainScene) mainScene.refillSortieBag();
     });
 
