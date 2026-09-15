@@ -725,8 +725,9 @@
       cooldownScale: 1,   // multiplies every pattern's own cooldown
       diverSpeedStart: 1, // diver speed multiplier at t=0...
       diverSpeedMax: 1.12, // ...and once fully ramped. Deliberately mild: escalation is meant to come from the book, not from raw speed
-      telegraph: true,    // draw the pre-launch flash (purely visual - the lead time below applies either way)
+      telegraph: true,    // spin a pending ship before it drops (purely visual - the lead time below applies either way)
       telegraphLead: SORTIE_TELEGRAPH_LEAD,
+      telegraphSpinMax: 10, // radians/sec at the instant of drop - the spin ramps up to this, not straight to it, so it reads as accelerating urgency
       tierUnlock: SORTIE_TIER_UNLOCK_SECONDS.slice(),
       enabled: enabled,
       // Only a DIVING ship fires - see fireEnemyBullet(). Deliberately a
@@ -2093,18 +2094,21 @@
       slot.launchIn -= dt;
       if (slot.launchIn > 0) {
         if (TUNING.telegraph) {
-          // Pulses faster and wider the closer the drop gets, so "about to
-          // go" reads differently from "just got picked".
+          // A scale/alpha pulse ("flash") was here first, but didn't catch
+          // the eye against a busy screen the way it was meant to -
+          // rotation reads much more strongly as "something's about to
+          // move" than a symmetric size/brightness wobble does, especially
+          // on the asymmetric ship shapes. Spins faster the closer the drop
+          // gets (ramping toward, not starting at, telegraphSpinMax), so
+          // "about to go" still reads as more urgent than "just got picked".
           var progress = 1 - slot.launchIn / (slot.launchTotal || 1);
-          var pulse = Math.sin(state.clock * (14 + 16 * progress)) * 0.5 + 0.5;
-          slot.sprite.setScale(1 + pulse * (0.10 + 0.16 * progress));
-          slot.sprite.alpha = 0.75 + 0.25 * pulse;
+          var spinSpeed = TUNING.telegraphSpinMax * (0.15 + 0.85 * progress);
+          slot.sprite.rotation += spinSpeed * dt;
         }
         continue;
       }
       slot.launchIn = 0;
-      slot.sprite.setScale(1);
-      slot.sprite.alpha = 1;
+      slot.sprite.rotation = 0;
       slot.diving = true;
       slot.age = 0;
       slot.spawnX = slot.x; // dive formulas anchor to wherever it was (mid-bob) when it broke formation
@@ -4057,13 +4061,14 @@
       { section: 'labSpeed', key: 'diverSpeedStart', label: 'Speed at start', min: 0.6, max: 1.6, step: 0.01, unit: '×' },
       { section: 'labSpeed', key: 'diverSpeedMax', label: 'Speed when ramped', min: 0.6, max: 2, step: 0.01, unit: '×' },
       { section: 'labTelegraph', key: 'telegraphLead', label: 'Warning time', min: 0, max: 1.2, step: 0.05, unit: 's' },
+      { section: 'labTelegraph', key: 'telegraphSpinMax', label: 'Spin speed', min: 2, max: 24, step: 1, unit: 'rad/s' },
       { section: 'labFire', key: 'enemyFireInterval', label: 'Shot interval', min: 0.4, max: 4, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireJitter', label: 'Interval jitter', min: 0, max: 1, step: 0.05, unit: '×' },
       { section: 'labFire', key: 'enemyBulletSpeed', label: 'Bullet speed', min: 60, max: 320, step: 5, unit: 'px/s' },
       { section: 'labFire', key: 'enemyFireAim', label: 'Aim at ship', min: 0, max: 1, step: 0.05, unit: '' }
     ].forEach(addSlider);
 
-    addCheckbox('labTelegraph', 'Flash before drop',
+    addCheckbox('labTelegraph', 'Spin before drop',
       function () { return TUNING.telegraph; },
       function (v) { TUNING.telegraph = v; });
 
