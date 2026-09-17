@@ -1119,6 +1119,16 @@
   var BRICK_FIZZLE_HEIGHT = 3; // px - "very thin"
   var COLOR_BRICK_FIZZLE = 0xffffff; // neutral white "light", not tied to any trail color - this is an absorption, not damage
 
+  // Shield fizzle: same "thin strip grows then fades" idea as the brick
+  // fizzle above, but marking a banked-orb shield dot spending itself to
+  // block a hazard - see triggerShieldFizzle()/updateShieldFizzles(). Tinted
+  // per-color (the spent dot's own color, not a neutral white) and sized to
+  // the small dot rather than a whole brick segment.
+  var SHIELD_FIZZLE_DURATION = 0.3;
+  var SHIELD_FIZZLE_GROW_FRACTION = 0.4;
+  var SHIELD_FIZZLE_WIDTH = POWERUP_DOT_RADIUS * 6; // a short wave spreading out from the dot, not a screen-wide streak
+  var SHIELD_FIZZLE_HEIGHT = 3;
+
   // Brick shards: what a color bar becomes when it reaches the bottom,
   // instead of ending the game outright. It breaks into one shard per
   // segment still alive at that moment (see breakBrickIntoShards()) - a
@@ -1439,6 +1449,16 @@
       });
     });
 
+    // Shield fizzle: a thin strip in the spent dot's own color, baked at
+    // full width - see triggerShieldFizzle()/updateShieldFizzles(). Same
+    // "bake once, grow displayWidth per instance" trick as brickFizzleTex.
+    STRIP_COLOR_KEYS.forEach(function (key) {
+      bakeTexture(self, 'shieldFizzleTex_' + key, SHIELD_FIZZLE_WIDTH, SHIELD_FIZZLE_HEIGHT, function (g) {
+        g.fillStyle(STRIP_COLORS[key], 1);
+        g.fillRect(0, 0, SHIELD_FIZZLE_WIDTH, SHIELD_FIZZLE_HEIGHT);
+      });
+    });
+
     // Bullet trails: one per color, drawn as BULLET_TRAIL_ARC_COUNT nested
     // open arcs (unfilled stroked curves, not solid shapes) bulging away
     // from the bullet - see the BULLET_TRAIL_* comment above for why.
@@ -1616,6 +1636,7 @@
       colorBarRows: 1, // grows by one each time a full clear triggers a respawn
       brickShards: [], // enemy pieces a color bar breaks into when it reaches the bottom - see breakBrickIntoShards()/updateBrickShards()
       brickFizzles: [], // short-lived flashes where a mismatched pulse-cannon trail was absorbed - see triggerBrickFizzle()/updateBrickFizzles()
+      shieldFizzles: [], // short-lived colored flashes where a banked-orb shield dot spent itself blocking a hazard - see triggerShieldFizzle()/updateShieldFizzles()
       powerupSpawnTimer: randomPowerupSpawnInterval(), // shared between strips and orbs - see updatePowerupSpawns()
       lives: 3,
       score: 0,
@@ -1734,6 +1755,35 @@
       // light strip spreads out across the brick then disappears".
       var growT = Math.min(1, t / BRICK_FIZZLE_GROW_FRACTION);
       fx.sprite.displayWidth = BRICK_SEGMENT_WIDTH * growT;
+      fx.sprite.alpha = 1 - t;
+    }
+  };
+
+  // A banked-orb shield dot spending itself to block a hazard - see
+  // consumeShieldDot(). Purely cosmetic; called with the dot's last
+  // position and color just before its sprite is destroyed. Each dot
+  // orbits at its own angle so simultaneous consumptions land at distinct
+  // (x, y) - even when two happen to share an x (opposite sides of the
+  // orbit), they're at different heights and read as separate waves.
+  MainScene.prototype.triggerShieldFizzle = function (x, y, colorKey) {
+    var sprite = this.add.sprite(x, y, 'shieldFizzleTex_' + colorKey);
+    sprite.displayWidth = 0.001; // start effectively invisible-thin, not literally 0 (avoids a degenerate scale)
+    this.state.shieldFizzles.push({ age: 0, sprite: sprite });
+  };
+
+  MainScene.prototype.updateShieldFizzles = function (dt) {
+    var fizzles = this.state.shieldFizzles;
+    for (var i = fizzles.length - 1; i >= 0; i--) {
+      var fx = fizzles[i];
+      fx.age += dt;
+      var t = fx.age / SHIELD_FIZZLE_DURATION;
+      if (t >= 1) {
+        fx.sprite.destroy();
+        fizzles.splice(i, 1);
+        continue;
+      }
+      var growT = Math.min(1, t / SHIELD_FIZZLE_GROW_FRACTION);
+      fx.sprite.displayWidth = SHIELD_FIZZLE_WIDTH * growT;
       fx.sprite.alpha = 1 - t;
     }
   };
@@ -3638,7 +3688,10 @@
   MainScene.prototype.consumeShieldDot = function (index) {
     var pu = this.state.powerup;
     var dot = pu.dots[index];
-    if (dot) dot.sprite.destroy();
+    if (dot) {
+      this.triggerShieldFizzle(dot.sprite.x, dot.sprite.y, dot.colorKey);
+      dot.sprite.destroy();
+    }
     pu.dots.splice(index, 1);
     pu.colors.splice(index, 1);
   };
@@ -3828,6 +3881,8 @@
     state.brickShards = [];
     state.brickFizzles.forEach(function (fx) { fx.sprite.destroy(); });
     state.brickFizzles = [];
+    state.shieldFizzles.forEach(function (fx) { fx.sprite.destroy(); });
+    state.shieldFizzles = [];
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -3944,6 +3999,7 @@
       this.updateColorBars(dt);
       this.updateBrickShards(dt);
       this.updateBrickFizzles(dt);
+      this.updateShieldFizzles(dt);
 
       // Then resolve contact. Note this owns the DAMAGE collisions only -
       // the collection ones (a strip passing over the ship, touching an orb
