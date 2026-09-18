@@ -464,6 +464,10 @@
         <div id="labTelegraph"></div>
       </div>
       <div class="lab-section">
+        <h3>Formation entry</h3>
+        <div id="labEntry"></div>
+      </div>
+      <div class="lab-section">
         <h3>Enemy fire</h3>
         <div id="labFire"></div>
       </div>
@@ -545,6 +549,18 @@
   var FORMATION_ROW_TYPES = ['zigzag', 'swoop', 'straight']; // top row = hardest/furthest, bottom row = easiest/closest
   var IDLE_BOB_AMPLITUDE = 5;
   var IDLE_BOB_FREQ = 1.6;
+
+  // Formation entry: a fresh wave flies in from off-screen instead of just
+  // appearing at its grid slot - each member starts near a top corner
+  // (whichever is nearer its own column) and eases in with a light S-curve,
+  // staggered by grid position so the whole formation reads as one
+  // diagonal wave sweeping in rather than five separate pops.
+  var ENTRY_MARGIN = 30; // px past the edge (top and sides) a slot starts from - just far enough to be fully off-screen
+  var ENTRY_DURATION = 0.9; // seconds for one slot's own flight, once its stagger delay elapses
+  var ENTRY_STAGGER = 0.05; // seconds added per (row + col) grid step
+  var ENTRY_WOBBLE_AMPLITUDE = 30; // px of sideways S-curve while entering, damped to 0 by arrival - same feel as a swoop dive, not a new visual language
+  var ENTRY_WOBBLE_FREQ = 3.2;
+  var ENTRY_FIRE_UNLOCK_SECONDS = 30; // elapsed seconds before an entering ship can fire on the way in - see TUNING.entryFireEnabled
 
   var DIVE_INTERVAL_START = 1.7; // seconds between dive waves
   var DIVE_INTERVAL_MIN = 0.9;
@@ -725,6 +741,14 @@
       cooldownScale: 1,   // multiplies every pattern's own cooldown
       diverSpeedStart: 1, // diver speed multiplier at t=0...
       diverSpeedMax: 1.12, // ...and once fully ramped. Deliberately mild: escalation is meant to come from the book, not from raw speed
+      entryDuration: ENTRY_DURATION, // seconds a formation slot takes to fly in, once its own stagger delay elapses
+      entryStagger: ENTRY_STAGGER,   // seconds added per grid step - the diagonal sweep across a freshly spawned wave
+      // A ship still flying in can fire too, same drip as a diver's own
+      // return fire - see updateFormationEntry(). Gated behind its own
+      // later unlock time so early waves still fly in silently; escalation
+      // comes from turning this on, not from the flight itself.
+      entryFireEnabled: true,
+      entryFireUnlockSeconds: ENTRY_FIRE_UNLOCK_SECONDS,
       telegraph: true,    // spin a pending ship before it drops (purely visual - the lead time below applies either way)
       telegraphLead: SORTIE_TELEGRAPH_LEAD,
       telegraphSpinMax: 10, // radians/sec at the instant of drop - the spin ramps up to this, not straight to it, so it reads as accelerating urgency
@@ -1935,11 +1959,18 @@
       for (var col = 0; col < FORMATION_COLS; col++) {
         var baseX = this.formationGridX(col);
         var baseY = FORMATION_ROW_Y[row];
+        // Starts off-screen near whichever top corner is nearer its own
+        // column (even columns from the left, odd from the right) - see
+        // updateFormationEntry() for the flight itself.
+        var enterFromX = (col % 2 === 0) ? -ENTRY_MARGIN : (GAME_WIDTH + ENTRY_MARGIN);
+        var enterFromY = -ENTRY_MARGIN;
         var slot = {
           row: row, col: col,
           baseX: baseX, baseY: baseY,
-          x: baseX, y: baseY,
+          x: enterFromX, y: enterFromY,
           alive: true, diving: false,
+          entering: true, enterFromX: enterFromX, enterFromY: enterFromY,
+          enterAge: -(row + col) * TUNING.entryStagger, // negative until its own stagger delay elapses - see updateFormationEntry()
           launchIn: 0, launchTotal: 0, sortieId: null, // >0 while staged for a sortie but not yet dropped - see updatePendingLaunches()
           // A non-zero default so a slot never opens fire the instant it
           // starts diving - only the real drop path (updatePendingLaunches)
@@ -1952,7 +1983,7 @@
           spawnX: baseX,
           type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
         };
-        slot.sprite = this.add.sprite(baseX, baseY, ENEMY_TEX[type]);
+        slot.sprite = this.add.sprite(enterFromX, enterFromY, ENEMY_TEX[type]);
         state.formation.push(slot);
       }
     }
@@ -2100,7 +2131,7 @@
     var state = this.state;
     var pattern = SORTIE_PATTERNS.filter(function (p) { return p.id === id; })[0];
     if (!pattern) return null;
-    var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; });
+    var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.entering && !s.launchIn; });
     if (idle.length < pattern.min) return null;
     var members = pattern.select({ idle: idle });
     if (!members || !members.length) return null;
@@ -2117,7 +2148,7 @@
 
     // A slot already counting down to its own launch is spoken for - it
     // must not be picked into a second sortie on top of the first.
-    var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; });
+    var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.entering && !s.launchIn; });
     if (idle.length === 0) { state.diveTimer = this.diveInterval(); return; }
 
     var sortie = this.drawSortie(idle);
@@ -2170,12 +2201,61 @@
 
   function updateIdleBob(state) {
     state.formation.forEach(function (slot) {
-      if (!slot.alive || slot.diving) return;
+      if (!slot.alive || slot.diving || slot.entering) return;
       slot.x = slot.baseX + Math.sin(state.clock * IDLE_BOB_FREQ + slot.phase) * IDLE_BOB_AMPLITUDE;
       slot.y = slot.baseY;
       slot.sprite.x = slot.x;
       slot.sprite.y = slot.y;
     });
+  }
+
+  // Flies a freshly spawned slot in from its off-screen entry point to its
+  // grid slot - see spawnFormation() for where enterFromX/Y and the
+  // per-slot stagger delay (enterAge starting negative) are set up. Eased
+  // in (decelerating into place, not snapping to a stop) with a sideways
+  // wobble that damps to zero by arrival, echoing the diving swoop's own
+  // feel without being a second visual language.
+  function updateFormationEntry(state, dt, scene) {
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      // A diving slot always wins - under the normal path a slot can only
+      // ever start diving after it's finished entering (see the idle
+      // filters that feed the sortie system), but this stays defensive
+      // against anything that forces diving=true directly (tests, a future
+      // feature) without also clearing entering.
+      if (!slot.alive || !slot.entering || slot.diving) continue;
+      slot.enterAge += dt;
+      if (slot.enterAge < 0) continue; // still waiting on its own stagger delay, parked off-screen
+
+      var t = Math.min(slot.enterAge / TUNING.entryDuration, 1);
+      var eased = 1 - (1 - t) * (1 - t);
+      var wobble = Math.sin(slot.enterAge * ENTRY_WOBBLE_FREQ + slot.phase) * ENTRY_WOBBLE_AMPLITUDE * (1 - t);
+      slot.x = slot.enterFromX + (slot.baseX - slot.enterFromX) * eased + wobble;
+      slot.y = slot.enterFromY + (slot.baseY - slot.enterFromY) * eased;
+      slot.sprite.x = slot.x;
+      slot.sprite.y = slot.y;
+
+      // Same drip cadence as a diving ship's own return fire (see
+      // updateDivers()) - the timer always runs so toggling the switch
+      // mid-flight resumes on schedule instead of dumping a backlog, but
+      // whether a shot actually fires is also gated behind its own later
+      // unlock time, so early waves still fly in silently.
+      slot.fireIn -= dt;
+      if (slot.fireIn <= 0) {
+        slot.fireIn = randomEnemyFireInterval();
+        if (TUNING.entryFireEnabled && TUNING.enemyFireEnabled && state.difficulty.elapsed >= TUNING.entryFireUnlockSeconds) {
+          scene.fireEnemyBullet(slot);
+        }
+      }
+
+      if (t >= 1) {
+        slot.entering = false;
+        slot.x = slot.baseX;
+        slot.y = slot.baseY;
+        slot.sprite.x = slot.x;
+        slot.sprite.y = slot.y;
+      }
+    }
   }
 
   // Same three dive-pattern formulas as earlier prototypes, just anchored
@@ -3840,7 +3920,7 @@
       shipX: Math.round(state.ship.x),
       left: state.input.left, right: state.input.right, fire: state.input.fire,
       fireBullets: state.enemyBullets.length,
-      idle: state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; }).length,
+      idle: state.formation.filter(function (s) { return s.alive && !s.diving && !s.entering && !s.launchIn; }).length,
       alive: state.formation.filter(function (s) { return s.alive; }).length
     });
   };
@@ -3961,9 +4041,33 @@
       // silently advance LESS simulated time under load, not more.
       stepDivers: function (dt) {
         self.state.clock += dt;
+        updateFormationEntry(self.state, dt, self);
         updateDivers(self.state, dt, self.diverSpeedScale(), self);
         updateEnemyBullets(self.state, dt);
         self.handleCollisions();
+      },
+      // Snaps every still-entering slot straight to its grid position,
+      // skipping the fly-in outright - for tests of unrelated mechanics
+      // that want an immediately idle, in-place formation instead of
+      // modeling the entry animation themselves.
+      skipFormationEntry: function () {
+        self.state.formation.forEach(function (slot) {
+          if (!slot.entering) return;
+          slot.entering = false;
+          slot.x = slot.baseX;
+          slot.y = slot.baseY;
+          slot.sprite.x = slot.x;
+          slot.sprite.y = slot.y;
+        });
+        // An attached core's sprite is only re-anchored to its carrier once
+        // a frame actually runs (see updateCore()) - snap it here too, or a
+        // core rolled during the same synchronous spawn would still be
+        // sitting at its carrier's stale off-screen entry position.
+        var core = self.state.core;
+        if (core && core.attached) {
+          core.sprite.x = core.carrierSlot.x + Math.cos(core.angle) * CORE_ORBIT_RADIUS;
+          core.sprite.y = core.carrierSlot.y + Math.sin(core.angle) * CORE_ORBIT_RADIUS;
+        }
       }
     };
     window.__headOnTrace = {
@@ -3992,6 +4096,7 @@
       updateBullets(state, dt);
       updateEnemyBullets(state, dt);
       updateIdleBob(state);
+      updateFormationEntry(state, dt, this);
       updatePendingLaunches(state, dt);
       updateDivers(state, dt, this.diverSpeedScale(), this);
       this.updateFiring(dt);
@@ -4118,6 +4223,9 @@
       { section: 'labSpeed', key: 'diverSpeedMax', label: 'Speed when ramped', min: 0.6, max: 2, step: 0.01, unit: '×' },
       { section: 'labTelegraph', key: 'telegraphLead', label: 'Warning time', min: 0, max: 1.2, step: 0.05, unit: 's' },
       { section: 'labTelegraph', key: 'telegraphSpinMax', label: 'Spin speed', min: 2, max: 24, step: 1, unit: 'rad/s' },
+      { section: 'labEntry', key: 'entryDuration', label: 'Flight time', min: 0.3, max: 2.5, step: 0.05, unit: 's' },
+      { section: 'labEntry', key: 'entryStagger', label: 'Wave stagger', min: 0, max: 0.3, step: 0.01, unit: 's' },
+      { section: 'labEntry', key: 'entryFireUnlockSeconds', label: 'Fire unlocks at', min: 0, max: 120, step: 5, unit: 's' },
       { section: 'labFire', key: 'enemyFireInterval', label: 'Shot interval', min: 0.4, max: 4, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireJitter', label: 'Interval jitter', min: 0, max: 1, step: 0.05, unit: '×' },
       { section: 'labFire', key: 'enemyBulletSpeed', label: 'Bullet speed', min: 60, max: 320, step: 5, unit: 'px/s' },
@@ -4127,6 +4235,10 @@
     addCheckbox('labTelegraph', 'Spin before drop',
       function () { return TUNING.telegraph; },
       function (v) { TUNING.telegraph = v; });
+
+    addCheckbox('labEntry', 'Fire while entering',
+      function () { return TUNING.entryFireEnabled; },
+      function (v) { TUNING.entryFireEnabled = v; });
 
     addCheckbox('labFire', 'Divers return fire',
       function () { return TUNING.enemyFireEnabled; },
@@ -4246,7 +4358,7 @@
       if (!labOpen || !mainScene) return;
       var state = mainScene.state;
       var last = state.lastSortie;
-      var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.launchIn; }).length;
+      var idle = state.formation.filter(function (s) { return s.alive && !s.diving && !s.entering && !s.launchIn; }).length;
       readout.textContent = '';
       addLine('elapsed', state.difficulty.elapsed.toFixed(1) + 's');
       addLine('tier', mainScene.sortieTier() + ' of ' + (TUNING.tierUnlock.length - 1));
