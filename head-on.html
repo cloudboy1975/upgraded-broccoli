@@ -570,7 +570,12 @@
   // member can return fire on its own drip timer - not just one still on
   // its way in (see updateFormationFire()). A diving ship's own fire is
   // separate and always on (once TUNING.enemyFireEnabled) - this only
-  // gates a member that's still entering OR already landed and idle.
+  // gates a member that's still entering OR already landed and idle, and
+  // is capped to a small number of shots (FORMATION_FIRE_MAX_SHOTS) for
+  // as long as it stays non-diving - once it actually dives, its fire
+  // reverts to the diving rule's own unlimited cadence. Without the cap,
+  // an idle formation left standing (nothing drawn into a sortie yet)
+  // kept shooting indefinitely and read as far too aggressive on its own.
   // FORMATION_FIRE_INITIAL_STAGGER spreads a freshly spawned wave's very
   // first shots across a much longer window than the ~1s entry flight
   // itself - without it, most of a 15-member wave's first eligible shot
@@ -578,6 +583,7 @@
   // arriving at once, rather than a drip.
   var FORMATION_FIRE_UNLOCK_SECONDS = 30; // elapsed seconds before this switches on
   var FORMATION_FIRE_INITIAL_STAGGER = 0.35; // seconds added per (row + col) grid step to a slot's very first fire timer
+  var FORMATION_FIRE_MAX_SHOTS = 1; // shots a non-diving member may fire before it either dives or is spent
 
   // Enemy return fire ramps in on its own slower clock, independent of the
   // dive-rate ramp above - early shots come slow and spaced out (room to
@@ -790,6 +796,7 @@
       formationFireEnabled: true,
       formationFireUnlockSeconds: FORMATION_FIRE_UNLOCK_SECONDS,
       formationFireInitialStagger: FORMATION_FIRE_INITIAL_STAGGER,
+      formationFireMaxShots: FORMATION_FIRE_MAX_SHOTS, // shots a non-diving member may fire before it dives or is spent - see updateFormationFire()
       enemyFireIntervalStart: ENEMY_FIRE_INTERVAL_START, // average seconds between shots, per ship, at t=0...
       enemyFireIntervalMin: ENEMY_FIRE_INTERVAL_MIN,     // ...and once fully ramped
       enemyFireRampSeconds: ENEMY_FIRE_RAMP_SECONDS,
@@ -2019,6 +2026,7 @@
           // future feature) flips diving straight to true without going
           // through that path.
           fireIn: (row + col) * TUNING.formationFireInitialStagger + randomEnemyFireInterval(state.difficulty.elapsed) * 0.5,
+          formationShotsFired: 0, // counts shots fired while non-diving (entering or idle) - capped at TUNING.formationFireMaxShots, see updateFormationFire()
           age: 0, phase: Math.random() * Math.PI * 2,
           spawnX: baseX,
           type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
@@ -2287,23 +2295,29 @@
 
   // Return fire from any alive, non-diving formation member - still on its
   // way in, or already landed and idle. A diving ship's own fire is
-  // handled separately in updateDivers() (always on, no unlock gate) -
-  // this is what makes a settled-but-not-yet-diving formation a real,
-  // gradually escalating threat instead of only ever firing during its own
-  // short entry flight. Same drip cadence and ramped interval as a
-  // diver's own return fire; the timer always runs so toggling the switch
-  // mid-run resumes on schedule instead of dumping a backlog, but whether
-  // a shot actually fires is also gated behind its own later unlock time,
-  // so early waves stay silent.
+  // handled separately in updateDivers() (always on, unlimited, no unlock
+  // gate) - this is what makes a settled-but-not-yet-diving formation a
+  // real, gradually escalating threat instead of only ever firing during
+  // its own short entry flight. Same drip cadence and ramped interval as
+  // a diver's own return fire; the timer always runs so toggling the
+  // switch mid-run resumes on schedule instead of dumping a backlog, but
+  // whether a shot actually fires is also gated behind its own later
+  // unlock time, so early waves stay silent. Capped to
+  // TUNING.formationFireMaxShots while non-diving - once a member is
+  // spent, it goes quiet until it either dives (where fire is unlimited
+  // again) or the wave clears; without this cap, a formation left
+  // standing kept shooting forever and read as far too aggressive on its
+  // own, well before anything actually dove at the player.
   function updateFormationFire(state, dt, scene) {
     for (var i = 0; i < state.formation.length; i++) {
       var slot = state.formation[i];
-      if (!slot.alive || slot.diving) continue;
+      if (!slot.alive || slot.diving || slot.formationShotsFired >= TUNING.formationFireMaxShots) continue;
       slot.fireIn -= dt;
       if (slot.fireIn <= 0) {
         slot.fireIn = randomEnemyFireInterval(state.difficulty.elapsed);
         if (TUNING.formationFireEnabled && TUNING.enemyFireEnabled && state.difficulty.elapsed >= TUNING.formationFireUnlockSeconds) {
           scene.fireEnemyBullet(slot);
+          slot.formationShotsFired++;
         }
       }
     }
@@ -4294,7 +4308,8 @@
       { section: 'labFire', key: 'enemyBulletSpeed', label: 'Bullet speed', min: 60, max: 320, step: 5, unit: 'px/s' },
       { section: 'labFire', key: 'enemyFireAim', label: 'Aim at ship', min: 0, max: 1, step: 0.05, unit: '' },
       { section: 'labFire', key: 'formationFireUnlockSeconds', label: 'Idle/entry fire unlocks at', min: 0, max: 120, step: 5, unit: 's' },
-      { section: 'labFire', key: 'formationFireInitialStagger', label: 'First-shot spread per slot', min: 0, max: 1, step: 0.05, unit: 's' }
+      { section: 'labFire', key: 'formationFireInitialStagger', label: 'First-shot spread per slot', min: 0, max: 1, step: 0.05, unit: 's' },
+      { section: 'labFire', key: 'formationFireMaxShots', label: 'Max shots before diving', min: 0, max: 5, step: 1, unit: '' }
     ].forEach(addSlider);
 
     addCheckbox('labTelegraph', 'Spin before drop',
