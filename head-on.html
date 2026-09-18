@@ -556,8 +556,8 @@
   // staggered by grid position so the whole formation reads as one
   // diagonal wave sweeping in rather than five separate pops.
   var ENTRY_MARGIN = 30; // px past the edge (top and sides) a slot starts from - just far enough to be fully off-screen
-  var ENTRY_DURATION = 0.9; // seconds for one slot's own flight, once its stagger delay elapses
-  var ENTRY_STAGGER = 0.05; // seconds added per (row + col) grid step
+  var ENTRY_DURATION = 1.4; // seconds for one slot's own flight, once its stagger delay elapses - deliberately unhurried, so a shot dropped on the way in reads as coming from a ship in flight rather than one that has already parked
+  var ENTRY_STAGGER = 0.08; // seconds added per (row + col) grid step
   var ENTRY_WOBBLE_AMPLITUDE = 30; // px of sideways S-curve while entering, damped to 0 by arrival - same feel as a swoop dive, not a new visual language
   var ENTRY_WOBBLE_FREQ = 3.2;
 
@@ -566,24 +566,30 @@
   var DIVE_RAMP_SECONDS = 45; // time to ramp from START to MIN
   var WAVE_CLEAR_PAUSE = 1.4; // pause before the next full formation spawns
 
-  // Formation return fire: once armed, ANY alive non-diving formation
-  // member can return fire on its own drip timer - not just one still on
-  // its way in (see updateFormationFire()). A diving ship's own fire is
-  // separate and always on (once TUNING.enemyFireEnabled) - this only
-  // gates a member that's still entering OR already landed and idle, and
-  // is capped to a small number of shots (FORMATION_FIRE_MAX_SHOTS) for
-  // as long as it stays non-diving - once it actually dives, its fire
-  // reverts to the diving rule's own unlimited cadence. Without the cap,
-  // an idle formation left standing (nothing drawn into a sortie yet)
-  // kept shooting indefinitely and read as far too aggressive on its own.
-  // FORMATION_FIRE_INITIAL_STAGGER spreads a freshly spawned wave's very
-  // first shots across a much longer window than the ~1s entry flight
-  // itself - without it, most of a 15-member wave's first eligible shot
-  // landed inside that same short window and read as a "wall" of bullets
-  // arriving at once, rather than a drip.
-  var FORMATION_FIRE_UNLOCK_SECONDS = 30; // elapsed seconds before this switches on
-  var FORMATION_FIRE_INITIAL_STAGGER = 0.35; // seconds added per (row + col) grid step to a slot's very first fire timer
-  var FORMATION_FIRE_MAX_SHOTS = 1; // shots a non-diving member may fire before it either dives or is spent
+  // Formation return fire: the handful of shots a wave drops BEFORE its
+  // members start diving - a diving ship's own fire is separate and
+  // always on (see updateDivers()).
+  //
+  // Only FORMATION_FIRE_SHOOTERS members of a wave ever fire this way, and
+  // each is handed an explicit moment to do it at spawn - see
+  // scheduleFormationFire(). Two earlier attempts both read as a "wall":
+  // letting every member drip-fire on its own timer, then capping each to
+  // one shot but still letting all 15 take it. Even one-shot-each put 15
+  // bullets inside ~2s, because a shared timer formula lands the whole
+  // grid in the same narrow window no matter how it's jittered. Choosing a
+  // few shooters up front and spacing them by construction is the only
+  // version that actually reads as "a few scattered bullets".
+  //
+  // FORMATION_FIRE_ENTRY_SHARE splits those shooters between ones that
+  // fire on the way in and ones that fire after landing; the landed ones
+  // are spread across FORMATION_FIRE_SPREAD seconds so no two arrive
+  // together.
+  var FORMATION_FIRE_UNLOCK_SECONDS = 30; // elapsed seconds before this switches on at all
+  var FORMATION_FIRE_SHOOTERS = 4; // members of a fresh wave allowed to fire before diving - NOT the whole grid
+  var FORMATION_FIRE_ENTRY_SHARE = 0.5; // fraction of those that fire mid-flight rather than after landing
+  var FORMATION_FIRE_SPREAD = 5; // seconds across which the after-landing shots are spaced out
+  var FORMATION_FIRE_MIN_GAP = 0.45; // enforced seconds between any two of a wave's pre-dive shots - two arriving together is the seed of the same burst
+  var FORMATION_FIRE_MAX_SHOTS = 1; // shots each chosen shooter gets before it either dives or is spent
 
   // Enemy return fire ramps in on its own slower clock, independent of the
   // dive-rate ramp above - early shots come slow and spaced out (room to
@@ -785,18 +791,18 @@
       // slower clock - see enemyFireInterval() - so early shots come
       // sparse and spaced out, not at full density right away.
       enemyFireEnabled: true,
-      // A non-diving formation member - still on its way in, or already
-      // landed and idle - can return fire too, on the SAME ramped interval
-      // as a diver's own fire. Gated behind its own later unlock time so
-      // early waves stay silent; escalation comes from turning this on,
-      // not from any one part of a slot's lifecycle. See
-      // updateFormationFire() and FORMATION_FIRE_INITIAL_STAGGER (spawnFormation())
-      // for how a freshly spawned wave's first shots avoid bursting all at
-      // once.
+      // The few shots a wave drops before its members start diving - a
+      // handful of chosen shooters, each handed an explicit moment at
+      // spawn. See scheduleFormationFire()/updateFormationFire(), and the
+      // FORMATION_FIRE_SHOOTERS comment for why picking shooters up front
+      // is what finally stopped this reading as a wall.
       formationFireEnabled: true,
       formationFireUnlockSeconds: FORMATION_FIRE_UNLOCK_SECONDS,
-      formationFireInitialStagger: FORMATION_FIRE_INITIAL_STAGGER,
-      formationFireMaxShots: FORMATION_FIRE_MAX_SHOTS, // shots a non-diving member may fire before it dives or is spent - see updateFormationFire()
+      formationFireShooters: FORMATION_FIRE_SHOOTERS,
+      formationFireEntryShare: FORMATION_FIRE_ENTRY_SHARE,
+      formationFireSpread: FORMATION_FIRE_SPREAD,
+      formationFireMinGap: FORMATION_FIRE_MIN_GAP,
+      formationFireMaxShots: FORMATION_FIRE_MAX_SHOTS, // shots each chosen shooter gets before it dives or is spent
       enemyFireIntervalStart: ENEMY_FIRE_INTERVAL_START, // average seconds between shots, per ship, at t=0...
       enemyFireIntervalMin: ENEMY_FIRE_INTERVAL_MIN,     // ...and once fully ramped
       enemyFireRampSeconds: ENEMY_FIRE_RAMP_SECONDS,
@@ -2012,21 +2018,17 @@
           entering: true, enterFromX: enterFromX, enterFromY: enterFromY,
           enterAge: -(row + col) * TUNING.entryStagger, // negative until its own stagger delay elapses - see updateFormationEntry()
           launchIn: 0, launchTotal: 0, sortieId: null, // >0 while staged for a sortie but not yet dropped - see updatePendingLaunches()
-          // The (row+col) term deliberately spreads a freshly spawned
-          // wave's very first eligible shots across a much longer window
-          // than any one slot's own entry flight - see
-          // FORMATION_FIRE_INITIAL_STAGGER. Without it, most of a 15-member
-          // wave's first shot landed inside that same short window and
-          // read as a burst rather than a drip. Also doubles as the
-          // original non-zero default so a slot never opens fire the
-          // instant it starts diving - the real drop path
-          // (updatePendingLaunches) re-arms this at the actual moment of
-          // the dive, but a slot that never dives at all still carries a
-          // sane value here, which matters whenever anything (a test, a
-          // future feature) flips diving straight to true without going
-          // through that path.
-          fireIn: (row + col) * TUNING.formationFireInitialStagger + randomEnemyFireInterval(state.difficulty.elapsed) * 0.5,
-          formationShotsFired: 0, // counts shots fired while non-diving (entering or idle) - capped at TUNING.formationFireMaxShots, see updateFormationFire()
+          // A non-zero default so a slot never opens fire the instant it
+          // starts diving - the real drop path (updatePendingLaunches)
+          // re-arms this at the actual moment of the dive, but a slot that
+          // never dives at all still carries a sane value here, which
+          // matters whenever anything (a test, a future feature) flips
+          // diving straight to true without going through that path. For a
+          // slot picked as a pre-dive shooter, scheduleFormationFire()
+          // overwrites this below with that shot's own exact moment.
+          fireIn: randomEnemyFireInterval(state.difficulty.elapsed) * 0.5,
+          formationShooter: false, // set by scheduleFormationFire() - only a few members of a wave ever fire before diving
+          formationShotsFired: 0, // shots taken while non-diving - capped at TUNING.formationFireMaxShots, see updateFormationFire()
           age: 0, phase: Math.random() * Math.PI * 2,
           spawnX: baseX,
           type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
@@ -2035,6 +2037,8 @@
         state.formation.push(slot);
       }
     }
+
+    this.scheduleFormationFire();
 
     // Roll a fresh core for this wave - at most one, and not guaranteed.
     if (state.core && state.core.sprite) state.core.sprite.destroy();
@@ -2048,6 +2052,62 @@
         angle: Math.random() * Math.PI * 2,
         sprite: this.add.sprite(carrier.x, carrier.y, 'coreOrbitTex')
       };
+    }
+  };
+
+  // Picks the few members of a freshly spawned wave that may drop a shot
+  // before they start diving, and hands each one the exact moment to do
+  // it. Deciding this up front, for the wave as a whole, is the point:
+  // every previous attempt derived each slot's timing independently from a
+  // shared formula, and independent draws off one formula land in the same
+  // narrow window however much they're jittered - 15 bullets inside ~2s,
+  // which is exactly the "wall" this is meant to avoid.
+  //
+  // The shooters split into two groups: some fire mid-flight on the way
+  // in, the rest after they've landed, spaced across their own window so
+  // no two arrive together.
+  MainScene.prototype.scheduleFormationFire = function () {
+    var slots = this.state.formation.slice();
+    for (var i = slots.length - 1; i > 0; i--) { // Fisher-Yates - which members shoot shouldn't correlate with grid position
+      var j = Math.floor(Math.random() * (i + 1));
+      var swap = slots[i]; slots[i] = slots[j]; slots[j] = swap;
+    }
+
+    var shooters = Math.min(Math.round(TUNING.formationFireShooters), slots.length);
+    var inFlight = Math.round(shooters * TUNING.formationFireEntryShare);
+    var landedCount = Math.max(1, shooters - inFlight); // only used as a divisor below
+
+    for (var k = 0; k < shooters; k++) {
+      var slot = slots[k];
+      // Its own flight doesn't begin until its entry stagger elapses -
+      // enterAge counts up from negative, so this is when it starts moving.
+      var startsMovingAt = Math.max(0, -slot.enterAge);
+      slot.formationShooter = true;
+      if (k < inFlight) {
+        // Mid-flight: comfortably inside the fly-in, never so close to
+        // touchdown that it reads as having already parked.
+        slot.fireIn = startsMovingAt + TUNING.entryDuration * (0.25 + Math.random() * 0.45);
+      } else {
+        // After landing, each in its own slice of the spread window.
+        var sliceIndex = k - inFlight;
+        slot.fireIn = startsMovingAt + TUNING.entryDuration +
+          ((sliceIndex + Math.random()) / landedCount) * TUNING.formationFireSpread;
+      }
+    }
+
+    // Slicing keeps each group internally spaced, but two shooters from
+    // DIFFERENT groups (or two mid-flight ones whose own flights start at
+    // similar times) can still land on top of each other - and a pair
+    // arriving together is the seed of exactly the burst this scheme
+    // exists to avoid, more so as the shooter count gets tuned up. Walk
+    // them in time order and push any that crowds the one before it. Push
+    // is later-only, so the worst case is a mid-flight shot slipping past
+    // its own landing and becoming an after-landing one - a graceful
+    // degradation, not a burst.
+    var chosen = slots.slice(0, shooters).sort(function (a, b) { return a.fireIn - b.fireIn; });
+    for (var m = 1; m < chosen.length; m++) {
+      var gap = chosen[m].fireIn - chosen[m - 1].fireIn;
+      if (gap < TUNING.formationFireMinGap) chosen[m].fireIn = chosen[m - 1].fireIn + TUNING.formationFireMinGap;
     }
   };
 
@@ -2293,25 +2353,19 @@
     }
   }
 
-  // Return fire from any alive, non-diving formation member - still on its
-  // way in, or already landed and idle. A diving ship's own fire is
+  // Fires the pre-dive shots scheduleFormationFire() scheduled, when their
+  // moment comes round. Only a chosen few members of a wave take part -
+  // everyone else stays silent until it actually dives, where fire is
   // handled separately in updateDivers() (always on, unlimited, no unlock
-  // gate) - this is what makes a settled-but-not-yet-diving formation a
-  // real, gradually escalating threat instead of only ever firing during
-  // its own short entry flight. Same drip cadence and ramped interval as
-  // a diver's own return fire; the timer always runs so toggling the
-  // switch mid-run resumes on schedule instead of dumping a backlog, but
-  // whether a shot actually fires is also gated behind its own later
-  // unlock time, so early waves stay silent. Capped to
-  // TUNING.formationFireMaxShots while non-diving - once a member is
-  // spent, it goes quiet until it either dives (where fire is unlimited
-  // again) or the wave clears; without this cap, a formation left
-  // standing kept shooting forever and read as far too aggressive on its
-  // own, well before anything actually dove at the player.
+  // gate). The timer runs whether or not fire is currently switched on, so
+  // flipping the panel mid-run resumes on schedule rather than dumping a
+  // backlog; whether a shot actually LANDS is gated behind the unlock
+  // time, so early waves stay silent.
   function updateFormationFire(state, dt, scene) {
     for (var i = 0; i < state.formation.length; i++) {
       var slot = state.formation[i];
-      if (!slot.alive || slot.diving || slot.formationShotsFired >= TUNING.formationFireMaxShots) continue;
+      if (!slot.alive || slot.diving || !slot.formationShooter) continue;
+      if (slot.formationShotsFired >= TUNING.formationFireMaxShots) continue;
       slot.fireIn -= dt;
       if (slot.fireIn <= 0) {
         slot.fireIn = randomEnemyFireInterval(state.difficulty.elapsed);
@@ -4307,8 +4361,11 @@
       { section: 'labFire', key: 'enemyFireJitter', label: 'Interval jitter', min: 0, max: 1, step: 0.05, unit: '×' },
       { section: 'labFire', key: 'enemyBulletSpeed', label: 'Bullet speed', min: 60, max: 320, step: 5, unit: 'px/s' },
       { section: 'labFire', key: 'enemyFireAim', label: 'Aim at ship', min: 0, max: 1, step: 0.05, unit: '' },
-      { section: 'labFire', key: 'formationFireUnlockSeconds', label: 'Idle/entry fire unlocks at', min: 0, max: 120, step: 5, unit: 's' },
-      { section: 'labFire', key: 'formationFireInitialStagger', label: 'First-shot spread per slot', min: 0, max: 1, step: 0.05, unit: 's' },
+      { section: 'labFire', key: 'formationFireUnlockSeconds', label: 'Pre-dive fire unlocks at', min: 0, max: 120, step: 5, unit: 's' },
+      { section: 'labFire', key: 'formationFireShooters', label: 'Shooters per wave', min: 0, max: 15, step: 1, unit: '' },
+      { section: 'labFire', key: 'formationFireEntryShare', label: 'Share firing mid-flight', min: 0, max: 1, step: 0.1, unit: '×' },
+      { section: 'labFire', key: 'formationFireSpread', label: 'Spread after landing', min: 1, max: 12, step: 0.5, unit: 's' },
+      { section: 'labFire', key: 'formationFireMinGap', label: 'Min gap between shots', min: 0, max: 2, step: 0.05, unit: 's' },
       { section: 'labFire', key: 'formationFireMaxShots', label: 'Max shots before diving', min: 0, max: 5, step: 1, unit: '' }
     ].forEach(addSlider);
 
