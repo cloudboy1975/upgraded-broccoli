@@ -560,12 +560,24 @@
   var ENTRY_STAGGER = 0.05; // seconds added per (row + col) grid step
   var ENTRY_WOBBLE_AMPLITUDE = 30; // px of sideways S-curve while entering, damped to 0 by arrival - same feel as a swoop dive, not a new visual language
   var ENTRY_WOBBLE_FREQ = 3.2;
-  var ENTRY_FIRE_UNLOCK_SECONDS = 30; // elapsed seconds before an entering ship can fire on the way in - see TUNING.entryFireEnabled
 
   var DIVE_INTERVAL_START = 1.7; // seconds between dive waves
   var DIVE_INTERVAL_MIN = 0.9;
   var DIVE_RAMP_SECONDS = 45; // time to ramp from START to MIN
   var WAVE_CLEAR_PAUSE = 1.4; // pause before the next full formation spawns
+
+  // Formation return fire: once armed, ANY alive non-diving formation
+  // member can return fire on its own drip timer - not just one still on
+  // its way in (see updateFormationFire()). A diving ship's own fire is
+  // separate and always on (once TUNING.enemyFireEnabled) - this only
+  // gates a member that's still entering OR already landed and idle.
+  // FORMATION_FIRE_INITIAL_STAGGER spreads a freshly spawned wave's very
+  // first shots across a much longer window than the ~1s entry flight
+  // itself - without it, most of a 15-member wave's first eligible shot
+  // landed inside that same short window and read as a "wall" of bullets
+  // arriving at once, rather than a drip.
+  var FORMATION_FIRE_UNLOCK_SECONDS = 30; // elapsed seconds before this switches on
+  var FORMATION_FIRE_INITIAL_STAGGER = 0.35; // seconds added per (row + col) grid step to a slot's very first fire timer
 
   // Enemy return fire ramps in on its own slower clock, independent of the
   // dive-rate ramp above - early shots come slow and spaced out (room to
@@ -754,26 +766,30 @@
       diverSpeedMax: 1.12, // ...and once fully ramped. Deliberately mild: escalation is meant to come from the book, not from raw speed
       entryDuration: ENTRY_DURATION, // seconds a formation slot takes to fly in, once its own stagger delay elapses
       entryStagger: ENTRY_STAGGER,   // seconds added per grid step - the diagonal sweep across a freshly spawned wave
-      // A ship still flying in can fire too, same drip as a diver's own
-      // return fire - see updateFormationEntry(). Gated behind its own
-      // later unlock time so early waves still fly in silently; escalation
-      // comes from turning this on, not from the flight itself.
-      entryFireEnabled: true,
-      entryFireUnlockSeconds: ENTRY_FIRE_UNLOCK_SECONDS,
       telegraph: true,    // spin a pending ship before it drops (purely visual - the lead time below applies either way)
       telegraphLead: SORTIE_TELEGRAPH_LEAD,
       telegraphSpinMax: 10, // radians/sec at the instant of drop - the spin ramps up to this, not straight to it, so it reads as accelerating urgency
       tierUnlock: SORTIE_TIER_UNLOCK_SECONDS.slice(),
       enabled: enabled,
-      // A diving OR entering ship fires - see fireEnemyBullet(),
-      // updateDivers(), updateFormationEntry(). Deliberately a drip: slow,
-      // low-lead shots meant to make dodging a sortie feel like a running
-      // dogfight rather than a one-way shooting gallery, not to threaten on
-      // their own the way a diver's own body does. The interval itself
-      // ramps in on its own slower clock - see enemyFireInterval() - so
-      // early shots come sparse and spaced out, not at full density right
-      // away.
+      // A diving ship's own return fire - see fireEnemyBullet(),
+      // updateDivers(). Deliberately a drip: slow, low-lead shots meant to
+      // make dodging a sortie feel like a running dogfight rather than a
+      // one-way shooting gallery, not to threaten on their own the way a
+      // diver's own body does. The interval itself ramps in on its own
+      // slower clock - see enemyFireInterval() - so early shots come
+      // sparse and spaced out, not at full density right away.
       enemyFireEnabled: true,
+      // A non-diving formation member - still on its way in, or already
+      // landed and idle - can return fire too, on the SAME ramped interval
+      // as a diver's own fire. Gated behind its own later unlock time so
+      // early waves stay silent; escalation comes from turning this on,
+      // not from any one part of a slot's lifecycle. See
+      // updateFormationFire() and FORMATION_FIRE_INITIAL_STAGGER (spawnFormation())
+      // for how a freshly spawned wave's first shots avoid bursting all at
+      // once.
+      formationFireEnabled: true,
+      formationFireUnlockSeconds: FORMATION_FIRE_UNLOCK_SECONDS,
+      formationFireInitialStagger: FORMATION_FIRE_INITIAL_STAGGER,
       enemyFireIntervalStart: ENEMY_FIRE_INTERVAL_START, // average seconds between shots, per ship, at t=0...
       enemyFireIntervalMin: ENEMY_FIRE_INTERVAL_MIN,     // ...and once fully ramped
       enemyFireRampSeconds: ENEMY_FIRE_RAMP_SECONDS,
@@ -1989,13 +2005,20 @@
           entering: true, enterFromX: enterFromX, enterFromY: enterFromY,
           enterAge: -(row + col) * TUNING.entryStagger, // negative until its own stagger delay elapses - see updateFormationEntry()
           launchIn: 0, launchTotal: 0, sortieId: null, // >0 while staged for a sortie but not yet dropped - see updatePendingLaunches()
-          // A non-zero default so a slot never opens fire the instant it
-          // starts diving - only the real drop path (updatePendingLaunches)
-          // re-arms this at the actual moment of the dive, but an idle slot
-          // still carries a sane value here for as long as it never dives at
-          // all, which matters whenever anything (a test, a future feature)
-          // flips diving straight to true without going through that path.
-          fireIn: randomEnemyFireInterval(state.difficulty.elapsed) * 0.5,
+          // The (row+col) term deliberately spreads a freshly spawned
+          // wave's very first eligible shots across a much longer window
+          // than any one slot's own entry flight - see
+          // FORMATION_FIRE_INITIAL_STAGGER. Without it, most of a 15-member
+          // wave's first shot landed inside that same short window and
+          // read as a burst rather than a drip. Also doubles as the
+          // original non-zero default so a slot never opens fire the
+          // instant it starts diving - the real drop path
+          // (updatePendingLaunches) re-arms this at the actual moment of
+          // the dive, but a slot that never dives at all still carries a
+          // sane value here, which matters whenever anything (a test, a
+          // future feature) flips diving straight to true without going
+          // through that path.
+          fireIn: (row + col) * TUNING.formationFireInitialStagger + randomEnemyFireInterval(state.difficulty.elapsed) * 0.5,
           age: 0, phase: Math.random() * Math.PI * 2,
           spawnX: baseX,
           type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
@@ -2252,25 +2275,36 @@
       slot.sprite.x = slot.x;
       slot.sprite.y = slot.y;
 
-      // Same drip cadence as a diving ship's own return fire (see
-      // updateDivers()) - the timer always runs so toggling the switch
-      // mid-flight resumes on schedule instead of dumping a backlog, but
-      // whether a shot actually fires is also gated behind its own later
-      // unlock time, so early waves still fly in silently.
-      slot.fireIn -= dt;
-      if (slot.fireIn <= 0) {
-        slot.fireIn = randomEnemyFireInterval(state.difficulty.elapsed);
-        if (TUNING.entryFireEnabled && TUNING.enemyFireEnabled && state.difficulty.elapsed >= TUNING.entryFireUnlockSeconds) {
-          scene.fireEnemyBullet(slot);
-        }
-      }
-
       if (t >= 1) {
         slot.entering = false;
         slot.x = slot.baseX;
         slot.y = slot.baseY;
         slot.sprite.x = slot.x;
         slot.sprite.y = slot.y;
+      }
+    }
+  }
+
+  // Return fire from any alive, non-diving formation member - still on its
+  // way in, or already landed and idle. A diving ship's own fire is
+  // handled separately in updateDivers() (always on, no unlock gate) -
+  // this is what makes a settled-but-not-yet-diving formation a real,
+  // gradually escalating threat instead of only ever firing during its own
+  // short entry flight. Same drip cadence and ramped interval as a
+  // diver's own return fire; the timer always runs so toggling the switch
+  // mid-run resumes on schedule instead of dumping a backlog, but whether
+  // a shot actually fires is also gated behind its own later unlock time,
+  // so early waves stay silent.
+  function updateFormationFire(state, dt, scene) {
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      if (!slot.alive || slot.diving) continue;
+      slot.fireIn -= dt;
+      if (slot.fireIn <= 0) {
+        slot.fireIn = randomEnemyFireInterval(state.difficulty.elapsed);
+        if (TUNING.formationFireEnabled && TUNING.enemyFireEnabled && state.difficulty.elapsed >= TUNING.formationFireUnlockSeconds) {
+          scene.fireEnemyBullet(slot);
+        }
       }
     }
   }
@@ -4068,6 +4102,7 @@
       stepDivers: function (dt) {
         self.state.clock += dt;
         updateFormationEntry(self.state, dt, self);
+        updateFormationFire(self.state, dt, self);
         updateDivers(self.state, dt, self.diverSpeedScale(), self);
         updateEnemyBullets(self.state, dt);
         self.handleCollisions();
@@ -4123,6 +4158,7 @@
       updateEnemyBullets(state, dt);
       updateIdleBob(state);
       updateFormationEntry(state, dt, this);
+      updateFormationFire(state, dt, this);
       updatePendingLaunches(state, dt);
       updateDivers(state, dt, this.diverSpeedScale(), this);
       this.updateFiring(dt);
@@ -4251,26 +4287,27 @@
       { section: 'labTelegraph', key: 'telegraphSpinMax', label: 'Spin speed', min: 2, max: 24, step: 1, unit: 'rad/s' },
       { section: 'labEntry', key: 'entryDuration', label: 'Flight time', min: 0.3, max: 2.5, step: 0.05, unit: 's' },
       { section: 'labEntry', key: 'entryStagger', label: 'Wave stagger', min: 0, max: 0.3, step: 0.01, unit: 's' },
-      { section: 'labEntry', key: 'entryFireUnlockSeconds', label: 'Fire unlocks at', min: 0, max: 120, step: 5, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalStart', label: 'First shot interval', min: 0.4, max: 6, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalMin', label: 'Fastest shot interval', min: 0.2, max: 4, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireRampSeconds', label: 'Ramp length', min: 10, max: 240, step: 5, unit: 's' },
       { section: 'labFire', key: 'enemyFireJitter', label: 'Interval jitter', min: 0, max: 1, step: 0.05, unit: '×' },
       { section: 'labFire', key: 'enemyBulletSpeed', label: 'Bullet speed', min: 60, max: 320, step: 5, unit: 'px/s' },
-      { section: 'labFire', key: 'enemyFireAim', label: 'Aim at ship', min: 0, max: 1, step: 0.05, unit: '' }
+      { section: 'labFire', key: 'enemyFireAim', label: 'Aim at ship', min: 0, max: 1, step: 0.05, unit: '' },
+      { section: 'labFire', key: 'formationFireUnlockSeconds', label: 'Idle/entry fire unlocks at', min: 0, max: 120, step: 5, unit: 's' },
+      { section: 'labFire', key: 'formationFireInitialStagger', label: 'First-shot spread per slot', min: 0, max: 1, step: 0.05, unit: 's' }
     ].forEach(addSlider);
 
     addCheckbox('labTelegraph', 'Spin before drop',
       function () { return TUNING.telegraph; },
       function (v) { TUNING.telegraph = v; });
 
-    addCheckbox('labEntry', 'Fire while entering',
-      function () { return TUNING.entryFireEnabled; },
-      function (v) { TUNING.entryFireEnabled = v; });
-
     addCheckbox('labFire', 'Divers return fire',
       function () { return TUNING.enemyFireEnabled; },
       function (v) { TUNING.enemyFireEnabled = v; });
+
+    addCheckbox('labFire', 'Idle/entering ships return fire too',
+      function () { return TUNING.formationFireEnabled; },
+      function (v) { TUNING.formationFireEnabled = v; });
 
     // Applied explicitly (rather than left to the next playing-phase frame)
     // so the DOM element's own visibility always matches TUNING right away
