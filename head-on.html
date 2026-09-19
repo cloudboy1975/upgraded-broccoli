@@ -473,6 +473,10 @@
         <div id="labFire"></div>
       </div>
       <div class="lab-section">
+        <h3>On death</h3>
+        <div id="labDeath"></div>
+      </div>
+      <div class="lab-section">
         <h3>Tier unlocks</h3>
         <div id="labTiers"></div>
       </div>
@@ -839,6 +843,16 @@
     }
   ];
 
+  // Declared up here, rather than beside the rest of the starburst
+  // constants further down, because TUNING is SEEDED from them a few lines
+  // below - and `var` hoisting means a constant declared after that point
+  // is still `undefined` when the seed runs. (That is exactly how this
+  // pair got in: defined next to the starburst block, they reached TUNING
+  // as undefined and the death blast's brick damage silently fell through
+  // to its own fallback. Anything new that TUNING reads belongs above.)
+  var STARBURST_BRICK_DAMAGE = 2; // hp dealt to every alive segment, everywhere, on a starburst
+  var DEATH_BLAST_BRICK_DAMAGE = STARBURST_BRICK_DAMAGE; // ...and on a death - see the death blast comment below
+
   // ---- Live tuning ------------------------------------------------------
   // Everything the sortie system reads at runtime, in one mutable object so
   // the hidden control panel can retune the game between (or during) waves
@@ -895,6 +909,12 @@
       enemyFireJitter: 0.4,   // +/- this fraction of the interval, so a sortie's shots don't all land on the same beat
       enemyBulletSpeed: 150,  // px/sec - well under the player's own BULLET_SPEED
       enemyFireAim: 0.35,     // 0 = straight down, 1 = aimed at the ship's exact position at the moment of firing (frozen, not homing)
+      // Dying sets off a starburst at the ship - see the DEATH_BLAST_BRICK_DAMAGE
+      // comment for why, and shipHit() for where. Both live here so the
+      // mitigation can be turned off, or the brick damage dialled, without
+      // a reload.
+      deathBlast: true,
+      deathBlastBrickDamage: DEATH_BLAST_BRICK_DAMAGE,
       diagnosticOverlay: false // draws elapsed/tier/sortie-activation text over the live game - see updateDiagOverlay()
     };
   }
@@ -1083,7 +1103,33 @@
   var STARBURST_FX_DURATION = 0.45; // seconds
   var STARBURST_FX_MAX_RADIUS = 260;
   var COLOR_STARBURST = 0xfbbf24;
-  var STARBURST_BRICK_DAMAGE = 2; // hp dealt to every alive segment, everywhere, on a starburst
+  // STARBURST_BRICK_DAMAGE and DEATH_BLAST_BRICK_DAMAGE are declared above
+  // sortieDefaultTuning(), which seeds TUNING from them - see the note there.
+  // The ring's expansion rate, not its size, is what makes a starburst
+  // read as a starburst - so a blast set off somewhere else (see the
+  // death blast below) can cover a different distance at the same speed
+  // and still look like the same explosion rather than a new effect.
+  var STARBURST_FX_SPEED = STARBURST_FX_MAX_RADIUS / STARBURST_FX_DURATION; // px/sec
+
+  // The death blast: dying sets off that same starburst, centered on the
+  // ship. The point is the BRICK damage, not the enemy wipe - without it,
+  // losing your last shield dot while the screen is packed with bars is
+  // an unwinnable position you can only watch play out, since the powerup
+  // economy that chips bars is exactly what a death resets. Every death
+  // now buys the board back a little room.
+  //
+  // Two deliberate departures from the core's own starburst:
+  //
+  //  - No score. Killing the formation is a side effect of dying here,
+  //    not a payoff, and paying for it would make a full formation plus a
+  //    spare life worth deliberately crashing into.
+  //  - A bigger ring. The core's starburst goes off up among the enemies
+  //    it kills; this one goes off at the bottom of the screen, where a
+  //    260px ring would stop well short of them and the wipe would read
+  //    as uncaused. The radius is measured per blast to the farthest
+  //    corner from wherever the ship actually died, and the duration
+  //    follows from STARBURST_FX_SPEED so the ring still expands at the
+  //    core starburst's own rate.
 
   // Ship break-apart: a placeholder death beat, retro-Asteroids style -
   // the ship's own outline splits into its 4 edges, each tumbling and
@@ -3369,7 +3415,7 @@
     this.triggerStarburst(core.sprite.x, core.sprite.y);
     core.sprite.destroy();
     state.core = null;
-    this.shipHit('core_sacrifice');
+    this.shipHit('core_sacrifice', null, true); // the starburst above IS this death's explosion - don't fire a second one
   };
 
   // An already-released core is a real hazard, not just cover for enemies -
@@ -3499,19 +3545,41 @@
   // matter. Never touches the ship; this is a reward for hitting a small
   // moving target, not a risk. Also chips every brick segment in play -
   // see damageAllBrickSegments() and the STARBURST_BRICK_DAMAGE comment.
-  MainScene.prototype.triggerStarburst = function (x, y) {
+  //
+  // `opts` is how the death blast (see shipHit()) borrows this whole
+  // effect while differing on the three things that have to differ:
+  // awardScore, brickDamage and maxRadius. Omitting it entirely gives the
+  // core's own starburst, unchanged.
+  MainScene.prototype.triggerStarburst = function (x, y, opts) {
     var state = this.state;
     var self = this;
+    opts = opts || {};
+    var awardScore = opts.awardScore !== false;
+    var brickDamage = opts.brickDamage === undefined ? STARBURST_BRICK_DAMAGE : opts.brickDamage;
+    var maxRadius = opts.maxRadius === undefined ? STARBURST_FX_MAX_RADIUS : opts.maxRadius;
     state.formation.forEach(function (slot) {
       if (!slot.alive) return;
       slot.sprite.destroy();
       slot.alive = false;
-      self.addScore(slot.score);
+      if (awardScore) self.addScore(slot.score);
     });
-    this.damageAllBrickSegments(STARBURST_BRICK_DAMAGE);
+    this.damageAllBrickSegments(brickDamage);
     if (state.starburstFx) state.starburstFx.gfx.destroy();
-    state.starburstFx = { x: x, y: y, age: 0, gfx: this.add.graphics() };
+    state.starburstFx = {
+      x: x, y: y, age: 0,
+      maxRadius: maxRadius,
+      duration: maxRadius / STARBURST_FX_SPEED, // same expansion rate whatever the size
+      gfx: this.add.graphics()
+    };
   };
+
+  // Distance from (x, y) to the farthest corner of the playfield - the
+  // radius a ring has to reach to sweep the whole screen from there.
+  function radiusToFarthestCorner(x, y) {
+    var dx = Math.max(x, GAME_WIDTH - x);
+    var dy = Math.max(y, GAME_HEIGHT - y);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
 
   // Every alive segment of every alive color bar currently on screen takes
   // `amount` damage, together, in one pass - no color or lane gating at
@@ -3542,7 +3610,7 @@
     var fx = this.state.starburstFx;
     if (!fx) return;
     fx.age += dt;
-    var t = Math.min(fx.age / STARBURST_FX_DURATION, 1);
+    var t = Math.min(fx.age / fx.duration, 1);
     if (t >= 1) {
       fx.gfx.destroy();
       this.state.starburstFx = null;
@@ -3550,7 +3618,7 @@
     }
     fx.gfx.clear();
     fx.gfx.lineStyle(4, COLOR_STARBURST, 1 - t);
-    fx.gfx.strokeCircle(fx.x, fx.y, STARBURST_FX_MAX_RADIUS * t);
+    fx.gfx.strokeCircle(fx.x, fx.y, fx.maxRadius * t);
   };
 
   // The ship's own outline (nose, right wing, notch, left wing - same
@@ -4125,7 +4193,12 @@
     this.renderHud();
   };
 
-  MainScene.prototype.shipHit = function (cause, extra) {
+  // `alreadyExploded` is how the core sacrifice says "the thing that
+  // killed me has already blown the board up". Without it, ramming an
+  // orbiting core would set off two starbursts back to back - its own
+  // scored one and then the death blast - and chip every brick twice for
+  // the price of one life.
+  MainScene.prototype.shipHit = function (cause, extra, alreadyExploded) {
     var state = this.state;
     this.clearPowerup(); // dying resets whatever orb colors were banked - no carrying progress through a death
     this.clearFirePower(); // and the ship's strip-earned fire power, same rule
@@ -4141,6 +4214,17 @@
       state.lives = 0;
       this.endGame();
     } else {
+      // The death blast - see DEATH_BLAST_BRICK_DAMAGE. Only on a death
+      // the run survives: once the game is over nothing below update()'s
+      // phase gate runs, so a blast fired there would clear the board and
+      // play its ring with the overlay already up and nobody watching.
+      if (TUNING.deathBlast && !alreadyExploded) {
+        this.triggerStarburst(state.ship.x, SHIP_Y, {
+          awardScore: false,
+          brickDamage: TUNING.deathBlastBrickDamage,
+          maxRadius: radiusToFarthestCorner(state.ship.x, SHIP_Y)
+        });
+      }
       this.respawnShip();
     }
     this.renderHud();
@@ -4581,8 +4665,13 @@
       { section: 'labFire', key: 'formationFireEntryShare', label: 'Share firing mid-flight', min: 0, max: 1, step: 0.1, unit: '×' },
       { section: 'labFire', key: 'formationFireSpread', label: 'Spread after landing', min: 1, max: 12, step: 0.5, unit: 's' },
       { section: 'labFire', key: 'formationFireMinGap', label: 'Min gap between shots', min: 0, max: 2, step: 0.05, unit: 's' },
-      { section: 'labFire', key: 'formationFireMaxShots', label: 'Max shots before diving', min: 0, max: 5, step: 1, unit: '' }
+      { section: 'labFire', key: 'formationFireMaxShots', label: 'Max shots before diving', min: 0, max: 5, step: 1, unit: '' },
+      { section: 'labDeath', key: 'deathBlastBrickDamage', label: 'Brick damage', min: 0, max: 8, step: 1, unit: 'hp' }
     ].forEach(addSlider);
+
+    addCheckbox('labDeath', 'Death sets off a starburst',
+      function () { return TUNING.deathBlast; },
+      function (v) { TUNING.deathBlast = v; });
 
     addCheckbox('labTelegraph', 'Spin before drop',
       function () { return TUNING.telegraph; },
