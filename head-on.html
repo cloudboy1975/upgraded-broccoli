@@ -558,11 +558,11 @@
   // staggered by grid position so the whole formation reads as one
   // diagonal wave sweeping in rather than five separate pops.
   var ENTRY_MARGIN = 30; // px past the edge (top and sides) a slot starts from - just far enough to be fully off-screen
-  var ENTRY_DURATION = 1.4; // seconds for one slot's own flight, once its stagger delay elapses - deliberately unhurried, so a shot dropped on the way in reads as coming from a ship in flight rather than one that has already parked
-  var ENTRY_STAGGER = 0.08; // seconds added per (row + col) grid step
+  var ENTRY_DURATION = 1.0; // seconds for one slot's own flight, once its stagger delay elapses - unhurried enough that a shot dropped on the way in reads as coming from a ship in flight, without dragging
+  var ENTRY_STAGGER = 0.06; // seconds added per (row + col) grid step
   var ENTRY_WOBBLE_AMPLITUDE = 30; // px of sideways S-curve while entering, damped to 0 by arrival - same feel as a swoop dive, not a new visual language
   var ENTRY_WOBBLE_FREQ = 3.2;
-  var ENTRY_ROW_GAP = 0.22; // seconds between one row starting its flight and the next, for the patterns that arrive row by row
+  var ENTRY_ROW_GAP = 0.15; // seconds between one row starting its flight and the next, for the patterns that arrive row by row
 
   // Fly-in variety. Each wave draws one of these from a shuffle bag, so
   // arrivals vary without the same one landing twice in a row.
@@ -634,7 +634,14 @@
   var DIVE_INTERVAL_START = 1.7; // seconds between dive waves
   var DIVE_INTERVAL_MIN = 0.9;
   var DIVE_RAMP_SECONDS = 45; // time to ramp from START to MIN
-  var WAVE_CLEAR_PAUSE = 1.4; // pause before the next full formation spawns
+  var WAVE_CLEAR_PAUSE = 0.7; // pause before the next full formation spawns - pure dead screen, so kept short
+  // Shape of a ship's approach. An ease-out decelerates into place, which
+  // is what makes the landing exact and calm - but the flatter the tail,
+  // the more of the flight is spent visibly crawling the last stretch. At
+  // the textbook power of 2 the final 10% of the distance ate 32% of the
+  // flight, which read as sluggish however short the duration was. 1.6
+  // keeps the settle without the drag; anything >= 1 still lands exactly.
+  var ENTRY_EASE_POWER = 1.6;
 
   // Formation return fire: the handful of shots a wave drops BEFORE its
   // members start diving - a diving ship's own fire is separate and
@@ -853,6 +860,7 @@
       entryDuration: ENTRY_DURATION, // seconds a formation slot takes to fly in, once its own stagger delay elapses
       entryStagger: ENTRY_STAGGER,   // seconds added per grid step - the diagonal sweep across a freshly spawned wave
       entryRowGap: ENTRY_ROW_GAP,    // seconds between rows, for the fly-ins that arrive row by row
+      waveClearPause: WAVE_CLEAR_PAUSE, // dead screen between a wave clearing and the next arriving
       entryEnabled: entryEnabled,    // which fly-in patterns the bag may draw - see ENTRY_PATTERNS
       telegraph: true,    // spin a pending ship before it drops (purely visual - the lead time below applies either way)
       telegraphLead: SORTIE_TELEGRAPH_LEAD,
@@ -2499,7 +2507,7 @@
       if (slot.enterAge < 0) continue; // still waiting on its own stagger delay, parked off-screen
 
       var t = Math.min(slot.enterAge / TUNING.entryDuration, 1);
-      var eased = 1 - (1 - t) * (1 - t);
+      var eased = 1 - Math.pow(1 - t, ENTRY_EASE_POWER);
       var wobble = Math.sin(slot.enterAge * ENTRY_WOBBLE_FREQ + slot.phase) *
         ENTRY_WOBBLE_AMPLITUDE * (1 - t) * slot.enterWeave;
       slot.x = slot.enterFromX + (slot.baseX - slot.enterFromX) * eased;
@@ -2655,7 +2663,7 @@
     var state = this.state;
     var anyAlive = state.formation.some(function (s) { return s.alive; });
     if (anyAlive) { state.waveClearTimer = 0; return; }
-    if (state.waveClearTimer <= 0) state.waveClearTimer = WAVE_CLEAR_PAUSE;
+    if (state.waveClearTimer <= 0) state.waveClearTimer = TUNING.waveClearPause;
     state.waveClearTimer -= dt;
     if (state.waveClearTimer <= 0) {
       state.wave++;
@@ -4561,6 +4569,7 @@
       { section: 'labEntry', key: 'entryDuration', label: 'Flight time', min: 0.3, max: 2.5, step: 0.05, unit: 's' },
       { section: 'labEntry', key: 'entryStagger', label: 'Wave stagger', min: 0, max: 0.3, step: 0.01, unit: 's' },
       { section: 'labEntry', key: 'entryRowGap', label: 'Row gap', min: 0, max: 0.8, step: 0.02, unit: 's' },
+      { section: 'labEntry', key: 'waveClearPause', label: 'Gap between waves', min: 0, max: 3, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalStart', label: 'First shot interval', min: 0.4, max: 6, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalMin', label: 'Fastest shot interval', min: 0.2, max: 4, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireRampSeconds', label: 'Ramp length', min: 10, max: 240, step: 5, unit: 's' },
