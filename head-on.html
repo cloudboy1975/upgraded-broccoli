@@ -466,6 +466,7 @@
       <div class="lab-section">
         <h3>Formation entry</h3>
         <div id="labEntry"></div>
+        <div id="labEntryPatterns"></div>
       </div>
       <div class="lab-section">
         <h3>Enemy fire</h3>
@@ -561,6 +562,74 @@
   var ENTRY_STAGGER = 0.08; // seconds added per (row + col) grid step
   var ENTRY_WOBBLE_AMPLITUDE = 30; // px of sideways S-curve while entering, damped to 0 by arrival - same feel as a swoop dive, not a new visual language
   var ENTRY_WOBBLE_FREQ = 3.2;
+  var ENTRY_ROW_GAP = 0.22; // seconds between one row starting its flight and the next, for the patterns that arrive row by row
+
+  // Fly-in variety. Each wave draws one of these from a shuffle bag, so
+  // arrivals vary without the same one landing twice in a row.
+  //
+  // A pattern only decides WHERE off screen each slot starts and HOW LONG
+  // it waits before moving; the flight itself (ease-in, weave, arrival) is
+  // shared by all of them in updateFormationEntry(). That is deliberately
+  // the whole extension point - a new arrival is a few lines here, not new
+  // animation code, and it inherits the exact-arrival guarantees the
+  // shared flight already has.
+  //
+  // place() receives { row, col, baseX, baseY } plus a per-wave ctx, and
+  // returns { x, y, delay }. `weave` scales the shared S-curve (0 disables
+  // it, for patterns whose whole read is a straight line).
+  var ENTRY_PATTERNS = [
+    {
+      id: 'corners', label: 'Corner fan',
+      place: function (slot, ctx) {
+        // The original: in from whichever top corner is nearer its own
+        // column, sweeping diagonally across the grid.
+        return {
+          x: (slot.col % 2 === 0) ? -ENTRY_MARGIN : GAME_WIDTH + ENTRY_MARGIN,
+          y: -ENTRY_MARGIN,
+          delay: (slot.row + slot.col) * ctx.stagger
+        };
+      }
+    },
+    {
+      id: 'colorStreams', label: 'Colours converge',
+      place: function (slot, ctx) {
+        // Every row is one enemy type and so one colour - send each colour
+        // in from its own side and let them converge on the grid at once.
+        // ctx.spin rotates which colour takes which approach per wave.
+        var from = (slot.row + ctx.spin) % 3;
+        if (from === 0) return { x: -ENTRY_MARGIN, y: slot.baseY, delay: slot.col * ctx.stagger };
+        if (from === 1) return { x: GAME_WIDTH + ENTRY_MARGIN, y: slot.baseY, delay: (ctx.cols - 1 - slot.col) * ctx.stagger };
+        return { x: slot.baseX, y: -ENTRY_MARGIN, delay: slot.col * ctx.stagger };
+      }
+    },
+    {
+      id: 'sideRows', label: 'Rows from the sides',
+      place: function (slot, ctx) {
+        // Whole rows sweep in horizontally, alternating sides. Within a
+        // row the member with furthest to travel leaves first, so it reads
+        // as one line filing in and peeling off rather than five abreast.
+        var fromLeft = slot.row % 2 === 0;
+        return {
+          x: fromLeft ? -ENTRY_MARGIN : GAME_WIDTH + ENTRY_MARGIN,
+          y: slot.baseY,
+          delay: slot.row * ctx.rowGap + (fromLeft ? ctx.cols - 1 - slot.col : slot.col) * ctx.stagger
+        };
+      }
+    },
+    {
+      id: 'slinky', label: 'Slinky drop', weave: 0,
+      place: function (slot, ctx) {
+        // Straight down, each row a beat behind the one above so the grid
+        // stacks up from the top and compresses into place. No weave - the
+        // whole read is the vertical drop.
+        return {
+          x: slot.baseX,
+          y: -ENTRY_MARGIN,
+          delay: slot.row * ctx.rowGap + slot.col * ctx.stagger * 0.4
+        };
+      }
+    }
+  ];
 
   var DIVE_INTERVAL_START = 1.7; // seconds between dive waves
   var DIVE_INTERVAL_MIN = 0.9;
@@ -771,6 +840,8 @@
   function sortieDefaultTuning() {
     var enabled = {};
     SORTIE_PATTERNS.forEach(function (p) { enabled[p.id] = true; });
+    var entryEnabled = {};
+    ENTRY_PATTERNS.forEach(function (p) { entryEnabled[p.id] = true; });
     return {
       diveIntervalStart: DIVE_INTERVAL_START,
       diveIntervalMin: DIVE_INTERVAL_MIN,
@@ -781,6 +852,8 @@
       diverSpeedMax: 1.12, // ...and once fully ramped. Deliberately mild: escalation is meant to come from the book, not from raw speed
       entryDuration: ENTRY_DURATION, // seconds a formation slot takes to fly in, once its own stagger delay elapses
       entryStagger: ENTRY_STAGGER,   // seconds added per grid step - the diagonal sweep across a freshly spawned wave
+      entryRowGap: ENTRY_ROW_GAP,    // seconds between rows, for the fly-ins that arrive row by row
+      entryEnabled: entryEnabled,    // which fly-in patterns the bag may draw - see ENTRY_PATTERNS
       telegraph: true,    // spin a pending ship before it drops (purely visual - the lead time below applies either way)
       telegraphLead: SORTIE_TELEGRAPH_LEAD,
       telegraphSpinMax: 10, // radians/sec at the instant of drop - the spin ramps up to this, not straight to it, so it reads as accelerating urgency
@@ -831,9 +904,9 @@
       var saved = JSON.parse(raw);
       Object.keys(TUNING).forEach(function (k) {
         if (!(k in saved)) return;
-        if (k === 'enabled') {
-          Object.keys(TUNING.enabled).forEach(function (id) {
-            if (id in saved.enabled) TUNING.enabled[id] = !!saved.enabled[id];
+        if (k === 'enabled' || k === 'entryEnabled') {
+          Object.keys(TUNING[k]).forEach(function (id) {
+            if (id in saved[k]) TUNING[k][id] = !!saved[k][id];
           });
         } else if (k === 'tierUnlock') {
           if (Array.isArray(saved.tierUnlock)) TUNING.tierUnlock = saved.tierUnlock.slice();
@@ -1729,6 +1802,9 @@
       wave: 1,
       diveTimer: TUNING.diveIntervalStart,
       waveClearTimer: 0, // > 0 while waiting to spawn the next formation
+      entryBag: [], // shuffle bag of fly-in pattern ids - see drawEntryPattern()
+      entryBagKey: '', // which enabled-set the bag was built from, so toggling one in the lab redeals
+      entryPattern: null, // the fly-in this wave arrived on, for the lab readout
       sortieBag: [], // shuffle bag of pattern ids, drawn from and refilled - see drawSortie()
       sortieBagTier: -1, // tier the current bag was built at, so a newly unlocked tier reshuffles immediately
       lastSortie: null, // { id, size, at } of the most recent launch, for the control panel readout
@@ -2010,28 +2086,72 @@
     return (GAME_WIDTH - totalWidth) / 2 + col * FORMATION_COL_SPACING;
   };
 
-  MainScene.prototype.spawnFormation = function () {
+  // Draws the next fly-in, from a shuffle bag so the same arrival doesn't
+  // land twice running. The bag is rebuilt whenever the enabled set
+  // changes, mirroring how a tier unlock redeals the sortie bag - without
+  // that, disabling a pattern in the lab would still let a stale bag
+  // deal it one more time.
+  MainScene.prototype.drawEntryPattern = function (forcedId) {
+    var state = this.state;
+    if (forcedId) {
+      var forced = ENTRY_PATTERNS.filter(function (p) { return p.id === forcedId; })[0];
+      if (forced) return forced;
+    }
+    var allowed = ENTRY_PATTERNS.filter(function (p) { return TUNING.entryEnabled[p.id]; });
+    if (!allowed.length) allowed = ENTRY_PATTERNS.slice(); // a wave still has to come from somewhere
+    var key = allowed.map(function (p) { return p.id; }).join(',');
+    if (state.entryBagKey !== key || !state.entryBag || !state.entryBag.length) {
+      state.entryBagKey = key;
+      state.entryBag = allowed.map(function (p) { return p.id; });
+      for (var i = state.entryBag.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var swap = state.entryBag[i]; state.entryBag[i] = state.entryBag[j]; state.entryBag[j] = swap;
+      }
+    }
+    var id = state.entryBag.pop();
+    return ENTRY_PATTERNS.filter(function (p) { return p.id === id; })[0] || allowed[0];
+  };
+
+  MainScene.prototype.spawnFormation = function (entryPatternId) {
     var state = this.state;
     state.formation.forEach(function (slot) { if (slot.sprite) slot.sprite.destroy(); });
     state.formation = [];
+    var entryPattern = this.drawEntryPattern(entryPatternId);
+    var entryCtx = {
+      rows: FORMATION_ROWS, cols: FORMATION_COLS,
+      stagger: TUNING.entryStagger, rowGap: TUNING.entryRowGap,
+      spin: Math.floor(Math.random() * 3) // rotates which colour takes which approach, wave to wave
+    };
+    var entryWeave = entryPattern.weave === undefined ? 1 : entryPattern.weave;
+    var lastArrival = 0; // the real longest delay for THIS pattern - see the dive arming below
+    state.entryPattern = entryPattern.id;
+
     for (var row = 0; row < FORMATION_ROWS; row++) {
       var type = FORMATION_ROW_TYPES[row];
       var cfg = ENEMY_TYPES[type];
       for (var col = 0; col < FORMATION_COLS; col++) {
         var baseX = this.formationGridX(col);
         var baseY = FORMATION_ROW_Y[row];
-        // Starts off-screen near whichever top corner is nearer its own
-        // column (even columns from the left, odd from the right) - see
-        // updateFormationEntry() for the flight itself.
-        var enterFromX = (col % 2 === 0) ? -ENTRY_MARGIN : (GAME_WIDTH + ENTRY_MARGIN);
-        var enterFromY = -ENTRY_MARGIN;
+        // Where off screen this one starts, and how long it waits, is the
+        // fly-in pattern's call - see ENTRY_PATTERNS. The flight itself is
+        // shared (updateFormationEntry()).
+        var placed = entryPattern.place({ row: row, col: col, baseX: baseX, baseY: baseY }, entryCtx);
+        var enterFromX = placed.x;
+        var enterFromY = placed.y;
+        var enterDelay = Math.max(0, placed.delay || 0);
+        if (enterDelay > lastArrival) lastArrival = enterDelay;
         var slot = {
           row: row, col: col,
           baseX: baseX, baseY: baseY,
           x: enterFromX, y: enterFromY,
           alive: true, diving: false,
           entering: true, enterFromX: enterFromX, enterFromY: enterFromY,
-          enterAge: -(row + col) * TUNING.entryStagger, // negative until its own stagger delay elapses - see updateFormationEntry()
+          enterAge: -enterDelay, // negative until its own delay elapses - see updateFormationEntry()
+          enterWeave: entryWeave,
+          // Weave ACROSS the line of travel, never along it: on a
+          // horizontal approach an x-weave would read as stuttering
+          // forward and back rather than as a curve.
+          enterWeaveOnY: Math.abs(baseX - enterFromX) > Math.abs(baseY - enterFromY),
           launchIn: 0, launchTotal: 0, sortieId: null, // >0 while staged for a sortie but not yet dropped - see updatePendingLaunches()
           // A non-zero default so a slot never opens fire the instant it
           // starts diving - the real drop path (updatePendingLaunches)
@@ -2061,8 +2181,7 @@
     // coincidence - diveIntervalStart sat near the fly-in duration - so
     // retuning either one (or the entry timing, now that it's a lab knob)
     // would have silently pulled the first attack away from the landing.
-    var lastArrival = (FORMATION_ROWS - 1 + FORMATION_COLS - 1) * TUNING.entryStagger + TUNING.entryDuration;
-    state.diveTimer = lastArrival + TUNING.firstDiveDelay;
+    state.diveTimer = lastArrival + TUNING.entryDuration + TUNING.firstDiveDelay;
 
     // Roll a fresh core for this wave - at most one, and not guaranteed.
     if (state.core && state.core.sprite) state.core.sprite.destroy();
@@ -2381,9 +2500,11 @@
 
       var t = Math.min(slot.enterAge / TUNING.entryDuration, 1);
       var eased = 1 - (1 - t) * (1 - t);
-      var wobble = Math.sin(slot.enterAge * ENTRY_WOBBLE_FREQ + slot.phase) * ENTRY_WOBBLE_AMPLITUDE * (1 - t);
-      slot.x = slot.enterFromX + (slot.baseX - slot.enterFromX) * eased + wobble;
+      var wobble = Math.sin(slot.enterAge * ENTRY_WOBBLE_FREQ + slot.phase) *
+        ENTRY_WOBBLE_AMPLITUDE * (1 - t) * slot.enterWeave;
+      slot.x = slot.enterFromX + (slot.baseX - slot.enterFromX) * eased;
       slot.y = slot.enterFromY + (slot.baseY - slot.enterFromY) * eased;
+      if (slot.enterWeaveOnY) slot.y += wobble; else slot.x += wobble;
       slot.sprite.x = slot.x;
       slot.sprite.y = slot.y;
 
@@ -4439,6 +4560,7 @@
       { section: 'labEntry', key: 'firstDiveDelay', label: 'First attack after landing', min: 0, max: 3, step: 0.1, unit: 's' },
       { section: 'labEntry', key: 'entryDuration', label: 'Flight time', min: 0.3, max: 2.5, step: 0.05, unit: 's' },
       { section: 'labEntry', key: 'entryStagger', label: 'Wave stagger', min: 0, max: 0.3, step: 0.01, unit: 's' },
+      { section: 'labEntry', key: 'entryRowGap', label: 'Row gap', min: 0, max: 0.8, step: 0.02, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalStart', label: 'First shot interval', min: 0.4, max: 6, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalMin', label: 'Fastest shot interval', min: 0.2, max: 4, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireRampSeconds', label: 'Ramp length', min: 10, max: 240, step: 5, unit: 's' },
@@ -4561,6 +4683,43 @@
       syncers.push(function () { cb.checked = !!TUNING.enabled[p.id]; });
     });
 
+    // Fly-in book: toggle which arrivals the bag may draw, and replay any
+    // one of them on demand - tuning a fly-in means watching it, and
+    // waiting for a wave to clear to see the next draw is hopeless.
+    ENTRY_PATTERNS.forEach(function (p) {
+      var row = document.createElement('div');
+      row.className = 'lab-pattern';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.addEventListener('change', function () {
+        TUNING.entryEnabled[p.id] = cb.checked;
+        saveTuning();
+      });
+
+      var name = document.createElement('span');
+      name.className = 'lab-name';
+      name.textContent = p.label;
+
+      var spacer = document.createElement('span');
+      spacer.className = 'lab-tier';
+
+      var fly = document.createElement('button');
+      fly.type = 'button';
+      fly.className = 'lab-btn';
+      fly.textContent = 'Fly';
+      fly.addEventListener('click', function () {
+        if (mainScene) mainScene.spawnFormation(p.id); // respawn the wave arriving this way
+      });
+
+      row.appendChild(cb);
+      row.appendChild(name);
+      row.appendChild(spacer);
+      row.appendChild(fly);
+      document.getElementById('labEntryPatterns').appendChild(row);
+      syncers.push(function () { cb.checked = !!TUNING.entryEnabled[p.id]; });
+    });
+
     function syncAll() { syncers.forEach(function (fn) { fn(); }); }
 
     function addLine(key, value) {
@@ -4634,6 +4793,7 @@
       defaults: sortieDefaultTuning,
       save: saveTuning,
       storageKey: TUNING_KEY,
+      entryPatterns: ENTRY_PATTERNS.map(function (p) { return { id: p.id, label: p.label }; }),
       patterns: SORTIE_PATTERNS.map(function (p) {
         return { id: p.id, label: p.label, tier: p.tier, min: p.min, stagger: p.stagger, cooldown: p.cooldown };
       }),
