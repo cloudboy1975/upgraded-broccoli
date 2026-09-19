@@ -930,6 +930,15 @@
   var ZIGZAG_FREQ = 5.2;
   var ZIGZAG_AMPLITUDE = 50;
   var ZIGZAG_BANK = 0.4; // radians a zigzag leans into its own oscillation - see diverFlightRotation()
+  // A diver's lateral weave fades in over its first moments instead of
+  // starting at full strength - see diveWeaveScale(). The weave is a sine
+  // on a phase rolled fresh at the drop, so at age 0 it sat at
+  // sin(phase) * amplitude: an arbitrary offset of up to a FULL amplitude,
+  // which teleported the ship up to ~50px sideways on the single frame it
+  // dropped. Measured on both zigzag and swoop, and it predates the
+  // telegraph work - the rotation snap that used to happen on that same
+  // frame simply masked it.
+  var DIVE_WEAVE_EASE_IN = 0.35; // seconds for the weave to reach full amplitude
 
   // colorKey: which of the powerup bolt's three colors this enemy type
   // dies to (see applyPowerupBoltVsFormation()) - by color FAMILY, not an
@@ -2417,9 +2426,19 @@
   // by updateDiver() and the drop in updatePendingLaunches(), so the
   // telegraph spin always settles onto the exact angle flight will ask for
   // rather than an assumed one.
+  // How much of a diver's lateral weave is in effect yet - 0 at the instant
+  // it drops, reaching full over DIVE_WEAVE_EASE_IN. Scaling the weave (in
+  // both position and bank) rather than offsetting its phase is what keeps
+  // the break-off continuous WITHOUT widening the weave: subtracting the
+  // sine's starting value instead would shift its centre by up to a full
+  // amplitude, letting a zigzag wander clean off the side of the screen.
+  function diveWeaveScale(slot) {
+    return Math.min(1, slot.age / DIVE_WEAVE_EASE_IN);
+  }
+
   function diverFlightRotation(slot) {
     if (slot.type !== 'zigzag') return 0;
-    return Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * ZIGZAG_BANK;
+    return Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * ZIGZAG_BANK * diveWeaveScale(slot);
   }
 
   // Same three dive-pattern formulas as earlier prototypes, just anchored
@@ -2442,11 +2461,12 @@
       // the actual "classic Galaga S-curve dive-bomb" behavior and gives a
       // real dodge window if you move off that spot.
       var t = Math.min(slot.age / 2.2, 1);
-      slot.x = slot.spawnX + (slot.diveTargetX - slot.spawnX) * t + Math.sin(slot.age * 3.1 + slot.phase) * 46;
+      slot.x = slot.spawnX + (slot.diveTargetX - slot.spawnX) * t +
+        Math.sin(slot.age * 3.1 + slot.phase) * 46 * diveWeaveScale(slot);
     } else if (slot.type === 'zigzag') {
       // Fast, sharp lateral oscillation, anchored to its break-off point -
       // erratic and hard to predict, doesn't chase the ship at all.
-      slot.x = slot.spawnX + Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * ZIGZAG_AMPLITUDE;
+      slot.x = slot.spawnX + Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * ZIGZAG_AMPLITUDE * diveWeaveScale(slot);
     }
 
     slot.sprite.x = slot.x;
