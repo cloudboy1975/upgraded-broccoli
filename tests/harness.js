@@ -52,6 +52,18 @@ async function openGame(page) {
   await page.waitForTimeout(500);
 }
 
+// The game catches exceptions per frame so one bad frame can't kill a
+// run (see update() in head-on.html). That means `pageerror` no longer
+// fires for a crash inside the game loop - the counter is the only
+// evidence. Every test file must check it, so the harness does it once
+// here rather than trusting each file to remember.
+async function frameErrors(page) {
+  return page.evaluate(function () {
+    var fe = window.__headOnDebug && window.__headOnDebug.frameErrors;
+    return fe ? { count: fe.count, last: fe.last } : { count: 0, last: null };
+  });
+}
+
 function makeChecker() {
   var pass = 0, fail = 0;
   function check(name, cond, extra) {
@@ -84,7 +96,7 @@ function run(body) {
     await openGame(page);
     var threw = null;
     try {
-      await body(page, check, { errors: errors });
+      await body(page, check, { errors: errors, frameErrors: function () { return frameErrors(page); } });
     } catch (e) {
       // Reported as a failure rather than swallowed by the summary - a
       // file that dies half way through has NOT passed the checks it
@@ -92,6 +104,13 @@ function run(body) {
       threw = e;
       console.error('TEST ERROR', e && e.stack ? e.stack : e);
     }
+    // Checked for every file, after everything it did - a crash inside
+    // the game loop is caught by the game now, so this is what is left to
+    // notice one.
+    try {
+      var fe = await frameErrors(page);
+      check('the game loop threw no exceptions during this file', fe.count === 0, fe);
+    } catch (e) { /* page already gone; the failure above covers it */ }
     var failed = check.summary();
     await browser.close();
     process.exit(failed || threw ? 1 : 0);

@@ -3188,7 +3188,27 @@
     this.updateMeteorSparks(dt);
     this.updatePlanet();
 
+    // Contact resolves HERE, inside the stage, rather than back in the
+    // caller - endChallenge() below can clear state.challenge, and a
+    // collision pass running after it would be dereferencing a stage that
+    // no longer exists. That is not hypothetical: it shipped, and because
+    // it needed a bullet to be in flight on the exact frame a stage ended,
+    // it only bit sometimes. Phaser schedules the next animation frame
+    // AFTER the update callback returns, so the throw did not drop one
+    // frame - it stopped the game dead until a reload.
+    this.handleChallengeCollisions();
+
     if (ch.beat === 'depart' && ch.age >= CHALLENGE_DEPART_DURATION) this.endChallenge();
+  };
+
+  // Ordered the same way the combat game's handleCollisions() is: bullets
+  // first, then the hazards that can reach the ship.
+  MainScene.prototype.handleChallengeCollisions = function () {
+    var state = this.state;
+    for (var i = state.bullets.length - 1; i >= 0; i--) {
+      this.bulletVsMeteors(state.bullets[i], i);
+    }
+    this.shipVsMeteors();
   };
 
   MainScene.prototype.spawnMeteorVolley = function () {
@@ -3262,8 +3282,15 @@
 
   // Meteors are indestructible in v1: a bullet is spent on the hit and
   // sparks, the rock carries on untouched.
+  //
+  // Both this and shipVsMeteors() below check the stage is still up even
+  // though handleChallengeCollisions() only runs inside one. That is
+  // deliberate belt-and-braces: the version of this that dereferenced a
+  // finished stage froze the game outright, and a null check here costs
+  // nothing next to that.
   MainScene.prototype.bulletVsMeteors = function (b, bi) {
     var state = this.state;
+    if (!state.challenge) return false;
     var meteors = state.challenge.meteors;
     for (var i = 0; i < meteors.length; i++) {
       var m = meteors[i];
@@ -3281,6 +3308,7 @@
   // blocked and keeps going, which is the whole point of indestructible.
   MainScene.prototype.shipVsMeteors = function () {
     var state = this.state;
+    if (!state.challenge) return;
     if (isInvulnerable(state)) return;
     var meteors = state.challenge.meteors;
     for (var i = 0; i < meteors.length; i++) {
@@ -4898,7 +4926,11 @@
       't ' + state.difficulty.elapsed.toFixed(1) + 's  tier ' + tier + '/' + (TUNING.tierUnlock.length - 1) + '\n' +
       activation + '\n' +
       lastLine + '\n' +
-      fireLine;
+      fireLine +
+      // Only ever shows up when something actually went wrong, so it
+      // costs nothing until it matters - and then it says what, on the
+      // device it happened on, instead of leaving "it froze".
+      (frameErrors.count ? '\nERR x' + frameErrors.count + ': ' + frameErrors.last : '');
   };
 
   // Logs a 'tier' event the frame a run's tier actually changes, not every
@@ -5099,6 +5131,10 @@
           core.sprite.y = core.carrierSlot.y + Math.sin(core.angle) * CORE_ORBIT_RADIUS;
         }
       },
+      // Caught frame exceptions. update() no longer lets one kill the
+      // game, so pageerror alone would no longer notice a crash - tests
+      // read this instead and treat a non-zero count as a failure.
+      frameErrors: frameErrors,
       // Drops straight into a challenge stage from wherever the run is,
       // clearing the formation the way a cleared wave would.
       forceChallenge: function () {
@@ -5118,9 +5154,8 @@
         state.clock += dt;
         updateShip(state, dt);
         updateBullets(state, dt);
+        self.updateFiring(dt);
         self.updateChallenge(dt);
-        for (var i = state.bullets.length - 1; i >= 0; i--) self.bulletVsMeteors(state.bullets[i], i);
-        if (state.challenge) self.shipVsMeteors();
       }
     };
     window.__headOnTrace = {
@@ -5132,7 +5167,40 @@
   };
 
   // ---- Game loop ------------------------------------------------------
+  // Phaser schedules the next animation frame AFTER the update callback
+  // returns, so an exception thrown in a frame does not cost you that
+  // frame - it stops the game permanently, mid-run, until a reload. A
+  // null dereference at the end of a challenge stage did exactly that,
+  // and the symptom ("it froze") gave no hint which of a few thousand
+  // lines was responsible.
+  //
+  // So every frame is wrapped. This does NOT try to repair anything: a
+  // bad frame is dropped and the next one is attempted, which for
+  // anything transient means play continues, and for anything persistent
+  // means a visibly broken game rather than a dead one. The error is
+  // never swallowed quietly - it goes to the console, into the trace, and
+  // onto the diagnostic overlay, and the tests assert the counter is zero
+  // so a caught exception still fails a build the way an uncaught one did.
+  var frameErrors = { count: 0, last: null, seen: {} };
+  function reportFrameError(e) {
+    frameErrors.count++;
+    var msg = (e && e.message) ? e.message : String(e);
+    frameErrors.last = msg;
+    if (frameErrors.seen[msg]) return; // a broken frame usually repeats; say it once
+    frameErrors.seen[msg] = true;
+    if (window.console && console.error) console.error('[head-on] frame error:', e);
+    traceEvent('frame_error', { message: msg, stack: e && e.stack ? String(e.stack).slice(0, 800) : null });
+  }
+
   MainScene.prototype.update = function (time, delta) {
+    try {
+      this.stepGame(time, delta);
+    } catch (e) {
+      reportFrameError(e);
+    }
+  };
+
+  MainScene.prototype.stepGame = function (time, delta) {
     var state = this.state;
     var dt = Math.min(delta / 1000, MAX_DT);
 
@@ -5151,11 +5219,7 @@
         updateShip(state, dt);
         updateBullets(state, dt);
         this.updateFiring(dt);
-        this.updateChallenge(dt);
-        for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
-          this.bulletVsMeteors(state.bullets[bi], bi);
-        }
-        if (state.challenge) this.shipVsMeteors(); // endChallenge() may have cleared it this frame
+        this.updateChallenge(dt); // movement, contact and the stage's own end, in that order
         this.updateShieldFizzles(dt);
         this.updateStarburstFx(dt);
         this.updateShipBreakFx(dt);

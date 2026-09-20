@@ -473,5 +473,118 @@ harness.run(async (page, check, ctx) => {
     live.mid.meteors > 0 && live.mid.stars > 5 && live.mid.flame === true, live.mid);
   check('and completes on its own in real time', live.ended && live.phase === 'playing', live);
 
+  // --- the boundary out of a stage ----------------------------------------
+  // The bug this exists for: the collision pass used to run in the caller,
+  // AFTER updateChallenge() had possibly called endChallenge() and nulled
+  // state.challenge - so a bullet still in flight on the exact frame a
+  // stage ended dereferenced a stage that no longer existed. Phaser
+  // schedules the next frame after the update callback returns, so the
+  // throw did not drop a frame, it stopped the game permanently.
+  //
+  // Nothing caught it because no test ever had a bullet alive across that
+  // frame: the debug step did not fire, and the live test never held the
+  // fire button. Firing all the way through a stage is now the check.
+  const boundary = await page.evaluate(SETTLE + `
+    state.lives = 99;
+    window.__headOnDebug.forceChallenge();
+    let steps = 0, bulletsAtEnd = -1;
+    let threw = null;
+    for (let i = 0; i < 3000 && state.challenge; i++) {
+      // One bullet alive on every single frame, boundary included.
+      if (state.bullets.length === 0) {
+        state.bullets.push({ x: 180, y: 220, vy: -400, ttl: 5, trailLevels: {}, trailSprites: {},
+                             sprite: scene.add.sprite(180, 220, 'bulletTex') });
+      }
+      const wasLast = state.challenge.beat === 'depart' &&
+                      state.challenge.age >= 0.88;
+      try { window.__headOnDebug.stepChallenge(0.016); }
+      catch (e) { threw = String(e); break; }
+      steps++;
+      if (wasLast && !state.challenge) bulletsAtEnd = state.bullets.length;
+    }
+    ({ threw, steps, bulletsAtEnd, ended: state.challenge === null,
+       formation: state.formation.filter(f => f.alive).length });
+  `);
+  check('firing right through the end of a stage does not throw',
+    boundary.threw === null, boundary);
+  check('a bullet really was in flight on the frame the stage ended',
+    boundary.bulletsAtEnd > 0, boundary);
+  check('and the stage still handed over to the next wave',
+    boundary.ended && boundary.formation > 0, boundary);
+
+  // The same boundary in a real frame loop, since the stepped hook and
+  // update() are separate call sites and it was the live one that froze.
+  const liveBoundary = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    scene.resetGame();
+    state.lives = 99;
+    window.__headOnDebug.forceChallenge();
+    const iv = setInterval(() => {
+      if (!state.challenge) { clearInterval(iv); return; }
+      if (state.bullets.length === 0) {
+        state.bullets.push({ x: 180, y: 220, vy: -400, ttl: 5, trailLevels: {}, trailSprites: {},
+                             sprite: scene.add.sprite(180, 220, 'bulletTex') });
+      }
+    }, 16);
+    return new Promise(res => setTimeout(() => {
+      const clock = state.clock;
+      setTimeout(() => {
+        clearInterval(iv);
+        res({
+          // The real symptom: is the game loop still running at all?
+          loopAlive: state.clock > clock,
+          ended: state.challenge === null,
+          frameErrors: window.__headOnDebug.frameErrors.count,
+          lastError: window.__headOnDebug.frameErrors.last
+        });
+      }, 2000);
+    }, 12000));
+  });
+  check('the game loop survives a stage ending with bullets in flight',
+    liveBoundary.loopAlive, liveBoundary);
+  check('the stage ended and no frame threw',
+    liveBoundary.ended && liveBoundary.frameErrors === 0, liveBoundary);
+
+  // --- the frame guard itself ---------------------------------------------
+  // The guard is what stops any FUTURE bug of this class being fatal, so
+  // it needs its own proof: throw on purpose, and check the loop lives.
+  const guard = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    scene.resetGame();
+    const before = window.__headOnDebug.frameErrors.count;
+    // Break one thing the loop touches every frame, briefly.
+    const real = scene.updateBackground;
+    scene.updateBackground = function () { throw new Error('deliberate test explosion'); };
+    return new Promise(res => setTimeout(() => {
+      const clock = state.clock;
+      setTimeout(() => {
+        scene.updateBackground = real;
+        setTimeout(() => res({
+          caught: window.__headOnDebug.frameErrors.count > before,
+          message: window.__headOnDebug.frameErrors.last,
+          loopAliveWhileBroken: state.clock > clock,
+          recovered: state.phase === 'playing'
+        }), 400);
+      }, 700);
+    }, 400));
+  });
+  check('a thrown frame is caught rather than killing the game', guard.caught, guard);
+  check('the loop keeps running through it', guard.loopAliveWhileBroken, guard);
+  check('and play continues once the fault clears', guard.recovered, guard);
+  check('the error is recorded, not swallowed',
+    guard.message === 'deliberate test explosion', guard);
+  // Put the counter back so the harness's own end-of-file check, which
+  // fails on any caught exception, is not tripped by this test's own.
+  await page.evaluate(() => {
+    window.__headOnDebug.frameErrors.count = 0;
+    window.__headOnDebug.frameErrors.last = null;
+    window.__headOnDebug.frameErrors.seen = {};
+  });
+  // Same for the console line the guard correctly printed. Only the
+  // deliberate one is dropped - anything else still fails below.
+  for (let i = errors.length - 1; i >= 0; i--) {
+    if (errors[i].indexOf('deliberate test explosion') !== -1) errors.splice(i, 1);
+  }
+
   check('no page errors after full run', errors.length === 0, errors);
 });
