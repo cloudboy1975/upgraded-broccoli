@@ -473,6 +473,13 @@
         <div id="labFire"></div>
       </div>
       <div class="lab-section">
+        <h3>Challenge stage</h3>
+        <div id="labChallenge"></div>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide primary" id="labChallengeNowBtn">Run a stage now</button>
+        </div>
+      </div>
+      <div class="lab-section">
         <h3>On death</h3>
         <div id="labDeath"></div>
       </div>
@@ -853,6 +860,14 @@
   var STARBURST_BRICK_DAMAGE = 2; // hp dealt to every alive segment, everywhere, on a starburst
   var DEATH_BLAST_BRICK_DAMAGE = STARBURST_BRICK_DAMAGE; // ...and on a death - see the death blast comment below
 
+  // Challenge stage tunables - same placement rule as the pair above (the
+  // rest of the challenge constants live with its own section further
+  // down, but these four are seeded into TUNING so they have to be here).
+  var CHALLENGE_EVERY_WAVES = 3;      // a challenge stage after every Nth wave cleared
+  var CHALLENGE_VOLLEYS = 6;          // meteor volleys per stage - the stage ends when the last one has passed
+  var CHALLENGE_METEOR_SPEED = 300;   // px/sec downward
+  var CHALLENGE_STAGES_TO_ARRIVAL = 5; // challenge stages before the planet is close enough to arrive at
+
   // ---- Live tuning ------------------------------------------------------
   // Everything the sortie system reads at runtime, in one mutable object so
   // the hidden control panel can retune the game between (or during) waves
@@ -915,6 +930,12 @@
       // a reload.
       deathBlast: true,
       deathBlastBrickDamage: DEATH_BLAST_BRICK_DAMAGE,
+      // The challenge stage - see the CHALLENGE_* block further down.
+      challengeEnabled: true,
+      challengeEveryWaves: CHALLENGE_EVERY_WAVES,
+      challengeVolleys: CHALLENGE_VOLLEYS,
+      challengeMeteorSpeed: CHALLENGE_METEOR_SPEED,
+      challengeStagesToArrival: CHALLENGE_STAGES_TO_ARRIVAL,
       diagnosticOverlay: false // draws elapsed/tier/sortie-activation text over the live game - see updateDiagOverlay()
     };
   }
@@ -1140,6 +1161,154 @@
   var SHIP_BREAK_DURATION = 0.55; // seconds
   var SHIP_BREAK_SHARD_SPEED = 90; // px/sec outward drift
   var SHIP_BREAK_SHARD_SPIN = 6; // rad/sec, random tumble per shard
+
+  // ---- Challenge stage ---------------------------------------------------
+  // Every CHALLENGE_EVERY_WAVES cleared waves, instead of the next
+  // formation flying in, the ship lights its engine and runs a meteor
+  // gauntlet: the starfield accelerates into streaks, a flame grows off
+  // the ship's tail, and CHALLENGE_VOLLEYS of indestructible rock come
+  // down at it. Pure dodging in v1 - bullets spark off the meteors
+  // instead of breaking them, so the fire button still answers without
+  // pretending the rock can be cleared.
+  //
+  // A stage runs in three beats: 'accelerate' (the stars wind up, no
+  // meteors yet, so the speed change reads before the threat arrives),
+  // 'run' (the volleys), and 'depart' (the stars wind back down and the
+  // next wave flies in). Nothing about the combat game runs during it -
+  // no formation, no sorties, no bars, no powerup economy - and
+  // difficulty.elapsed is deliberately frozen so the stage is a genuine
+  // breather rather than free escalation.
+  //
+  // A meteor hit costs a life like any other hazard. A banked shield dot
+  // still blocks one, same as every other hazard in the game - but the
+  // meteor is not destroyed by it, it just keeps going.
+  var CHALLENGE_ACCEL_DURATION = 1.1;  // seconds of wind-up before the first volley
+  var CHALLENGE_DEPART_DURATION = 0.9; // seconds of wind-down after the last meteor is gone
+  var CHALLENGE_STAR_SPEED_SCALE = 9;  // starfield speed multiplier at full thrust
+  var CHALLENGE_VOLLEY_GAP = 1.05;     // seconds between volleys - deliberately shorter than a meteor's own crossing time, so volleys overlap
+  var CHALLENGE_STREAK_SCALE = 1.6;    // star speed multiplier past which stars render as streaks rather than dots
+  var CHALLENGE_STREAK_SECONDS = 0.035; // how much of a star's travel its streak represents
+
+  var METEOR_MIN_RADIUS = 7;
+  var METEOR_MAX_RADIUS = 15;
+  var METEOR_SPIN_MAX = 2.2;  // rad/sec tumble
+  var METEOR_SPAWN_Y = -40;   // above the top edge, far enough that the biggest rock is fully off screen
+  var METEOR_TEX_RADIUS = 16; // every rock is baked at this size and scaled down to its own radius
+  var METEOR_TEX_COUNT = 3;   // distinct silhouettes, so a volley isn't the same rock repeated
+  var COLOR_METEOR = 0x8d8175;     // dusty rock
+  var COLOR_METEOR_SHADE = 0x5c534b; // its crater/terminator shading
+  var METEOR_SPARK_DURATION = 0.18; // a bullet's brief flash where it broke up against the rock
+  var METEOR_SPARK_RADIUS = 7;
+  var COLOR_METEOR_SPARK = 0xfde68a;
+
+  // The engine flame, drawn under the ship while the stage runs. Baked
+  // pointing DOWN (the ship flies "up" the screen) and scaled on its long
+  // axis by thrust, so one texture covers the whole wind-up.
+  var FLAME_WIDTH = 14;
+  var FLAME_LENGTH = 26;
+  var COLOR_FLAME_OUTER = 0xf97316;
+  var COLOR_FLAME_INNER = 0xfde68a;
+  var FLAME_FLICKER_SPEED = 30;  // rad/sec
+  var FLAME_FLICKER_DEPTH = 0.18;
+
+  // The enemies' home world, sitting at the centre of the background from
+  // the very first wave as a barely-there speck. It does not move; each
+  // completed challenge stage closes some of the distance, and the growth
+  // is deliberately non-linear (PLANET_GROWTH_POWER) so the early stages
+  // barely shift it and the last approach is the dramatic one. Reaching
+  // it is the future boss fight - v1 only gets you there.
+  var PLANET_X = GAME_WIDTH / 2;
+  var PLANET_Y = Math.round(GAME_HEIGHT * 0.38); // above the formation's own band, so it reads as "ahead"
+  var PLANET_MIN_RADIUS = 3;
+  var PLANET_MAX_RADIUS = 110;
+  var PLANET_TEX_RADIUS = 128; // baked big and scaled DOWN, so it stays clean at every size
+  var PLANET_GROWTH_POWER = 2.2;
+  var PLANET_ALPHA = 0.5; // dim enough that enemies and bars stay readable over it
+  var COLOR_PLANET = 0x7f1d1d;      // a dull red world
+  var COLOR_PLANET_BAND = 0x991b1b; // lighter banding across it
+  var COLOR_PLANET_DARK = 0x450a0a; // the shadowed limb
+
+  // One volley of meteors, in the same shape as the sortie and fly-in
+  // books above: each pattern only decides WHERE rock enters and how it
+  // drifts, and updateMeteors() flies all of them identically. A new
+  // volley shape is a few lines here, not new motion code.
+  //
+  // build() receives a ctx of { speed, lane } (lane is a random column
+  // index the walking patterns anchor to) and returns an array of
+  // { x, vx, vy, radius } - y is always METEOR_SPAWN_Y.
+  var METEOR_LANES = 5;
+  var METEOR_LANE_WIDTH = GAME_WIDTH / METEOR_LANES;
+  function meteorLaneX(i) { return (i + 0.5) * METEOR_LANE_WIDTH; }
+  function meteorRadius() { return METEOR_MIN_RADIUS + Math.random() * (METEOR_MAX_RADIUS - METEOR_MIN_RADIUS); }
+
+  var METEOR_PATTERNS = [
+    {
+      id: 'rain', label: 'Scattered rain',
+      build: function (ctx) {
+        // Loose and unaimed - the breather volley between the shaped ones.
+        var out = [];
+        var n = 4 + Math.floor(Math.random() * 3);
+        for (var i = 0; i < n; i++) {
+          out.push({
+            x: 20 + Math.random() * (GAME_WIDTH - 40),
+            vx: (Math.random() - 0.5) * 40,
+            vy: ctx.speed * (0.85 + Math.random() * 0.3),
+            radius: meteorRadius()
+          });
+        }
+        return out;
+      }
+    },
+    {
+      id: 'wall', label: 'Wall with a gap',
+      build: function (ctx) {
+        // The classic: every lane filled but one, so there is exactly one
+        // right answer and you have to be in it. The gap is the lane ctx
+        // picked, which is why lane is random per volley.
+        var out = [];
+        for (var i = 0; i < METEOR_LANES; i++) {
+          if (i === ctx.lane) continue;
+          out.push({ x: meteorLaneX(i), vx: 0, vy: ctx.speed, radius: meteorRadius() });
+        }
+        return out;
+      }
+    },
+    {
+      id: 'funnel', label: 'Converging funnel',
+      build: function (ctx) {
+        // Two streams angling in from the edges toward the middle - the
+        // safe ground starts wide and closes, so it rewards committing
+        // early rather than hovering.
+        var out = [];
+        for (var i = 0; i < 3; i++) {
+          var drop = i * 26;
+          out.push({ x: 16, vx: 70, vy: ctx.speed, radius: meteorRadius(), y: METEOR_SPAWN_Y - drop });
+          out.push({ x: GAME_WIDTH - 16, vx: -70, vy: ctx.speed, radius: meteorRadius(), y: METEOR_SPAWN_Y - drop });
+        }
+        return out;
+      }
+    },
+    {
+      id: 'sweep', label: 'Walking column',
+      build: function (ctx) {
+        // A tight column that marches sideways across the screen, so the
+        // dodge is a sustained move in one direction rather than a step.
+        var out = [];
+        var dir = Math.random() < 0.5 ? 1 : -1;
+        var startX = dir > 0 ? 24 : GAME_WIDTH - 24;
+        for (var i = 0; i < 5; i++) {
+          out.push({
+            x: startX,
+            vx: dir * 95,
+            vy: ctx.speed,
+            radius: meteorRadius(),
+            y: METEOR_SPAWN_Y - i * 34
+          });
+        }
+        return out;
+      }
+    }
+  ];
 
   // Powerup strips: translucent, ship-width colored bars drift straight
   // down like the stars, one primary color at a time. Flying through one
@@ -1764,6 +1933,106 @@
       });
     });
 
+    // Meteors: METEOR_TEX_COUNT lumpy rocks, each a circle pushed in and
+    // out at random around its rim, plus a couple of darker craters. Baked
+    // at METEOR_TEX_RADIUS and scaled down per meteor, so size variety
+    // costs nothing. Silhouettes are generated, not hand-drawn, but only
+    // once at boot - every meteor in a run reuses these three.
+    for (var mi = 0; mi < METEOR_TEX_COUNT; mi++) {
+      (function (index) {
+        var r = METEOR_TEX_RADIUS, size = r * 2;
+        bakeTexture(self, 'meteorTex_' + index, size, size, function (g) {
+          var steps = 11;
+          var pts = [];
+          for (var i = 0; i < steps; i++) {
+            var a = (i / steps) * Math.PI * 2;
+            var rr = r * (0.76 + Math.random() * 0.24);
+            pts.push([r + Math.cos(a) * rr, r + Math.sin(a) * rr]);
+          }
+          g.fillStyle(COLOR_METEOR, 1);
+          g.beginPath();
+          g.moveTo(pts[0][0], pts[0][1]);
+          for (var p = 1; p < pts.length; p++) g.lineTo(pts[p][0], pts[p][1]);
+          g.closePath();
+          g.fillPath();
+          // Craters, kept well inside the rim so scaling down never clips
+          // one into a notch in the silhouette.
+          g.fillStyle(COLOR_METEOR_SHADE, 1);
+          for (var c = 0; c < 3; c++) {
+            var ca = Math.random() * Math.PI * 2;
+            var cd = Math.random() * r * 0.45;
+            g.fillCircle(r + Math.cos(ca) * cd, r + Math.sin(ca) * cd, r * (0.12 + Math.random() * 0.13));
+          }
+        });
+      })(mi);
+    }
+
+    // A bullet breaking up against rock: a bright core with a few short
+    // rays. Baked at METEOR_SPARK_RADIUS and scaled up as it fades.
+    bakeTexture(self, 'meteorSparkTex', METEOR_SPARK_RADIUS * 2, METEOR_SPARK_RADIUS * 2, function (g) {
+      var r = METEOR_SPARK_RADIUS;
+      g.fillStyle(COLOR_METEOR_SPARK, 1);
+      g.fillCircle(r, r, r * 0.42);
+      g.lineStyle(1.4, COLOR_METEOR_SPARK, 0.85);
+      for (var i = 0; i < 5; i++) {
+        var a = (i / 5) * Math.PI * 2 + 0.3;
+        g.beginPath();
+        g.moveTo(r + Math.cos(a) * r * 0.5, r + Math.sin(a) * r * 0.5);
+        g.lineTo(r + Math.cos(a) * r, r + Math.sin(a) * r);
+        g.strokePath();
+      }
+    });
+
+    // The engine flame, baked pointing DOWN from an origin at its top edge
+    // so scaling it only ever stretches it away from the ship's tail.
+    bakeTexture(self, 'flameTex', FLAME_WIDTH, FLAME_LENGTH, function (g) {
+      g.fillStyle(COLOR_FLAME_OUTER, 0.85);
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(FLAME_WIDTH, 0);
+      g.lineTo(FLAME_WIDTH / 2, FLAME_LENGTH);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(COLOR_FLAME_INNER, 0.9);
+      g.beginPath();
+      g.moveTo(FLAME_WIDTH * 0.3, 0);
+      g.lineTo(FLAME_WIDTH * 0.7, 0);
+      g.lineTo(FLAME_WIDTH / 2, FLAME_LENGTH * 0.55);
+      g.closePath();
+      g.fillPath();
+    });
+
+    // The home world. Baked once at PLANET_TEX_RADIUS and scaled DOWN to
+    // whatever the current approach calls for - a texture regenerated per
+    // step would be both slower and blurrier than shrinking a big one.
+    bakeTexture(self, 'planetTex', PLANET_TEX_RADIUS * 2, PLANET_TEX_RADIUS * 2, function (g) {
+      var r = PLANET_TEX_RADIUS;
+      g.fillStyle(COLOR_PLANET, 1);
+      g.fillCircle(r, r, r);
+      // Banding: a few horizontal slabs of the lighter tone, clipped to
+      // the disc by drawing them as chords rather than full-width bars.
+      g.fillStyle(COLOR_PLANET_BAND, 0.55);
+      [-0.55, -0.15, 0.3, 0.62].forEach(function (frac) {
+        var cy = r + frac * r;
+        var half = Math.sqrt(Math.max(0, r * r - (cy - r) * (cy - r)));
+        g.fillRect(r - half, cy - r * 0.07, half * 2, r * 0.14);
+      });
+      // Shadowed limb down one side. Built from thin vertical slices, each
+      // clipped to the disc by its own chord height and fading in toward
+      // the edge - a single dark half-circle gives a hard straight
+      // terminator that reads as a half-disc rather than a sphere.
+      var slices = 26;
+      for (var si = 0; si < slices; si++) {
+        var fx = si / (slices - 1);           // 0 at the middle, 1 at the right edge
+        var sx = r + fx * r;
+        var dx = sx - r;
+        var half = Math.sqrt(Math.max(0, r * r - dx * dx));
+        var a = 0.5 * fx * fx;                 // quadratic, so the shading stays off the lit face
+        g.fillStyle(COLOR_PLANET_DARK, a);
+        g.fillRect(sx, r - half, (r / slices) + 1, half * 2);
+      }
+    });
+
     // Orb pod: a small translucent diamond (same palette and translucency
     // as the color strips - one texture per color, assigned at spawn like
     // a strip). The second powerup type, differing from the strips in
@@ -1856,6 +2125,10 @@
       wave: 1,
       diveTimer: TUNING.diveIntervalStart,
       waveClearTimer: 0, // > 0 while waiting to spawn the next formation
+      challenge: null,      // the active challenge stage, or null during ordinary combat - see startChallenge()
+      challengesDone: 0,    // completed challenge stages this run; drives how close the home world is
+      starSpeedScale: 1,    // starfield speed multiplier - ramps up and back down across a challenge stage
+      meteorBag: [],        // shuffle bag of volley pattern ids - see drawMeteorPattern()
       entryBag: [], // shuffle bag of fly-in pattern ids - see drawEntryPattern()
       entryBagKey: '', // which enabled-set the bag was built from, so toggling one in the lab redeals
       entryPattern: null, // the fly-in this wave arrived on, for the lab readout
@@ -1874,6 +2147,13 @@
   MainScene.prototype.buildWorld = function () {
     this.cameras.main.setBackgroundColor(COLOR_BG);
 
+    // The home world goes in FIRST, so it sits behind the starfield - it
+    // is a distant object, and the stars are dust streaming past the ship.
+    // Its size is set by updatePlanet() from the run's approach, not here.
+    this.planetSprite = this.add.sprite(PLANET_X, PLANET_Y, 'planetTex');
+    this.planetSprite.setAlpha(PLANET_ALPHA);
+    this.updatePlanet(); // baked at full size - size it to the run's approach before it ever draws
+
     // Fixed starfield - no camera trick anymore, so this is just ordinary
     // ambient background motion, independent of the ship entirely.
     this.starsGfx = this.add.graphics();
@@ -1887,6 +2167,15 @@
         r: Math.random() * 1.3 + 0.4
       });
     }
+
+    // The engine flame sits under everything ship-related (added before
+    // the fill and the outline, so both draw over it) and stays hidden
+    // outside a challenge stage. Origin at its top-centre so scaling
+    // stretches it downward, away from the tail.
+    this.flameSprite = this.add.sprite(GAME_WIDTH / 2, SHIP_Y + SHIP_RADIUS * 0.55, 'flameTex');
+    this.flameSprite.setOrigin(0.5, 0);
+    this.flameOn = false;
+    this.flameSprite.setVisible(false);
 
     // The ship-fill effect: a colored, masked copy of the ship sits UNDER
     // the outline (added first, so the outline draws on top of it) and
@@ -2713,14 +3002,296 @@
     state.waveClearTimer -= dt;
     if (state.waveClearTimer <= 0) {
       state.wave++;
-      state.diveTimer = this.diveInterval();
-      this.spawnFormation();
       state.waveClearTimer = 0;
       traceEvent('wave_clear', { wave: state.wave, elapsed: state.difficulty.elapsed });
+      // A challenge stage takes the next wave's SLOT - it runs instead of
+      // the formation flying in, and endChallenge() spawns that formation
+      // afterwards. Checked after the increment, against the number of
+      // waves actually cleared.
+      if (this.challengeDue()) { this.startChallenge(); return; }
+      state.diveTimer = this.diveInterval();
+      this.spawnFormation();
     }
   };
 
+  // Every Nth cleared wave. state.wave has already been incremented past
+  // the wave that just ended, so the count of CLEARED waves is one less.
+  MainScene.prototype.challengeDue = function () {
+    if (!TUNING.challengeEnabled) return false;
+    var every = Math.max(1, Math.round(TUNING.challengeEveryWaves));
+    var cleared = this.state.wave - 1;
+    return cleared > 0 && cleared % every === 0;
+  };
+
   function isInvulnerable(state) { return performance.now() < state.ship.invulnerableUntil; }
+
+  // ---- Challenge stage ---------------------------------------------------
+  // See the CHALLENGE_* constants block for what this is and why.
+
+  // Shuffle bag over the volley patterns, same idiom as the sortie and
+  // fly-in books: every pattern comes up once per cycle, so a stage can't
+  // deal three walls in a row or leave the funnel unseen for a whole run.
+  MainScene.prototype.drawMeteorPattern = function () {
+    var state = this.state;
+    if (!state.meteorBag.length) {
+      state.meteorBag = METEOR_PATTERNS.map(function (p) { return p.id; });
+      for (var i = state.meteorBag.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var swap = state.meteorBag[i]; state.meteorBag[i] = state.meteorBag[j]; state.meteorBag[j] = swap;
+      }
+    }
+    var id = state.meteorBag.shift();
+    for (var k = 0; k < METEOR_PATTERNS.length; k++) {
+      if (METEOR_PATTERNS[k].id === id) return METEOR_PATTERNS[k];
+    }
+    return METEOR_PATTERNS[0];
+  };
+
+  MainScene.prototype.startChallenge = function () {
+    var state = this.state;
+    // Clear the combat game off the screen. The formation is already empty
+    // (a challenge only ever starts from a cleared wave), but anything
+    // still in flight would otherwise ride into the stage.
+    state.bullets.forEach(function (b) { destroyBulletSprites(b); });
+    state.bullets = [];
+    state.enemyBullets.forEach(function (b) { b.sprite.destroy(); });
+    state.enemyBullets = [];
+    state.strips.forEach(function (s) { s.sprite.destroy(); });
+    state.strips = [];
+    state.orbs.forEach(function (o) { o.hostSprite.destroy(); });
+    state.orbs = [];
+    state.orbBullets.forEach(function (h) { h.sprite.destroy(); });
+    state.orbBullets = [];
+    state.powerupBolts.forEach(function (bolt) { bolt.sprite.destroy(); });
+    state.powerupBolts = [];
+    state.brickShards.forEach(function (sh) { sh.sprite.destroy(); });
+    state.brickShards = [];
+    if (state.core && state.core.sprite) { state.core.sprite.destroy(); state.core = null; }
+    // The bars are KEPT - they are the run's standing pressure and come
+    // back exactly as they were - but hidden, since the stage is somewhere
+    // else entirely.
+    this.setColorBarsVisible(false);
+
+    state.challenge = {
+      beat: 'accelerate', // 'accelerate' -> 'run' -> 'depart'
+      age: 0,
+      volleysFired: 0,
+      volleysTotal: Math.max(1, Math.round(TUNING.challengeVolleys)),
+      volleyTimer: 0,
+      lastPattern: null,
+      meteors: [],
+      sparks: []
+    };
+    traceEvent('challenge_start', { wave: state.wave, done: state.challengesDone, elapsed: state.difficulty.elapsed });
+  };
+
+  MainScene.prototype.endChallenge = function () {
+    var state = this.state;
+    this.clearMeteors();
+    state.challengesDone++;
+    state.challenge = null;
+    state.starSpeedScale = 1;
+    this.flameOn = false;
+    this.flameSprite.setVisible(false);
+    this.setColorBarsVisible(true);
+    this.updatePlanet();
+    state.diveTimer = this.diveInterval();
+    this.spawnFormation();
+    traceEvent('challenge_end', { wave: state.wave, done: state.challengesDone, elapsed: state.difficulty.elapsed });
+  };
+
+  MainScene.prototype.clearMeteors = function () {
+    var state = this.state;
+    if (!state.challenge) return;
+    state.challenge.meteors.forEach(function (m) { m.sprite.destroy(); });
+    state.challenge.meteors = [];
+    state.challenge.sparks.forEach(function (s) { s.sprite.destroy(); });
+    state.challenge.sparks = [];
+  };
+
+  MainScene.prototype.setColorBarsVisible = function (visible) {
+    this.state.colorBars.forEach(function (bar) {
+      bar.segments.forEach(function (seg) {
+        seg.sprite.setVisible(visible);
+        seg.crackSprite.setVisible(visible);
+      });
+    });
+  };
+
+  // How far into the run's approach to the home world we are, 0 to 1.
+  // Completed stages are whole steps; the stage currently running
+  // contributes its own progress, so the planet visibly grows WHILE you
+  // are flying at it rather than jumping between stages.
+  MainScene.prototype.planetApproach = function () {
+    var state = this.state;
+    var total = Math.max(1, Math.round(TUNING.challengeStagesToArrival));
+    var steps = state.challengesDone;
+    var ch = state.challenge;
+    if (ch) steps += Math.min(1, ch.volleysFired / ch.volleysTotal);
+    return clamp(steps / total, 0, 1);
+  };
+
+  MainScene.prototype.updatePlanet = function () {
+    var approach = this.planetApproach();
+    var radius = PLANET_MIN_RADIUS + (PLANET_MAX_RADIUS - PLANET_MIN_RADIUS) * Math.pow(approach, PLANET_GROWTH_POWER);
+    var scale = radius / PLANET_TEX_RADIUS;
+    this.planetSprite.setScale(scale);
+  };
+
+  // The whole stage, in place of the combat update. Deliberately does NOT
+  // advance difficulty.elapsed (see the constants block) - the stage is a
+  // breather, not free escalation.
+  MainScene.prototype.updateChallenge = function (dt) {
+    var state = this.state;
+    var ch = state.challenge;
+    ch.age += dt;
+
+    // Thrust ramps up over 'accelerate', holds through 'run', and ramps
+    // back down over 'depart'. One value drives the starfield, the flame
+    // and nothing else.
+    var thrust;
+    if (ch.beat === 'accelerate') {
+      thrust = Math.min(1, ch.age / CHALLENGE_ACCEL_DURATION);
+      if (ch.age >= CHALLENGE_ACCEL_DURATION) { ch.beat = 'run'; ch.age = 0; ch.volleyTimer = 0; }
+    } else if (ch.beat === 'run') {
+      thrust = 1;
+    } else {
+      thrust = Math.max(0, 1 - ch.age / CHALLENGE_DEPART_DURATION);
+    }
+    var eased = thrust * thrust * (3 - 2 * thrust); // smoothstep, so the wind-up and wind-down both settle rather than snap
+    state.starSpeedScale = 1 + (CHALLENGE_STAR_SPEED_SCALE - 1) * eased;
+
+    this.flameOn = eased > 0.02;
+    if (this.flameOn) {
+      var flicker = 1 - FLAME_FLICKER_DEPTH + FLAME_FLICKER_DEPTH * (Math.sin(state.clock * FLAME_FLICKER_SPEED) * 0.5 + 0.5);
+      this.flameSprite.x = state.ship.x;
+      this.flameSprite.setScale(1, eased * flicker);
+      this.flameSprite.setAlpha(Math.min(1, eased * 1.3));
+    }
+
+    if (ch.beat === 'run') {
+      ch.volleyTimer -= dt;
+      if (ch.volleysFired < ch.volleysTotal && ch.volleyTimer <= 0) {
+        this.spawnMeteorVolley();
+        ch.volleyTimer = CHALLENGE_VOLLEY_GAP;
+      }
+      // The stage is over when the last volley has been fired AND the last
+      // rock has left - not on a timer, so a slow meteor is never cut off
+      // mid-screen.
+      if (ch.volleysFired >= ch.volleysTotal && ch.meteors.length === 0) {
+        ch.beat = 'depart';
+        ch.age = 0;
+      }
+    }
+
+    this.updateMeteors(dt);
+    this.updateMeteorSparks(dt);
+    this.updatePlanet();
+
+    if (ch.beat === 'depart' && ch.age >= CHALLENGE_DEPART_DURATION) this.endChallenge();
+  };
+
+  MainScene.prototype.spawnMeteorVolley = function () {
+    var state = this.state;
+    var ch = state.challenge;
+    var pattern = this.drawMeteorPattern();
+    var ctx = {
+      speed: TUNING.challengeMeteorSpeed,
+      lane: Math.floor(Math.random() * METEOR_LANES)
+    };
+    var spec = pattern.build(ctx);
+    var self = this;
+    spec.forEach(function (m) {
+      var radius = clamp(m.radius, METEOR_MIN_RADIUS, METEOR_MAX_RADIUS);
+      var y = m.y === undefined ? METEOR_SPAWN_Y : m.y;
+      var tex = 'meteorTex_' + Math.floor(Math.random() * METEOR_TEX_COUNT);
+      var sprite = self.add.sprite(m.x, y, tex);
+      sprite.setScale(radius / METEOR_TEX_RADIUS);
+      ch.meteors.push({
+        x: m.x, y: y, vx: m.vx || 0, vy: m.vy,
+        radius: radius,
+        spin: (Math.random() - 0.5) * 2 * METEOR_SPIN_MAX,
+        sprite: sprite
+      });
+    });
+    ch.volleysFired++;
+    ch.lastPattern = pattern.id;
+    traceEvent('meteor_volley', { pattern: pattern.id, count: spec.length, volley: ch.volleysFired, of: ch.volleysTotal });
+  };
+
+  MainScene.prototype.updateMeteors = function (dt) {
+    var ch = this.state.challenge;
+    for (var i = ch.meteors.length - 1; i >= 0; i--) {
+      var m = ch.meteors[i];
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      m.sprite.x = m.x;
+      m.sprite.y = m.y;
+      m.sprite.rotation += m.spin * dt;
+      // Gone once fully past the bottom, or well off either side - a
+      // drifting rock that leaves sideways is done too.
+      if (m.y - m.radius > GAME_HEIGHT || m.x < -60 || m.x > GAME_WIDTH + 60) {
+        m.sprite.destroy();
+        ch.meteors.splice(i, 1);
+      }
+    }
+  };
+
+  // A bullet breaking up against rock. Purely feedback - it is what makes
+  // the fire button answer during a stage where nothing can be destroyed.
+  MainScene.prototype.triggerMeteorSpark = function (x, y) {
+    var sprite = this.add.sprite(x, y, 'meteorSparkTex');
+    this.state.challenge.sparks.push({ age: 0, sprite: sprite });
+  };
+
+  MainScene.prototype.updateMeteorSparks = function (dt) {
+    var sparks = this.state.challenge.sparks;
+    for (var i = sparks.length - 1; i >= 0; i--) {
+      var s = sparks[i];
+      s.age += dt;
+      var t = s.age / METEOR_SPARK_DURATION;
+      if (t >= 1) {
+        s.sprite.destroy();
+        sparks.splice(i, 1);
+        continue;
+      }
+      s.sprite.setAlpha(1 - t);
+      s.sprite.setScale(0.5 + t * 0.9);
+    }
+  };
+
+  // Meteors are indestructible in v1: a bullet is spent on the hit and
+  // sparks, the rock carries on untouched.
+  MainScene.prototype.bulletVsMeteors = function (b, bi) {
+    var state = this.state;
+    var meteors = state.challenge.meteors;
+    for (var i = 0; i < meteors.length; i++) {
+      var m = meteors[i];
+      if (!circleHit(b.x, b.y, m.x, m.y, m.radius + BULLET_RADIUS)) continue;
+      this.triggerMeteorSpark(b.x, b.y);
+      destroyBulletSprites(b);
+      state.bullets.splice(bi, 1);
+      return true;
+    }
+    return false;
+  };
+
+  // A meteor hit costs a life like any other hazard. A banked shield dot
+  // still blocks one - but unlike a diver, the rock survives being
+  // blocked and keeps going, which is the whole point of indestructible.
+  MainScene.prototype.shipVsMeteors = function () {
+    var state = this.state;
+    if (isInvulnerable(state)) return;
+    var meteors = state.challenge.meteors;
+    for (var i = 0; i < meteors.length; i++) {
+      var m = meteors[i];
+      if (this.shieldDotBlocks(m.x, m.y, m.radius)) return;
+      if (circleHit(m.x, m.y, state.ship.x, SHIP_Y, state.ship.radius + m.radius)) {
+        this.shipHit('meteor', { pattern: state.challenge.lastPattern });
+        return;
+      }
+    }
+  };
 
   // ---- Input: composition ------------------------------------------------------
   var touchLeft = false, touchRight = false, touchFire = false;
@@ -4218,7 +4789,10 @@
       // the run survives: once the game is over nothing below update()'s
       // phase gate runs, so a blast fired there would clear the board and
       // play its ring with the overlay already up and nobody watching.
-      if (TUNING.deathBlast && !alreadyExploded) {
+      // Skipped during a challenge stage too - there is no formation to
+      // wipe, and the bars are off screen, so all it would do is chip them
+      // invisibly.
+      if (TUNING.deathBlast && !alreadyExploded && !state.challenge) {
         this.triggerStarburst(state.ship.x, SHIP_Y, {
           awardScore: false,
           brickDamage: TUNING.deathBlastBrickDamage,
@@ -4257,6 +4831,15 @@
     // case.
     state.powerupBolts.forEach(function (bolt) { bolt.sprite.destroy(); });
     state.powerupBolts = [];
+    // Same freeze risk for a challenge stage's rock, and the stage itself
+    // has to be torn down or the restart would come back mid-gauntlet with
+    // the bars still hidden.
+    this.clearMeteors();
+    state.challenge = null;
+    state.starSpeedScale = 1;
+    this.flameOn = false;
+    this.flameSprite.setVisible(false);
+    this.setColorBarsVisible(true);
     state.phase = 'gameover';
     traceEvent('game_over', { score: state.score, wave: state.wave, elapsed: state.difficulty.elapsed });
     document.getElementById('overlayScore').textContent = state.score;
@@ -4386,6 +4969,15 @@
     state.brickFizzles = [];
     state.shieldFizzles.forEach(function (fx) { fx.sprite.destroy(); });
     state.shieldFizzles = [];
+    this.clearMeteors();
+    state.challenge = null;
+    state.challengesDone = 0;
+    state.starSpeedScale = 1;
+    state.meteorBag = []; // a fresh run starts the volley book over rather than resuming mid-bag
+    this.flameOn = false;
+    this.flameSprite.setVisible(false);
+    this.setColorBarsVisible(true); // in case the run ended mid-challenge with them hidden
+    this.updatePlanet();            // back to a distant speck
 
     state.phase = 'playing';
     state.ship.x = GAME_WIDTH / 2;
@@ -4426,16 +5018,30 @@
   // ---- Background ------------------------------------------------------
   MainScene.prototype.updateBackground = function (dt) {
     var g = this.starsGfx;
+    var scale = this.state.starSpeedScale;
     g.clear();
-    g.fillStyle(COLOR_STAR, 0.55);
+    // Past CHALLENGE_STREAK_SCALE the stars stop reading as points and
+    // start reading as motion, so they are drawn as streaks along their
+    // own travel instead - the single cue that sells "we are moving now".
+    var streaking = scale > CHALLENGE_STREAK_SCALE;
+    if (streaking) g.lineStyle(1.2, COLOR_STAR, 0.7);
+    else g.fillStyle(COLOR_STAR, 0.55);
     for (var i = 0; i < this.stars.length; i++) {
       var s = this.stars[i];
-      s.y += s.speed * dt;
+      s.y += s.speed * scale * dt;
       if (s.y > GAME_HEIGHT + 4) {
         s.y = -4;
         s.x = Math.random() * GAME_WIDTH;
       }
-      g.fillCircle(s.x, s.y, s.r);
+      if (streaking) {
+        var len = s.speed * scale * CHALLENGE_STREAK_SECONDS;
+        g.beginPath();
+        g.moveTo(s.x, s.y);
+        g.lineTo(s.x, s.y - len);
+        g.strokePath();
+      } else {
+        g.fillCircle(s.x, s.y, s.r);
+      }
     }
   };
 
@@ -4492,6 +5098,29 @@
           core.sprite.x = core.carrierSlot.x + Math.cos(core.angle) * CORE_ORBIT_RADIUS;
           core.sprite.y = core.carrierSlot.y + Math.sin(core.angle) * CORE_ORBIT_RADIUS;
         }
+      },
+      // Drops straight into a challenge stage from wherever the run is,
+      // clearing the formation the way a cleared wave would.
+      forceChallenge: function () {
+        self.state.formation.forEach(function (slot) {
+          if (!slot.alive) return;
+          slot.sprite.destroy();
+          slot.alive = false;
+        });
+        self.startChallenge();
+      },
+      // Advances an ACTIVE challenge stage by an exact dt, meteors and
+      // collisions included - the stepped equivalent of the challenge
+      // branch in update().
+      stepChallenge: function (dt) {
+        var state = self.state;
+        if (!state.challenge) return;
+        state.clock += dt;
+        updateShip(state, dt);
+        updateBullets(state, dt);
+        self.updateChallenge(dt);
+        for (var i = state.bullets.length - 1; i >= 0; i--) self.bulletVsMeteors(state.bullets[i], i);
+        if (state.challenge) self.shipVsMeteors();
       }
     };
     window.__headOnTrace = {
@@ -4512,6 +5141,27 @@
     // leaving either frozen mid-flight behind the overlay.
     if (state.phase === 'playing') {
       state.clock += dt;
+
+      if (state.challenge) {
+        // A challenge stage replaces the combat game wholesale - no
+        // formation, sorties, bars or powerup economy run at all. The ship
+        // still flies and fires, the shield dots still orbit and block,
+        // and the death FX still play, because all of those are about the
+        // player rather than the wave.
+        updateShip(state, dt);
+        updateBullets(state, dt);
+        this.updateFiring(dt);
+        this.updateChallenge(dt);
+        for (var bi = state.bullets.length - 1; bi >= 0; bi--) {
+          this.bulletVsMeteors(state.bullets[bi], bi);
+        }
+        if (state.challenge) this.shipVsMeteors(); // endChallenge() may have cleared it this frame
+        this.updateShieldFizzles(dt);
+        this.updateStarburstFx(dt);
+        this.updateShipBreakFx(dt);
+        this.updatePowerupDots(dt);
+        this.updateShipFill(dt);
+      } else {
 
       // Move first: everything that advances on its own this frame, so the
       // collision pass below sees one consistent set of final positions
@@ -4553,6 +5203,7 @@
       this.updateOrbBullets(dt);
       this.checkWaveClear(dt);
       state.difficulty.elapsed += dt;
+      } // end of the ordinary combat branch - see the challenge branch above
       this.updateDiagOverlay();
       this.updateTraceTier();
       this.updateTraceSample();
@@ -4563,7 +5214,12 @@
 
     var invuln = isInvulnerable(state);
     var breaking = !!state.shipBreakFx;
-    this.shipSprite.setVisible(!breaking && (!invuln || Math.floor(performance.now() / 100) % 2 !== 0));
+    var shipVisible = !breaking && (!invuln || Math.floor(performance.now() / 100) % 2 !== 0);
+    this.shipSprite.setVisible(shipVisible);
+    // The flame belongs to the ship, so it hides with it - a thruster
+    // still burning over the wreckage while the ship blinks out reads as
+    // a stuck sprite, not as thrust.
+    this.flameSprite.setVisible(!!this.flameOn && shipVisible);
   };
 
   // Restart/Reset Best only live in the game-over overlay now - no
@@ -4666,8 +5322,20 @@
       { section: 'labFire', key: 'formationFireSpread', label: 'Spread after landing', min: 1, max: 12, step: 0.5, unit: 's' },
       { section: 'labFire', key: 'formationFireMinGap', label: 'Min gap between shots', min: 0, max: 2, step: 0.05, unit: 's' },
       { section: 'labFire', key: 'formationFireMaxShots', label: 'Max shots before diving', min: 0, max: 5, step: 1, unit: '' },
-      { section: 'labDeath', key: 'deathBlastBrickDamage', label: 'Brick damage', min: 0, max: 8, step: 1, unit: 'hp' }
+      { section: 'labDeath', key: 'deathBlastBrickDamage', label: 'Brick damage', min: 0, max: 8, step: 1, unit: 'hp' },
+      { section: 'labChallenge', key: 'challengeEveryWaves', label: 'Every N waves', min: 1, max: 10, step: 1, unit: '' },
+      { section: 'labChallenge', key: 'challengeVolleys', label: 'Volleys per stage', min: 1, max: 20, step: 1, unit: '' },
+      { section: 'labChallenge', key: 'challengeMeteorSpeed', label: 'Meteor speed', min: 100, max: 600, step: 10, unit: 'px/s' },
+      { section: 'labChallenge', key: 'challengeStagesToArrival', label: 'Stages to the planet', min: 1, max: 12, step: 1, unit: '',
+        // Resizing the world the moment the slider moves, rather than at
+        // the next stage end, is the whole point of having the slider -
+        // you drag it to SEE how close a given setting puts you.
+        set: function (v) { TUNING.challengeStagesToArrival = v; if (mainScene) mainScene.updatePlanet(); } }
     ].forEach(addSlider);
+
+    addCheckbox('labChallenge', 'Challenge stages on',
+      function () { return TUNING.challengeEnabled; },
+      function (v) { TUNING.challengeEnabled = v; });
 
     addCheckbox('labDeath', 'Death sets off a starburst',
       function () { return TUNING.deathBlast; },
@@ -4859,6 +5527,21 @@
     }
 
     document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
+
+    // Playtesting a stage shouldn't mean clearing three waves first. Wipes
+    // the formation the same way a cleared wave would and drops straight
+    // into a stage, then closes the panel so you can actually fly it.
+    document.getElementById('labChallengeNowBtn').addEventListener('click', function () {
+      if (!mainScene || mainScene.state.phase !== 'playing' || mainScene.state.challenge) return;
+      var state = mainScene.state;
+      state.formation.forEach(function (slot) {
+        if (!slot.alive) return;
+        slot.sprite.destroy();
+        slot.alive = false;
+      });
+      mainScene.startChallenge();
+      setLabOpen(false);
+    });
     document.getElementById('labResetBtn').addEventListener('click', function () {
       var defaults = sortieDefaultTuning();
       Object.keys(defaults).forEach(function (k) { TUNING[k] = defaults[k]; });
@@ -4892,6 +5575,10 @@
       save: saveTuning,
       storageKey: TUNING_KEY,
       entryPatterns: ENTRY_PATTERNS.map(function (p) { return { id: p.id, label: p.label }; }),
+      // Exposed with build() intact, unlike the two books above - a volley
+      // pattern's whole contract is the rock it lays out, so a test has to
+      // be able to run one and look at the result.
+      meteorPatterns: METEOR_PATTERNS.map(function (p) { return { id: p.id, label: p.label, build: p.build }; }),
       patterns: SORTIE_PATTERNS.map(function (p) {
         return { id: p.id, label: p.label, tier: p.tier, min: p.min, stagger: p.stagger, cooldown: p.cooldown };
       }),
