@@ -134,6 +134,33 @@
   }
   .diag-overlay.visible { display: block; }
 
+  /* Shown only when an uncaught exception has stopped the game. It is
+     deliberately loud and deliberately unconditional - unlike the
+     diagnostic overlay it is not behind a setting, because the one time
+     it appears is the one time nobody has the lab open. */
+  .crash-banner {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    right: 8px;
+    transform: translateY(-50%);
+    z-index: 5;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(248, 113, 113, 0.85);
+    background: rgba(40, 8, 12, 0.94);
+    color: #fecaca;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .crash-banner.visible { display: block; }
+
   .canvas-wrap {
     width: 100%;
     max-width: 420px;
@@ -418,6 +445,7 @@
            (0,0) so it never overlaps the score/lives readout, and never
            intercepts a tap (it's purely informational, over live gameplay). -->
       <div class="diag-overlay" id="diagOverlay"></div>
+      <div class="crash-banner" id="crashBanner"></div>
       <div class="overlay" id="gameOverOverlay">
         <div class="overlay-title">Game Over</div>
         <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
@@ -4926,11 +4954,7 @@
       't ' + state.difficulty.elapsed.toFixed(1) + 's  tier ' + tier + '/' + (TUNING.tierUnlock.length - 1) + '\n' +
       activation + '\n' +
       lastLine + '\n' +
-      fireLine +
-      // Only ever shows up when something actually went wrong, so it
-      // costs nothing until it matters - and then it says what, on the
-      // device it happened on, instead of leaving "it froze".
-      (frameErrors.count ? '\nERR x' + frameErrors.count + ': ' + frameErrors.last : '');
+      fireLine;
   };
 
   // Logs a 'tier' event the frame a run's tier actually changes, not every
@@ -5131,10 +5155,11 @@
           core.sprite.y = core.carrierSlot.y + Math.sin(core.angle) * CORE_ORBIT_RADIUS;
         }
       },
-      // Caught frame exceptions. update() no longer lets one kill the
-      // game, so pageerror alone would no longer notice a crash - tests
-      // read this instead and treat a non-zero count as a failure.
-      frameErrors: frameErrors,
+      // Uncaught exceptions that got past the game loop. Nothing catches
+      // them - a crash still freezes the game on purpose - but they are
+      // recorded on the way out, and the tests read this so a freeze
+      // fails a build instead of just looking like a slow test.
+      runtimeErrors: runtimeErrors,
       // Drops straight into a challenge stage from wherever the run is,
       // clearing the formation the way a cleared wave would.
       forceChallenge: function () {
@@ -5167,40 +5192,42 @@
   };
 
   // ---- Game loop ------------------------------------------------------
-  // Phaser schedules the next animation frame AFTER the update callback
-  // returns, so an exception thrown in a frame does not cost you that
-  // frame - it stops the game permanently, mid-run, until a reload. A
-  // null dereference at the end of a challenge stage did exactly that,
-  // and the symptom ("it froze") gave no hint which of a few thousand
-  // lines was responsible.
+  // Exceptions are deliberately left UNCAUGHT. Phaser schedules the next
+  // animation frame after the update callback returns, so a throw stops
+  // the game dead rather than costing one frame - and while this is a
+  // prototype that is the behaviour we want: a bug that freezes gets
+  // reported and fixed, where one that limps along gets shipped.
   //
-  // So every frame is wrapped. This does NOT try to repair anything: a
-  // bad frame is dropped and the next one is attempted, which for
-  // anything transient means play continues, and for anything persistent
-  // means a visibly broken game rather than a dead one. The error is
-  // never swallowed quietly - it goes to the console, into the trace, and
-  // onto the diagnostic overlay, and the tests assert the counter is zero
-  // so a caught exception still fails a build the way an uncaught one did.
-  var frameErrors = { count: 0, last: null, seen: {} };
-  function reportFrameError(e) {
-    frameErrors.count++;
-    var msg = (e && e.message) ? e.message : String(e);
-    frameErrors.last = msg;
-    if (frameErrors.seen[msg]) return; // a broken frame usually repeats; say it once
-    frameErrors.seen[msg] = true;
-    if (window.console && console.error) console.error('[head-on] frame error:', e);
-    traceEvent('frame_error', { message: msg, stack: e && e.stack ? String(e.stack).slice(0, 800) : null });
+  // What is not wanted is a SILENT freeze. A null dereference at the end
+  // of a challenge stage froze the game with no clue which of a few
+  // thousand lines did it, and "it froze" is most of a debugging session
+  // on its own. So the error is captured on its way past - console,
+  // trace, and a banner over the canvas naming it - and then allowed to
+  // do exactly what it did before. This listener cannot prevent the
+  // freeze and does not try to; it only makes the corpse legible.
+  var runtimeErrors = { count: 0, last: null };
+  function showCrashBanner(msg, where) {
+    var el = document.getElementById('crashBanner');
+    if (!el) return;
+    el.textContent = 'Frozen: ' + msg + (where ? '\n' + where : '') + '\nReload to restart.';
+    el.classList.add('visible');
   }
+  window.addEventListener('error', function (ev) {
+    var e = ev.error;
+    var msg = (e && e.message) ? e.message : String(ev.message || 'unknown error');
+    var where = ev.filename ? (String(ev.filename).split('/').pop() + ':' + ev.lineno) : '';
+    runtimeErrors.count++;
+    runtimeErrors.last = msg;
+    showCrashBanner(msg, where);
+    try {
+      traceEvent('runtime_error', {
+        message: msg, where: where,
+        stack: e && e.stack ? String(e.stack).slice(0, 800) : null
+      });
+    } catch (ignored) { /* never let the reporter throw on top of the report */ }
+  });
 
   MainScene.prototype.update = function (time, delta) {
-    try {
-      this.stepGame(time, delta);
-    } catch (e) {
-      reportFrameError(e);
-    }
-  };
-
-  MainScene.prototype.stepGame = function (time, delta) {
     var state = this.state;
     var dt = Math.min(delta / 1000, MAX_DT);
 

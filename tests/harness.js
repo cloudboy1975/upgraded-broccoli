@@ -52,15 +52,15 @@ async function openGame(page) {
   await page.waitForTimeout(500);
 }
 
-// The game catches exceptions per frame so one bad frame can't kill a
-// run (see update() in head-on.html). That means `pageerror` no longer
-// fires for a crash inside the game loop - the counter is the only
-// evidence. Every test file must check it, so the harness does it once
-// here rather than trusting each file to remember.
-async function frameErrors(page) {
+// The game does NOT catch exceptions - a crash freezes it on purpose
+// (see update() in head-on.html). Playwright's `pageerror` catches those,
+// but a freeze can also look like a test that merely found nothing, so
+// the game records them too and every file checks the count. Belt and
+// braces on the one failure that is expensive to miss.
+async function runtimeErrors(page) {
   return page.evaluate(function () {
-    var fe = window.__headOnDebug && window.__headOnDebug.frameErrors;
-    return fe ? { count: fe.count, last: fe.last } : { count: 0, last: null };
+    var re = window.__headOnDebug && window.__headOnDebug.runtimeErrors;
+    return re ? { count: re.count, last: re.last } : { count: 0, last: null };
   });
 }
 
@@ -96,7 +96,7 @@ function run(body) {
     await openGame(page);
     var threw = null;
     try {
-      await body(page, check, { errors: errors, frameErrors: function () { return frameErrors(page); } });
+      await body(page, check, { errors: errors, runtimeErrors: function () { return runtimeErrors(page); } });
     } catch (e) {
       // Reported as a failure rather than swallowed by the summary - a
       // file that dies half way through has NOT passed the checks it
@@ -104,12 +104,12 @@ function run(body) {
       threw = e;
       console.error('TEST ERROR', e && e.stack ? e.stack : e);
     }
-    // Checked for every file, after everything it did - a crash inside
-    // the game loop is caught by the game now, so this is what is left to
-    // notice one.
+    // Checked for every file, after everything it did. A crash freezes
+    // the game rather than failing loudly, so a file can otherwise sail
+    // past on checks that ran before the freeze.
     try {
-      var fe = await frameErrors(page);
-      check('the game loop threw no exceptions during this file', fe.count === 0, fe);
+      var re = await runtimeErrors(page);
+      check('the game never crashed during this file', re.count === 0, re);
     } catch (e) { /* page already gone; the failure above covers it */ }
     var failed = check.summary();
     await browser.close();

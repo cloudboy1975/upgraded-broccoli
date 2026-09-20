@@ -534,8 +534,8 @@ harness.run(async (page, check, ctx) => {
           // The real symptom: is the game loop still running at all?
           loopAlive: state.clock > clock,
           ended: state.challenge === null,
-          frameErrors: window.__headOnDebug.frameErrors.count,
-          lastError: window.__headOnDebug.frameErrors.last
+          crashes: window.__headOnDebug.runtimeErrors.count,
+          lastError: window.__headOnDebug.runtimeErrors.last
         });
       }, 2000);
     }, 12000));
@@ -543,45 +543,49 @@ harness.run(async (page, check, ctx) => {
   check('the game loop survives a stage ending with bullets in flight',
     liveBoundary.loopAlive, liveBoundary);
   check('the stage ended and no frame threw',
-    liveBoundary.ended && liveBoundary.frameErrors === 0, liveBoundary);
+    liveBoundary.ended && liveBoundary.crashes === 0, liveBoundary);
 
-  // --- the frame guard itself ---------------------------------------------
-  // The guard is what stops any FUTURE bug of this class being fatal, so
-  // it needs its own proof: throw on purpose, and check the loop lives.
-  const guard = await page.evaluate(() => {
+  // --- how a crash is meant to behave --------------------------------------
+  // The game deliberately does NOT catch exceptions: a crash freezes it,
+  // because a prototype that freezes gets reported and fixed where one
+  // that limps along gets shipped. What it must not do is freeze
+  // SILENTLY - that is what turned this stage's null dereference into a
+  // guessing game. So the policy itself is pinned: the loop stops, AND
+  // the reason is on screen.
+  //
+  // This runs last on purpose. It kills the page.
+  const crash = await page.evaluate(() => {
     const scene = window.__headOnDebug.scene, state = scene.state;
     scene.resetGame();
-    const before = window.__headOnDebug.frameErrors.count;
-    // Break one thing the loop touches every frame, briefly.
-    const real = scene.updateBackground;
     scene.updateBackground = function () { throw new Error('deliberate test explosion'); };
     return new Promise(res => setTimeout(() => {
       const clock = state.clock;
       setTimeout(() => {
-        scene.updateBackground = real;
-        setTimeout(() => res({
-          caught: window.__headOnDebug.frameErrors.count > before,
-          message: window.__headOnDebug.frameErrors.last,
-          loopAliveWhileBroken: state.clock > clock,
-          recovered: state.phase === 'playing'
-        }), 400);
-      }, 700);
+        const banner = document.getElementById('crashBanner');
+        res({
+          // The intended behaviour, not a bug: the loop is dead.
+          loopStopped: state.clock === clock,
+          recorded: window.__headOnDebug.runtimeErrors.count > 0,
+          message: window.__headOnDebug.runtimeErrors.last,
+          bannerVisible: !!banner && banner.classList.contains('visible'),
+          bannerText: banner ? banner.textContent : null
+        });
+      }, 900);
     }, 400));
   });
-  check('a thrown frame is caught rather than killing the game', guard.caught, guard);
-  check('the loop keeps running through it', guard.loopAliveWhileBroken, guard);
-  check('and play continues once the fault clears', guard.recovered, guard);
-  check('the error is recorded, not swallowed',
-    guard.message === 'deliberate test explosion', guard);
-  // Put the counter back so the harness's own end-of-file check, which
-  // fails on any caught exception, is not tripped by this test's own.
+  check('an uncaught exception stops the game, as intended', crash.loopStopped, crash);
+  check('the crash is recorded rather than passing silently', crash.recorded, crash);
+  check('it names the actual error', crash.message === 'deliberate test explosion', crash);
+  check('and a banner says so on screen, so a freeze is never mute',
+    crash.bannerVisible && crash.bannerText.indexOf('deliberate test explosion') !== -1, crash);
+
+  // This file's own deliberate crash must not fail the harness's
+  // end-of-file crash check, or the blanket check below. Only the
+  // deliberate one is cleared; anything else still fails.
   await page.evaluate(() => {
-    window.__headOnDebug.frameErrors.count = 0;
-    window.__headOnDebug.frameErrors.last = null;
-    window.__headOnDebug.frameErrors.seen = {};
+    window.__headOnDebug.runtimeErrors.count = 0;
+    window.__headOnDebug.runtimeErrors.last = null;
   });
-  // Same for the console line the guard correctly printed. Only the
-  // deliberate one is dropped - anything else still fails below.
   for (let i = errors.length - 1; i >= 0; i--) {
     if (errors[i].indexOf('deliberate test explosion') !== -1) errors.splice(i, 1);
   }
