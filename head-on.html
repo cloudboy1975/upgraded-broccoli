@@ -501,6 +501,10 @@
         <div id="labFire"></div>
       </div>
       <div class="lab-section">
+        <h3>Orbiter shots</h3>
+        <div id="labOrbiter"></div>
+      </div>
+      <div class="lab-section">
         <h3>Challenge stage</h3>
         <div id="labChallenge"></div>
         <div class="lab-actions">
@@ -896,6 +900,18 @@
   var CHALLENGE_METEOR_SPEED = 300;   // px/sec downward
   var CHALLENGE_STAGES_TO_ARRIVAL = 5; // challenge stages before the planet is close enough to arrive at
 
+  // Orbiter shot tunables - same placement rule as above. See the
+  // ORBITER_* block further down for what these do.
+  var ORBITER_SPEED = 120;        // px/sec - deliberately ~1/3.5 of a bullet, so flight time IS the reload
+  // rad/sec of steering toward a matching target. Measured against a
+  // settled formation, hit rate runs 24% at 0 (pure ballistic arc), 69%
+  // here, and 98% by 0.7 - past which the shot straightens onto its
+  // target almost immediately and the launch fan stops meaning anything,
+  // which would throw away the whole point of aiming these by timing.
+  // This is deliberately set where a miss is still possible.
+  var ORBITER_TURN_RATE = 0.35;
+  var ORBITER_LIFETIME = 6;       // seconds before one gives up and fades
+
   // ---- Live tuning ------------------------------------------------------
   // Everything the sortie system reads at runtime, in one mutable object so
   // the hidden control panel can retune the game between (or during) waves
@@ -964,6 +980,12 @@
       challengeVolleys: CHALLENGE_VOLLEYS,
       challengeMeteorSpeed: CHALLENGE_METEOR_SPEED,
       challengeStagesToArrival: CHALLENGE_STAGES_TO_ARRIVAL,
+      // The orbiting dots doubling as guns - see the ORBITER_* block.
+      orbiterEnabled: true,
+      orbiterSpeed: ORBITER_SPEED,
+      orbiterTurnRate: ORBITER_TURN_RATE,
+      orbiterLifetime: ORBITER_LIFETIME,
+      orbiterMines: false, // park at the top and wait for prey, instead of flying all the way in
       diagnosticOverlay: false // draws elapsed/tier/sortie-activation text over the live game - see updateDiagOverlay()
     };
   }
@@ -1378,6 +1400,42 @@
   var POWERUP_ORBIT_RADIUS = 22;
   var POWERUP_ORBIT_SPEED = 3; // rad/sec
   var POWERUP_DOT_RADIUS = 4;
+
+  // ---- Orbiter shots -----------------------------------------------------
+  // An unspent dot is not just a shield any more - it is also a gun, fired
+  // by the ordinary fire button. Tapping fire launches one slow shot from
+  // every dot that does not already have one in flight, and a shot only
+  // bites enemies of its own colour family.
+  //
+  // Two properties do all the balancing between them, and neither is a
+  // cooldown number:
+  //
+  //  - ONE IN FLIGHT PER DOT. Flight time is the reload. At the default
+  //    speed a shot needs ~3.4s to cross the screen, so one dot fires
+  //    about every 3.4s, three dots about every 1.1s, and there are never
+  //    more than three on screen. Tuning the speed retunes the whole
+  //    weapon's rate of fire, for free.
+  //  - THE DOT IS NOT SPENT. Firing costs nothing; the dot stays a shield
+  //    and stays cannon ammo. What that buys is a real cost on the brick
+  //    cannon, which had none: holding fire to chew bricks now disarms
+  //    you, taking your guns and your shields with it.
+  //
+  // The launch direction comes from where the dot happens to BE on its
+  // orbit - outward along its own radius, blended toward vertical so a
+  // shot never launches downward. So the spread you get is decided by
+  // when you tapped, against a ring you have been watching all game: you
+  // aim these by rhythm, not by pointing. Nothing else in the game trails
+  // on a curve, so they read as their own weapon without new art
+  // language (the bolt owns lightning, the starburst owns the ring).
+  var ORBITER_RADIUS = 5;      // hit radius
+  var ORBITER_TEX_RADIUS = 8;  // texture is bigger than the hit radius - the halo is spectacle, same as the core's
+  var ORBITER_VERTICAL_BLEND = 1.2; // how much "straight up" is mixed into the launch radial; higher = tighter fan
+  var ORBITER_TRAIL_POINTS = 26;    // samples kept for the curved trail - ~0.9s of history, long enough for the bend to read
+  var ORBITER_TRAIL_SAMPLE = 0.035; // seconds between samples
+  var ORBITER_SEEK_RANGE = 1000;    // effectively the whole screen while flying; mines use ORBITER_MINE_RANGE instead
+  var ORBITER_MINE_Y = Math.round(GAME_HEIGHT * 0.34); // a mine parks once it climbs past this
+  var ORBITER_MINE_RANGE = 150; // how close matching prey must come before a parked mine moves
+
 
   // A bullet's colored trail (one segment per color the ship has leveled
   // up via strips - see levelUpFirePower()) is drawn behind it, anchored
@@ -1858,6 +1916,23 @@
       });
     });
 
+    // Orbiter shots: the same dot, launched - a hot white core inside a
+    // halo of its own colour, so it reads as that dot having left the
+    // ring rather than as a new object. The halo is wider than
+    // ORBITER_RADIUS, which is the real hit size; same "glow is
+    // spectacle, hit box is honest" rule the core follows.
+    STRIP_COLOR_KEYS.forEach(function (key) {
+      var r = ORBITER_TEX_RADIUS, size = r * 2;
+      bakeTexture(self, 'orbiterTex_' + key, size, size, function (g) {
+        g.fillStyle(STRIP_COLORS[key], 0.35);
+        g.fillCircle(r, r, r);
+        g.fillStyle(STRIP_COLORS[key], 0.9);
+        g.fillCircle(r, r, r * 0.66);
+        g.fillStyle(0xffffff, 0.9);
+        g.fillCircle(r, r, r * 0.3);
+      });
+    });
+
     // Shield fizzle: a thin strip in the spent dot's own color, baked at
     // full width - see triggerShieldFizzle()/updateShieldFizzles(). Same
     // "bake once, grow displayWidth per instance" trick as brickFizzleTex.
@@ -2157,6 +2232,8 @@
       challengesDone: 0,    // completed challenge stages this run; drives how close the home world is
       starSpeedScale: 1,    // starfield speed multiplier - ramps up and back down across a challenge stage
       meteorBag: [],        // shuffle bag of volley pattern ids - see drawMeteorPattern()
+      orbiters: [],         // slow colour-gated shots launched from the orbiting dots - see launchOrbiters()
+      gunIdSeq: 0,          // hands each dot a stable id so its shot can be matched back to it
       entryBag: [], // shuffle bag of fly-in pattern ids - see drawEntryPattern()
       entryBagKey: '', // which enabled-set the bag was built from, so toggling one in the lab redeals
       entryPattern: null, // the fly-in this wave arrived on, for the lab readout
@@ -2215,6 +2292,11 @@
     this.shipFillSprite.setMask(this.shipFillMaskGfx.createGeometryMask());
 
     this.shipSprite = this.add.sprite(GAME_WIDTH / 2, SHIP_Y, 'shipTex');
+
+    // Orbiter trails, drawn after the ship so a shot's curve reads over
+    // everything it passes. One Graphics for all of them, redrawn each
+    // frame - see renderOrbiterTrails().
+    this.orbiterGfx = this.add.graphics();
     this.spawnFormation();
     this.spawnColorBars(); // once per game, not per wave - see spawnColorBars()
   };
@@ -3095,6 +3177,7 @@
     state.brickShards.forEach(function (sh) { sh.sprite.destroy(); });
     state.brickShards = [];
     if (state.core && state.core.sprite) { state.core.sprite.destroy(); state.core = null; }
+    this.clearOrbiters();
     // The bars are KEPT - they are the run's standing pressure and come
     // back exactly as they were - but hidden, since the stage is somewhere
     // else entirely.
@@ -3747,6 +3830,7 @@
     if (state.input.fire) {
       if (!state.fireHeld) {
         this.fireBullet();
+        this.launchOrbiters(); // the same tap fires every gun that is loaded
         state.fireHeld = true;
         state.fireHeldMs = 0;
         state.nextPowerupTickMs = FIRE_LONG_PRESS_MS;
@@ -4468,6 +4552,13 @@
     pu.colors.push(colorKey);
     pu.dots.push({
       colorKey: colorKey,
+      // Its own id, so an orbiter it fires can be matched back to it
+      // without holding a reference. That matters because a dot can be
+      // destroyed three different ways while its shot is still flying -
+      // spent on the cannon, spent blocking a hazard, or wiped on death -
+      // and none of those should have to know about guns. The shot simply
+      // stops matching any live dot and flies on, orphaned.
+      gunId: ++this.state.gunIdSeq,
       sprite: this.add.sprite(this.state.ship.x, SHIP_Y, 'powerupDotTex_' + colorKey)
     });
   };
@@ -4497,8 +4588,183 @@
       var a = pu.angle + (Math.PI * 2 / n) * i;
       pu.dots[i].sprite.x = state.ship.x + Math.cos(a) * POWERUP_ORBIT_RADIUS;
       pu.dots[i].sprite.y = SHIP_Y + Math.sin(a) * POWERUP_ORBIT_RADIUS;
+      // Hollow while its shot is out. The ring you are already watching
+      // becomes the reload gauge - no HUD element needed, and "which of
+      // my guns is ready" is answerable at a glance mid-dodge.
+      pu.dots[i].sprite.setAlpha(this.gunHasShotInFlight(pu.dots[i].gunId) ? 0.3 : 1);
     }
   };
+
+  // ---- Orbiter shots -----------------------------------------------------
+  // See the ORBITER_* constants block for the design.
+
+  MainScene.prototype.gunHasShotInFlight = function (gunId) {
+    var orbiters = this.state.orbiters;
+    for (var i = 0; i < orbiters.length; i++) {
+      if (orbiters[i].gunId === gunId) return true;
+    }
+    return false;
+  };
+
+  // Called on the same tap that fires an ordinary bullet. Every dot that
+  // is not already reloading fires, so the number of shots per tap is the
+  // number of guns you have ready - never a burst you have to manage.
+  MainScene.prototype.launchOrbiters = function () {
+    var state = this.state;
+    if (!TUNING.orbiterEnabled) return;
+    if (state.challenge) return; // nothing in a meteor stage has a colour to match
+    var pu = state.powerup;
+    for (var i = 0; i < pu.dots.length; i++) {
+      if (this.gunHasShotInFlight(pu.dots[i].gunId)) continue;
+      this.launchOrbiterFrom(pu.dots[i]);
+    }
+  };
+
+  MainScene.prototype.launchOrbiterFrom = function (dot) {
+    var state = this.state;
+    var x = dot.sprite.x, y = dot.sprite.y;
+    // Outward along the dot's own radius, blended toward vertical. The
+    // blend is what stops a dot at the bottom of its orbit firing into
+    // the floor: at the very bottom the radial and the "up" term nearly
+    // cancel, leaving a shot that simply climbs.
+    var dx = x - state.ship.x;
+    var dy = y - SHIP_Y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var vx = dx / len;
+    var vy = dy / len - ORBITER_VERTICAL_BLEND;
+    state.orbiters.push({
+      gunId: dot.gunId,
+      colorKey: dot.colorKey,
+      x: x, y: y,
+      heading: Math.atan2(vy, vx),
+      age: 0,
+      parked: false,
+      trailTimer: 0,
+      trail: [{ x: x, y: y }],
+      sprite: this.add.sprite(x, y, 'orbiterTex_' + dot.colorKey)
+    });
+  };
+
+  // Nearest live enemy of this shot's own colour family, within range.
+  // Formation members and brick shards both qualify - a colour family
+  // means the whole colour, not just the ships.
+  MainScene.prototype.nearestOrbiterTarget = function (o, range) {
+    var state = this.state;
+    var best = null, bestD = range * range;
+    function consider(x, y, colorKey) {
+      if (colorKey !== o.colorKey) return;
+      var dx = x - o.x, dy = y - o.y;
+      var d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = { x: x, y: y }; }
+    }
+    state.formation.forEach(function (slot) {
+      if (slot.alive) consider(slot.x, slot.y, slot.colorKey);
+    });
+    state.brickShards.forEach(function (sh) {
+      consider(sh.x, sh.y, sh.colorKey);
+    });
+    return best;
+  };
+
+  MainScene.prototype.updateOrbiters = function (dt) {
+    var state = this.state;
+    for (var i = state.orbiters.length - 1; i >= 0; i--) {
+      var o = state.orbiters[i];
+      o.age += dt;
+
+      var mines = TUNING.orbiterMines;
+      // A mine parks once it has climbed past its line, and only moves
+      // again when matching prey comes close. Without mines the seek
+      // range is the whole screen, so a shot just flies at the nearest
+      // match the whole way up.
+      if (mines && !o.parked && o.y <= ORBITER_MINE_Y) o.parked = true;
+      var range = o.parked ? ORBITER_MINE_RANGE : ORBITER_SEEK_RANGE;
+      var target = this.nearestOrbiterTarget(o, range);
+
+      // Steer: toward a match if there is one, otherwise just keep
+      // climbing. The turn rate is capped, so this corrects a slow shot
+      // rather than letting it chase - at 0 they stay pure ballistic arcs.
+      var want = target ? Math.atan2(target.y - o.y, target.x - o.x) : -Math.PI / 2;
+      var diff = ((want - o.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      var turn = TUNING.orbiterTurnRate * dt;
+      o.heading += clamp(diff, -turn, turn);
+
+      var speed = (o.parked && !target) ? 0 : TUNING.orbiterSpeed;
+      o.x += Math.cos(o.heading) * speed * dt;
+      o.y += Math.sin(o.heading) * speed * dt;
+      o.sprite.x = o.x;
+      o.sprite.y = o.y;
+
+      o.trailTimer += dt;
+      if (o.trailTimer >= ORBITER_TRAIL_SAMPLE) {
+        o.trailTimer = 0;
+        o.trail.push({ x: o.x, y: o.y });
+        if (o.trail.length > ORBITER_TRAIL_POINTS) o.trail.shift();
+      }
+
+      if (this.orbiterVsEnemies(o)) { this.destroyOrbiter(i); continue; }
+      if (o.age > TUNING.orbiterLifetime || isOffPlayfield(o.x, o.y, 30)) this.destroyOrbiter(i);
+    }
+  };
+
+  // One target, then spent - which is what keeps the one-in-flight-per-dot
+  // rate cap honest. A shot that ploughed through a whole colour column
+  // would make the cap meaningless.
+  MainScene.prototype.orbiterVsEnemies = function (o) {
+    var state = this.state;
+    for (var i = 0; i < state.formation.length; i++) {
+      var slot = state.formation[i];
+      if (!slot.alive || slot.colorKey !== o.colorKey) continue;
+      if (!circleHit(o.x, o.y, slot.x, slot.y, slot.radius + ORBITER_RADIUS)) continue;
+      slot.sprite.destroy();
+      slot.alive = false;
+      this.addScore(slot.score);
+      return true;
+    }
+    for (var s = state.brickShards.length - 1; s >= 0; s--) {
+      var sh = state.brickShards[s];
+      if (sh.colorKey !== o.colorKey) continue;
+      if (!circleHit(o.x, o.y, sh.x, sh.y, BRICK_SHARD_RADIUS + ORBITER_RADIUS)) continue;
+      sh.sprite.destroy();
+      state.brickShards.splice(s, 1);
+      this.addScore(BRICK_SHARD_SCORE);
+      return true;
+    }
+    return false;
+  };
+
+  MainScene.prototype.destroyOrbiter = function (index) {
+    var o = this.state.orbiters[index];
+    o.sprite.destroy();
+    this.state.orbiters.splice(index, 1);
+  };
+
+  MainScene.prototype.clearOrbiters = function () {
+    this.state.orbiters.forEach(function (o) { o.sprite.destroy(); });
+    this.state.orbiters = [];
+    if (this.orbiterGfx) this.orbiterGfx.clear();
+  };
+
+  // The curved trail is the whole visual identity here - everything else
+  // in this game trails in a straight line, so a bend reads instantly as
+  // "that is the orbiter" with no new art.
+  MainScene.prototype.renderOrbiterTrails = function () {
+    var g = this.orbiterGfx;
+    if (!g) return;
+    g.clear();
+    this.state.orbiters.forEach(function (o) {
+      var pts = o.trail;
+      for (var i = 1; i < pts.length; i++) {
+        var t = i / pts.length; // oldest sample faintest
+        g.lineStyle(3 * t, STRIP_COLORS[o.colorKey], 0.7 * t);
+        g.beginPath();
+        g.moveTo(pts[i - 1].x, pts[i - 1].y);
+        g.lineTo(pts[i].x, pts[i].y);
+        g.strokePath();
+      }
+    });
+  };
+
 
   // ---- Orb pods (second powerup type) ------------------------------------------------------
   MainScene.prototype.spawnOrb = function () {
@@ -4887,6 +5153,7 @@
     // case.
     state.powerupBolts.forEach(function (bolt) { bolt.sprite.destroy(); });
     state.powerupBolts = [];
+    this.clearOrbiters(); // same freeze risk as every other projectile in flight
     // Same freeze risk for a challenge stage's rock, and the stage itself
     // has to be torn down or the restart would come back mid-gauntlet with
     // the bars still hidden.
@@ -5026,6 +5293,7 @@
     state.shieldFizzles.forEach(function (fx) { fx.sprite.destroy(); });
     state.shieldFizzles = [];
     this.clearMeteors();
+    this.clearOrbiters();
     state.challenge = null;
     state.challengesDone = 0;
     state.starSpeedScale = 1;
@@ -5160,6 +5428,12 @@
       // recorded on the way out, and the tests read this so a freeze
       // fails a build instead of just looking like a slow test.
       runtimeErrors: runtimeErrors,
+      // Banks n dots of a colour and, optionally, fires them - the two
+      // steps a test or a playtest needs before there is anything to look
+      // at, without waiting for orb pods to spawn.
+      giveOrbs: function (colorKey, n) {
+        for (var i = 0; i < (n || 1); i++) self.collectColor(colorKey);
+      },
       // Drops straight into a challenge stage from wherever the run is,
       // clearing the formation the way a cleared wave would.
       forceChallenge: function () {
@@ -5289,6 +5563,7 @@
       this.updateStrips(dt);
       this.updateShipFill(dt);
       this.updatePowerupDots(dt);
+      this.updateOrbiters(dt);
       this.updatePowerupBolts(dt);
       this.updateOrbs(dt);
       this.updateOrbBullets(dt);
@@ -5301,6 +5576,7 @@
     }
 
     this.updateBackground(dt);
+    this.renderOrbiterTrails();
     this.shipSprite.x = state.ship.x;
 
     var invuln = isInvulnerable(state);
@@ -5415,6 +5691,9 @@
       { section: 'labFire', key: 'formationFireMaxShots', label: 'Max shots before diving', min: 0, max: 5, step: 1, unit: '' },
       { section: 'labDeath', key: 'deathBlastBrickDamage', label: 'Brick damage', min: 0, max: 8, step: 1, unit: 'hp' },
       { section: 'labChallenge', key: 'challengeEveryWaves', label: 'Every N waves', min: 1, max: 10, step: 1, unit: '' },
+      { section: 'labOrbiter', key: 'orbiterSpeed', label: 'Shot speed', min: 40, max: 400, step: 10, unit: 'px/s' },
+      { section: 'labOrbiter', key: 'orbiterTurnRate', label: 'Homing strength', min: 0, max: 3, step: 0.05, unit: 'rad/s' },
+      { section: 'labOrbiter', key: 'orbiterLifetime', label: 'Shot lifetime', min: 1, max: 15, step: 0.5, unit: 's' },
       { section: 'labChallenge', key: 'challengeVolleys', label: 'Volleys per stage', min: 1, max: 20, step: 1, unit: '' },
       { section: 'labChallenge', key: 'challengeMeteorSpeed', label: 'Meteor speed', min: 100, max: 600, step: 10, unit: 'px/s' },
       { section: 'labChallenge', key: 'challengeStagesToArrival', label: 'Stages to the planet', min: 1, max: 12, step: 1, unit: '',
@@ -5423,6 +5702,14 @@
         // you drag it to SEE how close a given setting puts you.
         set: function (v) { TUNING.challengeStagesToArrival = v; if (mainScene) mainScene.updatePlanet(); } }
     ].forEach(addSlider);
+
+    addCheckbox('labOrbiter', 'Dots fire shots',
+      function () { return TUNING.orbiterEnabled; },
+      function (v) { TUNING.orbiterEnabled = v; if (!v && mainScene) mainScene.clearOrbiters(); });
+
+    addCheckbox('labOrbiter', 'Park as mines near the top',
+      function () { return TUNING.orbiterMines; },
+      function (v) { TUNING.orbiterMines = v; });
 
     addCheckbox('labChallenge', 'Challenge stages on',
       function () { return TUNING.challengeEnabled; },
