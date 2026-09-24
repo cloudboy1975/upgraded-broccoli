@@ -208,60 +208,6 @@
     touch-action: none;
   }
 
-  /* The missile trigger's row. Fixed height, always present - see the
-     comment on the markup for why it must not come and go. */
-  .missile-bar {
-    width: 100%;
-    max-width: 420px;
-    height: 46px;
-    flex: 0 0 auto;
-    touch-action: none;
-  }
-  .zone-missile {
-    width: 100%;
-    height: 100%;
-    border-radius: 12px;
-    background: var(--bg-2);
-    border: 1px solid rgba(148, 163, 184, 0.30);
-    /* Hidden without leaving the layout - visibility, not display. */
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.18s, background 0.1s, transform 0.08s;
-  }
-  .zone-missile.armed {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-  }
-  .zone-missile:active, .zone-missile.active { background: #263449; transform: scale(0.985); }
-
-  /* One pip per banked dot, mirroring the ring around the ship: solid
-     when that gun is loaded, hollow while its shot is still out. The
-     orbit is the gauge in the game; this is the same gauge under your
-     thumb, where you are actually looking when you press it. */
-  .missile-pips {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-  }
-  .missile-pip {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    box-sizing: border-box;
-  }
-  /* A loaded gun glows; a reloading one is a hollow socket, so "how many
-     shots do I have" is answerable at a glance without counting. */
-  .missile-pip.loaded { box-shadow: 0 0 7px 1px currentColor; }
-  .missile-pip.spent {
-    background: transparent !important;
-    border: 2px solid currentColor;
-    opacity: 0.45;
-  }
-
   /* ---- Hidden sortie lab -------------------------------------------------
      A dev-only tuning panel for the enemy attack patterns. Deliberately
      not discoverable in normal play: opened with the backquote key, or by
@@ -509,18 +455,6 @@
           <button type="button" class="btn secondary" id="resetBestBtn">Reset Best</button>
         </div>
       </div>
-    </div>
-
-    <!-- The missile trigger lives in its own row between the board and the
-         ship's controls: in the gutter under the player, above the pad.
-         The ROW is always in the layout even when the button is invisible,
-         because .canvas-wrap flexes to whatever is left over - letting the
-         row appear and disappear would resize the board every time an orb
-         was banked or spent, mid-dodge. -->
-    <div class="missile-bar" id="missileBar">
-      <button type="button" class="zone zone-missile" id="zoneMissile" aria-label="Fire missiles">
-        <span class="missile-pips" id="missilePips" aria-hidden="true"></span>
-      </button>
     </div>
 
     <div class="control-bar" id="controlBar">
@@ -1523,6 +1457,27 @@
   var ORBITER_MINE_Y = Math.round(GAME_HEIGHT * 0.34); // a mine parks once it climbs past this
   var ORBITER_MINE_RANGE = 150; // how close matching prey must come before a parked mine moves
 
+  // The missile trigger, drawn ON the playfield in the band below the
+  // ship rather than as a DOM button under the board. Built in game
+  // coordinates on purpose: the canvas is letterboxed by Scale.FIT, so a
+  // DOM overlay would need the canvas's live rect to sit in the right
+  // place, and a row in the page layout would resize the board every time
+  // an orb was banked or spent. In here it is simply at (x, y).
+  //
+  // The ship sits at SHIP_Y with room below it before the despawn line,
+  // and a diver that reaches this band has already gone past you - so the
+  // only thing a thumb covers here is space you have finished using.
+  var MISSILE_BTN_Y = Math.round(SHIP_Y + (GAME_HEIGHT - SHIP_Y) * 0.62);
+  var MISSILE_BTN_WIDTH = 150;
+  var MISSILE_BTN_HEIGHT = 34;
+  var MISSILE_BTN_DEPTH = 40; // over everything - a control you cannot read is not a control
+  var MISSILE_PIP_RADIUS = 5;
+  var MISSILE_PIP_GAP = 17;
+  var COLOR_MISSILE_BTN = 0x1e293b;
+  var COLOR_MISSILE_BTN_EDGE = 0x94a3b8;
+  var MISSILE_BTN_ALPHA = 0.82;
+  var MISSILE_BTN_FLASH = 0.16; // seconds the button stays lit after a press
+
 
   // A bullet's colored trail (one segment per color the ship has leveled
   // up via strips - see levelUpFirePower()) is drawn behind it, anchored
@@ -2173,6 +2128,19 @@
       }
     });
 
+    // The missile trigger's plate: a soft rounded panel, two states baked
+    // rather than tinted so the pressed look can differ in edge as well
+    // as fill.
+    ['missileBtnTex', 'missileBtnTexLit'].forEach(function (key, i) {
+      bakeTexture(self, key, MISSILE_BTN_WIDTH, MISSILE_BTN_HEIGHT, function (g) {
+        var lit = i === 1;
+        g.fillStyle(lit ? 0x334155 : COLOR_MISSILE_BTN, 1);
+        g.fillRoundedRect(0, 0, MISSILE_BTN_WIDTH, MISSILE_BTN_HEIGHT, 11);
+        g.lineStyle(1.5, COLOR_MISSILE_BTN_EDGE, lit ? 0.85 : 0.45);
+        g.strokeRoundedRect(0.75, 0.75, MISSILE_BTN_WIDTH - 1.5, MISSILE_BTN_HEIGHT - 1.5, 11);
+      });
+    });
+
     // The engine flame, baked pointing DOWN from an origin at its top edge
     // so scaling it only ever stretches it away from the ship's tail.
     bakeTexture(self, 'flameTex', FLAME_WIDTH, FLAME_LENGTH, function (g) {
@@ -2384,6 +2352,8 @@
     // everything it passes. One Graphics for all of them, redrawn each
     // frame - see renderOrbiterTrails().
     this.orbiterGfx = this.add.graphics();
+
+    this.buildMissileButton();
     this.spawnFormation();
     this.spawnColorBars(); // once per game, not per wave - see spawnColorBars()
   };
@@ -3697,23 +3667,16 @@
   bindThumbstickZone(zoneSlide, slideAnchor, slideThumb, function (v) { touchLeft = v; }, function (v) { touchRight = v; });
   bindHoldZone(zoneMid, function (v) { touchFire = v; });
 
-  // The missile trigger is edge-driven, not a held state like the others:
-  // one volley per press, and holding does not repeat (see
-  // launchOrbiters()). So it binds its own pointerdown rather than going
-  // through bindHoldZone and composeInput.
-  var zoneMissile = document.getElementById('zoneMissile');
+  // The missile trigger is not a DOM zone - it lives on the playfield
+  // itself, under the ship (see buildMissileButton()). Only its keyboard
+  // shortcut is wired here; the on-canvas button handles its own taps.
   function pressMissile(e) {
     if (e) e.preventDefault();
     if (!mainScene || mainScene.state.phase !== 'playing') return;
     mainScene.launchOrbiters();
-    zoneMissile.classList.add('active');
+    mainScene.flashMissileButton();
   }
-  function releaseMissile() { zoneMissile.classList.remove('active'); }
-  zoneMissile.addEventListener('pointerdown', pressMissile);
-  zoneMissile.addEventListener('pointerup', releaseMissile);
-  zoneMissile.addEventListener('pointercancel', releaseMissile);
-  zoneMissile.addEventListener('pointerleave', releaseMissile);
-  zoneMissile.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  function releaseMissile() { /* nothing held; the button is edge-driven */ }
 
   // ---- Input: keyboard ------------------------------------------------------
   function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
@@ -4713,38 +4676,72 @@
   function orbiterRadius() { return ORBITER_RADIUS * TUNING.orbiterSize; }
 
   // Arms the missile button when there is anything to fire, and renders
-  // one pip per banked dot - solid for a loaded gun, hollow while its
-  // shot is out. Called every frame; it rebuilds the pips only when the
-  // bank's shape actually changes, so this is a string compare per frame
-  // rather than DOM churn.
-  MainScene.prototype.syncMissileButton = function () {
-    var btn = document.getElementById('zoneMissile');
-    if (!btn) return;
+  // one pip per banked dot - solid for a loaded gun, a hollow socket
+  // while its shot is out. The orbit around the ship is already this
+  // gauge; this repeats it under your thumb, where you are looking when
+  // you press.
+  MainScene.prototype.buildMissileButton = function () {
+    var self = this;
+    this.missileBtn = this.add.sprite(GAME_WIDTH / 2, MISSILE_BTN_Y, 'missileBtnTex');
+    this.missileBtn.setDepth(MISSILE_BTN_DEPTH);
+    this.missileBtn.setAlpha(MISSILE_BTN_ALPHA);
+    this.missileBtn.setVisible(false);
+    this.missileBtnPips = this.add.graphics();
+    this.missileBtnPips.setDepth(MISSILE_BTN_DEPTH + 1);
+    this.missileBtnFlash = 0;
+    this.missileBtnArmed = false;
+
+    // A slightly taller hit area than the plate. On a phone the plate is
+    // about 34 logical pixels high, and a thumb is not that accurate.
+    this.missileBtn.setInteractive(new Phaser.Geom.Rectangle(
+      -12, -14, MISSILE_BTN_WIDTH + 24, MISSILE_BTN_HEIGHT + 28
+    ), Phaser.Geom.Rectangle.Contains);
+    this.missileBtn.on('pointerdown', function () {
+      // Guarded rather than relying on input being off while hidden - an
+      // invisible control must not fire, whatever Phaser decides about
+      // hit-testing invisible objects.
+      if (!self.missileBtnArmed) return;
+      self.launchOrbiters();
+      self.flashMissileButton();
+    });
+  };
+
+  MainScene.prototype.flashMissileButton = function () {
+    this.missileBtnFlash = MISSILE_BTN_FLASH;
+  };
+
+  MainScene.prototype.syncMissileButton = function (dt) {
+    if (!this.missileBtn) return;
     var state = this.state;
     var dots = state.powerup.dots;
-    var armed = TUNING.orbiterEnabled && !state.challenge && state.phase === 'playing' && dots.length > 0;
-    btn.classList.toggle('armed', armed);
+    var armed = TUNING.orbiterEnabled && !state.challenge &&
+                state.phase === 'playing' && dots.length > 0;
+    this.missileBtnArmed = armed;
+    this.missileBtn.setVisible(armed);
+    this.missileBtnPips.setVisible(armed);
 
+    if (this.missileBtnFlash > 0) this.missileBtnFlash = Math.max(0, this.missileBtnFlash - (dt || 0));
+    this.missileBtn.setTexture(this.missileBtnFlash > 0 ? 'missileBtnTexLit' : 'missileBtnTex');
+
+    var g = this.missileBtnPips;
+    g.clear();
+    if (!armed) return;
     var self = this;
-    var key = dots.map(function (d) {
-      return d.colorKey + (self.gunHasShotInFlight(d.gunId) ? '-' : '+');
-    }).join(',');
-    if (key === this.missilePipKey) return;
-    this.missilePipKey = key;
-
-    var pips = document.getElementById('missilePips');
-    if (!pips) return;
-    pips.textContent = '';
-    dots.forEach(function (d) {
-      var inFlight = self.gunHasShotInFlight(d.gunId);
-      var hex = '#' + STRIP_COLORS[d.colorKey].toString(16).padStart(6, '0');
-      var pip = document.createElement('span');
-      pip.className = 'missile-pip ' + (inFlight ? 'spent' : 'loaded');
-      // color drives both the fill and, via currentColor, the glow on a
-      // loaded pip and the ring on a spent one.
-      pip.style.color = hex;
-      pip.style.background = hex;
-      pips.appendChild(pip);
+    var spread = (dots.length - 1) * MISSILE_PIP_GAP;
+    dots.forEach(function (d, i) {
+      var x = GAME_WIDTH / 2 - spread / 2 + i * MISSILE_PIP_GAP;
+      var color = STRIP_COLORS[d.colorKey];
+      if (self.gunHasShotInFlight(d.gunId)) {
+        // An empty chamber: the ring stays so you can still tell which
+        // colour is reloading, but nothing is in it.
+        g.lineStyle(1.6, color, 0.55);
+        g.strokeCircle(x, MISSILE_BTN_Y, MISSILE_PIP_RADIUS);
+      } else {
+        g.fillStyle(color, 0.28);
+        g.fillCircle(x, MISSILE_BTN_Y, MISSILE_PIP_RADIUS + 3); // a soft glow, so a loaded gun reads at a glance
+        g.fillStyle(color, 1);
+        g.fillCircle(x, MISSILE_BTN_Y, MISSILE_PIP_RADIUS);
+      }
     });
   };
 
@@ -5737,7 +5734,7 @@
 
     this.updateBackground(dt);
     this.renderOrbiterTrails();
-    this.syncMissileButton();
+    this.syncMissileButton(dt);
     this.shipSprite.x = state.ship.x;
 
     var invuln = isInvulnerable(state);
