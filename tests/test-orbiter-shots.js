@@ -349,126 +349,137 @@ harness.run(async (page, check, ctx) => {
     inStage.duringStage === 0, inStage);
 
   // --- the missile button --------------------------------------------------
-  // It lives ON the playfield, in the band below the ship, not as a DOM
-  // control under the board. That is the whole point of doing it in game
-  // coordinates: the page layout is untouched, so banking or spending an
-  // orb never resizes the board mid-dodge, and Scale.FIT's letterboxing
-  // is somebody else's problem.
+  // A DOM control anchored to the bottom-right of the BOARD PANEL, not to
+  // the game canvas. Scale.FIT letterboxes the canvas inside the panel,
+  // leaving ~100px of panel below the game on a tall phone - and --board
+  // and the canvas background are the same #1e293b, so that band reads as
+  // the bottom of the game screen. Anchoring to the panel puts the button
+  // as low and as near the fire pad as the game screen goes, with no
+  // letterbox arithmetic and nothing to recompute on resize.
   const btn = await page.evaluate(SETTLE + `
+    const el = () => document.getElementById('missileBtn');
     const out = {};
-    out.noDomRow = !document.getElementById('missileBar') && !document.getElementById('zoneMissile');
-    out.belowShip = scene.missileBtn.y > 413;              // SHIP_Y
-    out.onPlayfield = scene.missileBtn.y < 480;            // GAME_HEIGHT
-    out.overEverything = scene.missileBtn.depth >= 40;
-    // Fully inside the playfield - a control half off the board is a
-    // control you cannot press the left half of.
-    const half = scene.missileBtn.width / 2;
-    out.insideEdges = scene.missileBtn.x - half >= 0 && scene.missileBtn.x + half <= 360;
-    // Lined up over the fire pad, which is the RIGHT-hand zone below the
-    // board, so switching guns is a straight move up rather than a reach
-    // across. Measured in screen pixels, since that is what the thumb
-    // actually travels.
-    const rect = scene.game.canvas.getBoundingClientRect();
-    const fire = document.getElementById('zoneMid').getBoundingClientRect();
-    const btnScreenX = rect.left + scene.missileBtn.x * (rect.width / 360);
-    out.offsetFromFire = Math.round(Math.abs(btnScreenX - (fire.left + fire.width / 2)));
+    out.exists = !!el();
+    out.noExtraRow = !document.getElementById('missileBar');
 
     scene.clearPowerup();
-    scene.syncMissileButton(0.016);
-    out.emptyVisible = scene.missileBtn.visible;
-    out.emptyArmed = scene.missileBtnArmed;
+    scene.syncMissileButton();
+    out.emptyArmed = el().classList.contains('armed');
+    // The board must not change size when the button comes and goes -
+    // that was the whole reason this is absolutely positioned.
+    const cb = scene.game.canvas.getBoundingClientRect();
+    out.boardBefore = { w: Math.round(cb.width), h: Math.round(cb.height), top: Math.round(cb.top) };
 
-    window.__headOnDebug.giveOrbs('green', 2);
+    window.__headOnDebug.giveOrbs('green', 1);
+    window.__headOnDebug.giveOrbs('blue', 1);
+    window.__headOnDebug.giveOrbs('red', 1);
     scene.updatePowerupDots(0.25);
-    scene.syncMissileButton(0.016);
-    out.armed = scene.missileBtnArmed && scene.missileBtn.visible;
+    scene.syncMissileButton();
+    const ca = scene.game.canvas.getBoundingClientRect();
+    out.boardAfter = { w: Math.round(ca.width), h: Math.round(ca.height), top: Math.round(ca.top) };
+    out.armed = el().classList.contains('armed');
+
+    const b = el().getBoundingClientRect();
+    const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
+    const canvasRect = scene.game.canvas.getBoundingClientRect();
+    const canvasTop = canvasRect.top, canvasH = canvasRect.height;
+    const fire = document.getElementById('zoneMid').getBoundingClientRect();
+    out.insideBoard = b.right <= wrap.right + 1 && b.bottom <= wrap.bottom + 1 && b.top >= wrap.top;
+    out.gapToBoardBottom = Math.round(wrap.bottom - b.bottom);
+    // The button must take NO layout space. Scale.FIT + CENTER_BOTH
+    // centres the canvas in the panel, so equal letterbox above and below
+    // is the signature of nothing else competing for that space. A button
+    // in the normal flow lands in nearly the same PLACE on a tall screen
+    // - it just shoves the play area up out of centre on the way, which
+    // position alone cannot see.
+    out.letterboxTop = Math.round(canvasTop - wrap.top);
+    out.letterboxBottom = Math.round(wrap.bottom - (canvasTop + canvasH));
+    out.travel = Math.round(Math.hypot(
+      (b.left + b.width / 2) - (fire.left + fire.width / 2),
+      (b.top + b.height / 2) - (fire.top + fire.height / 2)));
+    out.horizontal = Math.round(Math.abs((b.left + b.width / 2) - (fire.left + fire.width / 2)));
     out;
   `);
-  check('no DOM control and no extra row - the board layout is untouched',
-    btn.noDomRow, btn);
-  check('the button sits below the ship, on the playing surface',
-    btn.belowShip && btn.onPlayfield, btn);
-  check('and draws over the game, so it is always readable', btn.overEverything, btn);
-  check('it sits fully inside the playfield', btn.insideEdges, btn);
-  // The reason it moved out of the middle: thumb travel. Directly over
-  // the fire pad means switching guns is a straight move up.
-  check('it lines up over the fire pad, so the thumb barely travels',
-    btn.offsetFromFire <= 24, btn);
-  check('it is hidden with nothing banked', !btn.emptyVisible && !btn.emptyArmed, btn);
-  check('and appears when the power is banked', btn.armed, btn);
+  check('the button exists and adds no row to the page', btn.exists && btn.noExtraRow, btn);
+  check('it is hidden with nothing banked', btn.emptyArmed === false, btn);
+  check('and appears when the power is banked', btn.armed === true, btn);
+  // The bug this guards: an earlier version took a row in the layout, so
+  // banking or spending an orb resized the board mid-dodge.
+  check('arming it neither resizes nor shifts the play area',
+    btn.boardBefore.w === btn.boardAfter.w && btn.boardBefore.h === btn.boardAfter.h &&
+    btn.boardBefore.top === btn.boardAfter.top, btn);
+  check('it takes no layout space - the play area stays centred in the board',
+    Math.abs(btn.letterboxTop - btn.letterboxBottom) <= 2, btn);
+  check('it sits inside the board panel, near its bottom edge',
+    btn.insideBoard && btn.gapToBoardBottom >= 0 && btn.gapToBoardBottom <= 24, btn);
+  // The reason it is in that corner at all: thumb travel from the fire pad.
+  check('and lines up just above the fire pad, so the thumb barely travels',
+    btn.horizontal <= 24 && btn.travel <= 120, btn);
 
-  // The pips have to actually be ON the plate. Drawing them at a stale
-  // position leaves a row of dots floating somewhere else on the board,
-  // which every other check here would happily ignore.
   const pips = await page.evaluate(SETTLE + `
     window.__headOnDebug.giveOrbs('green', 1);
     window.__headOnDebug.giveOrbs('blue', 1);
     window.__headOnDebug.giveOrbs('red', 1);
     scene.updatePowerupDots(0.25);
-    scene.syncMissileButton(0.016);
-    const b = scene.missileBtn;
+    scene.syncMissileButton();
     const layout = scene.missilePipLayout();
-    const onPlate = layout.every(p =>
-      Math.abs(p.x - b.x) <= b.width / 2 - 4 && Math.abs(p.y - b.y) <= b.height / 2 - 4);
-    const loadedNow = layout.filter(p => p.loaded).length;
+    const dom = () => ({
+      total: document.querySelectorAll('.missile-pip').length,
+      loaded: document.querySelectorAll('.missile-pip.loaded').length,
+      spent: document.querySelectorAll('.missile-pip.spent').length
+    });
+    const before = dom();
     scene.launchOrbiters();
-    const afterFiring = scene.missilePipLayout().filter(p => p.loaded).length;
+    scene.syncMissileButton();
+    const firing = dom();
     scene.clearOrbiters();
-    const reloaded = scene.missilePipLayout().filter(p => p.loaded).length;
-    ({ count: layout.length, onPlate, loadedNow, afterFiring, reloaded,
-       colors: layout.map(p => p.colorKey) });
+    scene.syncMissileButton();
+    const after = dom();
+    ({ colors: layout.map(p => p.colorKey), before, firing, after });
   `);
   check('one pip per banked dot, in the bank\'s colours',
-    pips.count === 3 && pips.colors.join(',') === 'green,blue,red', pips);
-  check('every pip is drawn on the plate, not left behind somewhere', pips.onPlate, pips);
-  check('pips read as loaded before firing', pips.loadedNow === 3, pips);
-  check('they empty out as their shots go up', pips.afterFiring === 0, pips);
-  check('and refill when the shots are done', pips.reloaded === 3, pips);
+    pips.colors.join(',') === 'green,blue,red' && pips.before.total === 3, pips);
+  check('pips read as loaded before firing', pips.before.loaded === 3, pips);
+  check('they empty out as their shots go up', pips.firing.spent === 3, pips);
+  check('and refill when the shots are done', pips.after.loaded === 3, pips);
 
-  // Tapped for real: a browser-level click at the button's actual place
-  // on the scaled canvas, driven from outside the page, so this exercises
-  // the whole input path rather than calling the handler.
-  const tapTarget = await page.evaluate(SETTLE + `
+  // Tapped for real, by the browser, at the button's actual place.
+  const tapBefore = await page.evaluate(SETTLE + `
     window.__headOnDebug.giveOrbs('red', 2);
     scene.updatePowerupDots(0.25);
-    scene.syncMissileButton(0.016);
-    const rect = scene.game.canvas.getBoundingClientRect();
-    ({
-      x: rect.left + scene.missileBtn.x * (rect.width / 360),
-      y: rect.top + scene.missileBtn.y * (rect.height / 480),
-      bulletsBefore: state.bullets.length
-    });
+    scene.syncMissileButton();
+    ({ bullets: state.bullets.length });
   `);
-  await page.mouse.click(tapTarget.x, tapTarget.y);
-  await page.waitForTimeout(150);
+  await page.locator('#missileBtn').click();
+  await page.waitForTimeout(120);
   const tapped = await page.evaluate(() => {
     const state = window.__headOnDebug.scene.state;
-    return { shots: state.orbiters.length, bulletsAfter: state.bullets.length };
+    return { shots: state.orbiters.length, bullets: state.bullets.length };
   });
-  check('a real tap on it launches the volley', tapped.shots === 2, { tapped, tapTarget });
+  check('a real tap on it launches the volley', tapped.shots === 2, { tapped, tapBefore });
   // The point of a separate trigger: you can pick the moment without also
   // spraying the main gun.
-  check('and fires no ordinary bullet',
-    tapped.bulletsAfter === tapTarget.bulletsBefore, { tapped, tapTarget });
+  check('and fires no ordinary bullet', tapped.bullets === tapBefore.bullets, { tapped, tapBefore });
 
   // A hidden button must not fire even when there IS something loaded -
   // game over with a full bank is the case that separates "the button is
   // guarded" from "there was nothing to shoot anyway". launchOrbiters()
-  // itself does not check the phase, so without the guard a tap through
-  // the game-over overlay would put shots on a dead board.
+  // does not check the phase itself.
   const guarded = await page.evaluate(SETTLE + `
     window.__headOnDebug.giveOrbs('green', 2);
     scene.updatePowerupDots(0.25);
     state.phase = 'gameover';
-    scene.syncMissileButton(0.016);
-    const hidden = !scene.missileBtn.visible && !scene.missileBtnArmed;
-    scene.missileBtn.emit('pointerdown');
+    scene.syncMissileButton();
+    const el = document.getElementById('missileBtn');
+    const hidden = !el.classList.contains('armed') &&
+                   getComputedStyle(el).pointerEvents === 'none';
+    el.dispatchEvent(new Event('pointerdown'));
     const whileHidden = state.orbiters.length;
     state.phase = 'playing';
     ({ hidden, loaded: state.powerup.dots.length, whileHidden });
   `);
-  check('the button hides once the game is over', guarded.hidden, guarded);
-  check('and a hidden button cannot be pressed into firing, bank loaded or not',
+  check('the button hides and stops taking taps once the game is over', guarded.hidden, guarded);
+  check('and cannot be pressed into firing, bank loaded or not',
     guarded.loaded === 2 && guarded.whileHidden === 0, guarded);
 
   const notFire = await page.evaluate(SETTLE + `
@@ -484,14 +495,13 @@ harness.run(async (page, check, ctx) => {
 
   const stageBtn = await page.evaluate(SETTLE + `
     window.__headOnDebug.giveOrbs('blue', 1);
-    scene.syncMissileButton(0.016);
-    const before = scene.missileBtnArmed;
+    scene.syncMissileButton();
+    const before = document.getElementById('missileBtn').classList.contains('armed');
     window.__headOnDebug.forceChallenge();
-    scene.syncMissileButton(0.016);
-    ({ before, during: scene.missileBtnArmed, visible: scene.missileBtn.visible });
+    scene.syncMissileButton();
+    ({ before, during: document.getElementById('missileBtn').classList.contains('armed') });
   `);
-  check('the button disarms and hides inside a meteor stage',
-    stageBtn.before && !stageBtn.during && !stageBtn.visible, stageBtn);
+  check('the button disarms inside a meteor stage', stageBtn.before && !stageBtn.during, stageBtn);
 
   // --- shot size -----------------------------------------------------------
   // The slider has to move the hit box with the art, or it is lying.
@@ -592,7 +602,7 @@ harness.run(async (page, check, ctx) => {
     return new Promise(res => setTimeout(() => {
       const scoreBefore = state.score;
       // The missile button, not the fire pad - they are separate triggers now.
-      scene.missileBtn.emit('pointerdown');
+      document.getElementById('missileBtn').dispatchEvent(new Event('pointerdown'));
       setTimeout(() => {
         const airborne = state.orbiters.length;
         setTimeout(() => res({
