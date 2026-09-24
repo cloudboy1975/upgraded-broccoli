@@ -360,6 +360,18 @@ harness.run(async (page, check, ctx) => {
     out.belowShip = scene.missileBtn.y > 413;              // SHIP_Y
     out.onPlayfield = scene.missileBtn.y < 480;            // GAME_HEIGHT
     out.overEverything = scene.missileBtn.depth >= 40;
+    // Fully inside the playfield - a control half off the board is a
+    // control you cannot press the left half of.
+    const half = scene.missileBtn.width / 2;
+    out.insideEdges = scene.missileBtn.x - half >= 0 && scene.missileBtn.x + half <= 360;
+    // Lined up over the fire pad, which is the RIGHT-hand zone below the
+    // board, so switching guns is a straight move up rather than a reach
+    // across. Measured in screen pixels, since that is what the thumb
+    // actually travels.
+    const rect = scene.game.canvas.getBoundingClientRect();
+    const fire = document.getElementById('zoneMid').getBoundingClientRect();
+    const btnScreenX = rect.left + scene.missileBtn.x * (rect.width / 360);
+    out.offsetFromFire = Math.round(Math.abs(btnScreenX - (fire.left + fire.width / 2)));
 
     scene.clearPowerup();
     scene.syncMissileButton(0.016);
@@ -377,8 +389,41 @@ harness.run(async (page, check, ctx) => {
   check('the button sits below the ship, on the playing surface',
     btn.belowShip && btn.onPlayfield, btn);
   check('and draws over the game, so it is always readable', btn.overEverything, btn);
+  check('it sits fully inside the playfield', btn.insideEdges, btn);
+  // The reason it moved out of the middle: thumb travel. Directly over
+  // the fire pad means switching guns is a straight move up.
+  check('it lines up over the fire pad, so the thumb barely travels',
+    btn.offsetFromFire <= 24, btn);
   check('it is hidden with nothing banked', !btn.emptyVisible && !btn.emptyArmed, btn);
   check('and appears when the power is banked', btn.armed, btn);
+
+  // The pips have to actually be ON the plate. Drawing them at a stale
+  // position leaves a row of dots floating somewhere else on the board,
+  // which every other check here would happily ignore.
+  const pips = await page.evaluate(SETTLE + `
+    window.__headOnDebug.giveOrbs('green', 1);
+    window.__headOnDebug.giveOrbs('blue', 1);
+    window.__headOnDebug.giveOrbs('red', 1);
+    scene.updatePowerupDots(0.25);
+    scene.syncMissileButton(0.016);
+    const b = scene.missileBtn;
+    const layout = scene.missilePipLayout();
+    const onPlate = layout.every(p =>
+      Math.abs(p.x - b.x) <= b.width / 2 - 4 && Math.abs(p.y - b.y) <= b.height / 2 - 4);
+    const loadedNow = layout.filter(p => p.loaded).length;
+    scene.launchOrbiters();
+    const afterFiring = scene.missilePipLayout().filter(p => p.loaded).length;
+    scene.clearOrbiters();
+    const reloaded = scene.missilePipLayout().filter(p => p.loaded).length;
+    ({ count: layout.length, onPlate, loadedNow, afterFiring, reloaded,
+       colors: layout.map(p => p.colorKey) });
+  `);
+  check('one pip per banked dot, in the bank\'s colours',
+    pips.count === 3 && pips.colors.join(',') === 'green,blue,red', pips);
+  check('every pip is drawn on the plate, not left behind somewhere', pips.onPlate, pips);
+  check('pips read as loaded before firing', pips.loadedNow === 3, pips);
+  check('they empty out as their shots go up', pips.afterFiring === 0, pips);
+  check('and refill when the shots are done', pips.reloaded === 3, pips);
 
   // Tapped for real: a browser-level click at the button's actual place
   // on the scaled canvas, driven from outside the page, so this exercises

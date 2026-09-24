@@ -1464,12 +1464,18 @@
   // place, and a row in the page layout would resize the board every time
   // an orb was banked or spent. In here it is simply at (x, y).
   //
-  // The ship sits at SHIP_Y with room below it before the despawn line,
-  // and a diver that reaches this band has already gone past you - so the
-  // only thing a thumb covers here is space you have finished using.
-  var MISSILE_BTN_Y = Math.round(SHIP_Y + (GAME_HEIGHT - SHIP_Y) * 0.62);
-  var MISSILE_BTN_WIDTH = 150;
+  // Parked in the bottom-RIGHT corner of the playfield, because the fire
+  // pad below the board is the right-hand zone: this is the closest point
+  // inside the game screen to where the firing thumb already rests, so
+  // switching between the two guns is barely a move. The ship's own band
+  // ends well above it, and a diver this far down has already gone past
+  // you, so the only thing a thumb covers here is space you have
+  // finished using.
+  var MISSILE_BTN_WIDTH = 92;  // just wide enough for three pips plus margin
   var MISSILE_BTN_HEIGHT = 34;
+  var MISSILE_BTN_MARGIN = 10; // gap to the playfield edges
+  var MISSILE_BTN_X = GAME_WIDTH - MISSILE_BTN_WIDTH / 2 - MISSILE_BTN_MARGIN;
+  var MISSILE_BTN_Y = GAME_HEIGHT - MISSILE_BTN_HEIGHT / 2 - 8;
   var MISSILE_BTN_DEPTH = 40; // over everything - a control you cannot read is not a control
   var MISSILE_PIP_RADIUS = 5;
   var MISSILE_PIP_GAP = 17;
@@ -4682,7 +4688,7 @@
   // you press.
   MainScene.prototype.buildMissileButton = function () {
     var self = this;
-    this.missileBtn = this.add.sprite(GAME_WIDTH / 2, MISSILE_BTN_Y, 'missileBtnTex');
+    this.missileBtn = this.add.sprite(MISSILE_BTN_X, MISSILE_BTN_Y, 'missileBtnTex');
     this.missileBtn.setDepth(MISSILE_BTN_DEPTH);
     this.missileBtn.setAlpha(MISSILE_BTN_ALPHA);
     this.missileBtn.setVisible(false);
@@ -4694,7 +4700,7 @@
     // A slightly taller hit area than the plate. On a phone the plate is
     // about 34 logical pixels high, and a thumb is not that accurate.
     this.missileBtn.setInteractive(new Phaser.Geom.Rectangle(
-      -12, -14, MISSILE_BTN_WIDTH + 24, MISSILE_BTN_HEIGHT + 28
+      -18, -16, MISSILE_BTN_WIDTH + 36, MISSILE_BTN_HEIGHT + 34
     ), Phaser.Geom.Rectangle.Contains);
     this.missileBtn.on('pointerdown', function () {
       // Guarded rather than relying on input being off while hidden - an
@@ -4726,22 +4732,38 @@
     var g = this.missileBtnPips;
     g.clear();
     if (!armed) return;
-    var self = this;
-    var spread = (dots.length - 1) * MISSILE_PIP_GAP;
-    dots.forEach(function (d, i) {
-      var x = GAME_WIDTH / 2 - spread / 2 + i * MISSILE_PIP_GAP;
-      var color = STRIP_COLORS[d.colorKey];
-      if (self.gunHasShotInFlight(d.gunId)) {
+    this.missilePipLayout().forEach(function (pip) {
+      var color = STRIP_COLORS[pip.colorKey];
+      var x = pip.x;
+      if (!pip.loaded) {
         // An empty chamber: the ring stays so you can still tell which
         // colour is reloading, but nothing is in it.
         g.lineStyle(1.6, color, 0.55);
-        g.strokeCircle(x, MISSILE_BTN_Y, MISSILE_PIP_RADIUS);
+        g.strokeCircle(x, pip.y, MISSILE_PIP_RADIUS);
       } else {
         g.fillStyle(color, 0.28);
-        g.fillCircle(x, MISSILE_BTN_Y, MISSILE_PIP_RADIUS + 3); // a soft glow, so a loaded gun reads at a glance
+        g.fillCircle(x, pip.y, MISSILE_PIP_RADIUS + 3); // a soft glow, so a loaded gun reads at a glance
         g.fillStyle(color, 1);
-        g.fillCircle(x, MISSILE_BTN_Y, MISSILE_PIP_RADIUS);
+        g.fillCircle(x, pip.y, MISSILE_PIP_RADIUS);
       }
+    });
+  };
+
+  // Where each pip goes, as data. Pulled out of the drawing so the
+  // placement can be checked directly - a pip drawn at a stale position
+  // is invisible to any test that only looks at the plate, and leaves a
+  // row of dots floating somewhere off the button.
+  MainScene.prototype.missilePipLayout = function () {
+    var self = this;
+    var dots = this.state.powerup.dots;
+    var spread = (dots.length - 1) * MISSILE_PIP_GAP;
+    return dots.map(function (d, i) {
+      return {
+        x: MISSILE_BTN_X - spread / 2 + i * MISSILE_PIP_GAP,
+        y: MISSILE_BTN_Y,
+        colorKey: d.colorKey,
+        loaded: !self.gunHasShotInFlight(d.gunId)
+      };
     });
   };
 
