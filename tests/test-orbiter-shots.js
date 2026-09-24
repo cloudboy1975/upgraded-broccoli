@@ -205,9 +205,31 @@ harness.run(async (page, check, ctx) => {
   check('homing at 0 leaves a shot on the heading it launched with',
     ballistic.drift === 0, ballistic);
 
-  const defaultRate = await page.evaluate(() => window.__headOnTuning.defaults().orbiterTurnRate);
-  check('the shipped homing strength stays in the range where aiming matters',
-    defaultRate > 0 && defaultRate < 0.7, defaultRate);
+  // The property that actually matters, asserted directly rather than via
+  // a magic range on the constant: at the SHIPPED homing strength, which
+  // enemy dies still depends on when you fired. Hit rate alone does not
+  // show this - a shot can be nearly unmissable and still pick its target
+  // from where it launched.
+  const picks = await page.evaluate(`
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    const hit = [];
+    for (let phase = 0; phase < 12; phase++) {
+      scene.resetGame();
+      window.__headOnDebug.skipFormationEntry();
+      state.diveTimer = 9999;
+      window.__headOnDebug.giveOrbs('green', 1);
+      scene.updatePowerupDots((2.094 / 12) * phase + 0.001);
+      scene.launchOrbiters();
+      const before = state.formation.filter(f => f.alive && f.colorKey === 'green').map(g => g.col);
+      for (let i = 0; i < 900 && state.orbiters.length; i++) scene.updateOrbiters(0.016);
+      const after = state.formation.filter(f => f.alive && f.colorKey === 'green').map(g => g.col);
+      const killed = before.filter(c => after.indexOf(c) === -1);
+      hit.push(killed.length ? killed[0] : -1);
+    }
+    ({ hit, distinct: new Set(hit.filter(c => c >= 0)).size });
+  `);
+  check('at the shipped homing strength, when you fire still picks the target',
+    picks.distinct >= 2, picks);
 
   // --- the reload gauge ----------------------------------------------------
   const gauge = await page.evaluate(SETTLE + `
@@ -326,6 +348,130 @@ harness.run(async (page, check, ctx) => {
   check('and nothing fires during one - no meteor has a colour to match',
     inStage.duringStage === 0, inStage);
 
+  // --- the missile button --------------------------------------------------
+  // Its own trigger, in its own row between the board and the pad. The
+  // ROW is always in the layout - .canvas-wrap flexes to the leftover
+  // space, so a row that came and went would resize the board every time
+  // an orb was banked or spent, mid-dodge.
+  const btn = await page.evaluate(SETTLE + `
+    const el = () => document.getElementById('zoneMissile');
+    const barHeight = () => document.getElementById('missileBar').getBoundingClientRect().height;
+    const out = {};
+    scene.clearPowerup();
+    scene.syncMissileButton();
+    out.emptyArmed = el().classList.contains('armed');
+    out.emptyBar = +barHeight().toFixed(1);
+    out.emptyPips = document.querySelectorAll('.missile-pip').length;
+
+    window.__headOnDebug.giveOrbs('green', 2);
+    scene.updatePowerupDots(0.25);
+    scene.syncMissileButton();
+    out.armed = el().classList.contains('armed');
+    out.bar = +barHeight().toFixed(1);
+    out.pips = document.querySelectorAll('.missile-pip').length;
+    out.loaded = document.querySelectorAll('.missile-pip.loaded').length;
+
+    scene.launchOrbiters();
+    scene.syncMissileButton();
+    out.spentAfterFiring = document.querySelectorAll('.missile-pip.spent').length;
+
+    scene.clearOrbiters();
+    scene.syncMissileButton();
+    out.reloaded = document.querySelectorAll('.missile-pip.loaded').length;
+    out;
+  `);
+  check('the button is hidden with nothing banked', btn.emptyArmed === false, btn);
+  check('but its row still takes up space, so the board never resizes',
+    btn.emptyBar > 0 && Math.abs(btn.emptyBar - btn.bar) < 0.5, btn);
+  check('it arms when the power is banked', btn.armed === true, btn);
+  check('one pip per banked dot, lit when loaded',
+    btn.pips === 2 && btn.loaded === 2, btn);
+  check('pips empty out as their shots go up', btn.spentAfterFiring === 2, btn);
+  check('and refill when the shots are done', btn.reloaded === 2, btn);
+
+  const press = await page.evaluate(SETTLE + `
+    window.__headOnDebug.giveOrbs('red', 2);
+    scene.updatePowerupDots(0.25);
+    const bulletsBefore = state.bullets.length;
+    document.getElementById('zoneMissile').dispatchEvent(new Event('pointerdown'));
+    ({ shots: state.orbiters.length, bulletsBefore, bulletsAfter: state.bullets.length });
+  `);
+  check('pressing the button launches the volley', press.shots === 2, press);
+  // The point of a separate trigger: you can pick the moment without also
+  // spraying the main gun.
+  check('and fires no ordinary bullet', press.bulletsAfter === press.bulletsBefore, press);
+
+  const notFire = await page.evaluate(SETTLE + `
+    window.__headOnDebug.giveOrbs('red', 2);
+    scene.updatePowerupDots(0.25);
+    state.input.fire = true;
+    scene.updateFiring(0.016);
+    state.input.fire = false;
+    ({ shots: state.orbiters.length, bullets: state.bullets.length });
+  `);
+  check('the main fire pad no longer launches missiles',
+    notFire.shots === 0 && notFire.bullets > 0, notFire);
+
+  const stageBtn = await page.evaluate(SETTLE + `
+    window.__headOnDebug.giveOrbs('blue', 1);
+    scene.syncMissileButton();
+    const before = document.getElementById('zoneMissile').classList.contains('armed');
+    window.__headOnDebug.forceChallenge();
+    scene.syncMissileButton();
+    ({ before, during: document.getElementById('zoneMissile').classList.contains('armed') });
+  `);
+  check('the button disarms inside a meteor stage', stageBtn.before && !stageBtn.during, stageBtn);
+
+  // --- shot size -----------------------------------------------------------
+  // The slider has to move the hit box with the art, or it is lying.
+  const size = await page.evaluate(SETTLE + `
+    const T = window.__headOnTuning.tuning;
+    const probe = (mult) => {
+      T.orbiterSize = mult;
+      scene.clearOrbiters();
+      window.__headOnDebug.giveOrbs('green', 1);
+      scene.updatePowerupDots(0.25);
+      scene.launchOrbiters();
+      const o = state.orbiters[0];
+      const target = state.formation.filter(f => f.alive && f.colorKey === 'green')[0];
+      const scale = o.sprite.scaleX;
+      // Sit just outside the target's own radius and creep in until it
+      // connects - the gap that still registers IS the hit radius.
+      let reach = 0;
+      for (let gap = 40; gap >= 0; gap -= 0.5) {
+        o.x = target.x; o.y = target.y + target.radius + gap;
+        if (scene.orbiterVsEnemies(o)) { reach = gap; break; }
+      }
+      scene.clearPowerup(); scene.clearOrbiters();
+      return { scale, reach };
+    };
+    const small = probe(0.5), normal = probe(1), big = probe(2);
+    T.orbiterSize = window.__headOnTuning.defaults().orbiterSize;
+    ({ small, normal, big });
+  `);
+  check('the size slider scales the sprite',
+    size.small.scale === 0.5 && size.normal.scale === 1 && size.big.scale === 2, size);
+  check('and scales the hit radius with it, so the slider is not lying',
+    size.small.reach < size.normal.reach && size.normal.reach < size.big.reach, size);
+
+  // Dragging the slider has to be felt on shots ALREADY in the air, or
+  // tuning it means firing a fresh volley after every nudge.
+  const liveSize = await page.evaluate(SETTLE + `
+    const T = window.__headOnTuning.tuning;
+    T.orbiterSize = 1;
+    window.__headOnDebug.giveOrbs('green', 1);
+    scene.updatePowerupDots(0.25);
+    scene.launchOrbiters();
+    const atLaunch = state.orbiters[0].sprite.scaleX;
+    T.orbiterSize = 0.5;
+    scene.updateOrbiters(0.016);
+    const after = state.orbiters.length ? state.orbiters[0].sprite.scaleX : null;
+    T.orbiterSize = window.__headOnTuning.defaults().orbiterSize;
+    ({ atLaunch, after });
+  `);
+  check('resizing mid-flight is felt by shots already up',
+    liveSize.atLaunch === 1 && liveSize.after === 0.5, liveSize);
+
   // --- odds and ends -------------------------------------------------------
   // The orbiting core rides a formation slot; a shot can kill that slot.
   // updateCore() has to notice, the same way it does for a starburst.
@@ -374,9 +520,9 @@ harness.run(async (page, check, ctx) => {
     window.__headOnDebug.giveOrbs('green', 2);
     return new Promise(res => setTimeout(() => {
       const scoreBefore = state.score;
-      state.input.fire = true;
+      // The missile button, not the fire pad - they are separate triggers now.
+      document.getElementById('zoneMissile').dispatchEvent(new Event('pointerdown'));
       setTimeout(() => {
-        state.input.fire = false;
         const airborne = state.orbiters.length;
         setTimeout(() => res({
           airborne,

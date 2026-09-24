@@ -208,6 +208,60 @@
     touch-action: none;
   }
 
+  /* The missile trigger's row. Fixed height, always present - see the
+     comment on the markup for why it must not come and go. */
+  .missile-bar {
+    width: 100%;
+    max-width: 420px;
+    height: 46px;
+    flex: 0 0 auto;
+    touch-action: none;
+  }
+  .zone-missile {
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    background: var(--bg-2);
+    border: 1px solid rgba(148, 163, 184, 0.30);
+    /* Hidden without leaving the layout - visibility, not display. */
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s, background 0.1s, transform 0.08s;
+  }
+  .zone-missile.armed {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .zone-missile:active, .zone-missile.active { background: #263449; transform: scale(0.985); }
+
+  /* One pip per banked dot, mirroring the ring around the ship: solid
+     when that gun is loaded, hollow while its shot is still out. The
+     orbit is the gauge in the game; this is the same gauge under your
+     thumb, where you are actually looking when you press it. */
+  .missile-pips {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .missile-pip {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-sizing: border-box;
+  }
+  /* A loaded gun glows; a reloading one is a hollow socket, so "how many
+     shots do I have" is answerable at a glance without counting. */
+  .missile-pip.loaded { box-shadow: 0 0 7px 1px currentColor; }
+  .missile-pip.spent {
+    background: transparent !important;
+    border: 2px solid currentColor;
+    opacity: 0.45;
+  }
+
   /* ---- Hidden sortie lab -------------------------------------------------
      A dev-only tuning panel for the enemy attack patterns. Deliberately
      not discoverable in normal play: opened with the backquote key, or by
@@ -455,6 +509,18 @@
           <button type="button" class="btn secondary" id="resetBestBtn">Reset Best</button>
         </div>
       </div>
+    </div>
+
+    <!-- The missile trigger lives in its own row between the board and the
+         ship's controls: in the gutter under the player, above the pad.
+         The ROW is always in the layout even when the button is invisible,
+         because .canvas-wrap flexes to whatever is left over - letting the
+         row appear and disappear would resize the board every time an orb
+         was banked or spent, mid-dodge. -->
+    <div class="missile-bar" id="missileBar">
+      <button type="button" class="zone zone-missile" id="zoneMissile" aria-label="Fire missiles">
+        <span class="missile-pips" id="missilePips" aria-hidden="true"></span>
+      </button>
     </div>
 
     <div class="control-bar" id="controlBar">
@@ -908,9 +974,29 @@
   // here, and 98% by 0.7 - past which the shot straightens onto its
   // target almost immediately and the launch fan stops meaning anything,
   // which would throw away the whole point of aiming these by timing.
-  // This is deliberately set where a miss is still possible.
-  var ORBITER_TURN_RATE = 0.35;
+  // rad/sec of steering toward a matching target.
+  //
+  // Two different things were measured here, and they disagree about what
+  // this knob does. Hit rate against a settled formation climbs fast -
+  // 24% at 0, 69% at 0.35, 98% by 0.7 - which first read as "past 0.7 the
+  // launch fan stops mattering". That was wrong. Firing at twelve
+  // different points around the orbit and recording WHICH enemy dies:
+  //
+  //   0.35  4 distinct targets, 4 misses out of 12
+  //   0.95  3 distinct targets, 0 misses
+  //   2.0   3 distinct targets, 0 misses
+  //
+  // The target you get still tracks when you fired, even at 2.0, because
+  // the shot picks the nearest match from where it launched. What raising
+  // this actually buys away is the MISS, not the aiming. So the knob
+  // trades "can I whiff" against reliability, and picking a target by
+  // timing survives either way.
+  //
+  // Playtested to here from 0.35: whiffing read as the weapon being
+  // unreliable rather than as a miss you earned.
+  var ORBITER_TURN_RATE = 0.95;
   var ORBITER_LIFETIME = 6;       // seconds before one gives up and fades
+  var ORBITER_SIZE = 1;           // scales the shot, VISUAL AND HIT RADIUS TOGETHER - see updateOrbiters()
 
   // ---- Live tuning ------------------------------------------------------
   // Everything the sortie system reads at runtime, in one mutable object so
@@ -985,6 +1071,7 @@
       orbiterSpeed: ORBITER_SPEED,
       orbiterTurnRate: ORBITER_TURN_RATE,
       orbiterLifetime: ORBITER_LIFETIME,
+      orbiterSize: ORBITER_SIZE,
       orbiterMines: false, // park at the top and wait for prey, instead of flying all the way in
       diagnosticOverlay: false // draws elapsed/tier/sortie-activation text over the live game - see updateDiagOverlay()
     };
@@ -3610,10 +3697,31 @@
   bindThumbstickZone(zoneSlide, slideAnchor, slideThumb, function (v) { touchLeft = v; }, function (v) { touchRight = v; });
   bindHoldZone(zoneMid, function (v) { touchFire = v; });
 
+  // The missile trigger is edge-driven, not a held state like the others:
+  // one volley per press, and holding does not repeat (see
+  // launchOrbiters()). So it binds its own pointerdown rather than going
+  // through bindHoldZone and composeInput.
+  var zoneMissile = document.getElementById('zoneMissile');
+  function pressMissile(e) {
+    if (e) e.preventDefault();
+    if (!mainScene || mainScene.state.phase !== 'playing') return;
+    mainScene.launchOrbiters();
+    zoneMissile.classList.add('active');
+  }
+  function releaseMissile() { zoneMissile.classList.remove('active'); }
+  zoneMissile.addEventListener('pointerdown', pressMissile);
+  zoneMissile.addEventListener('pointerup', releaseMissile);
+  zoneMissile.addEventListener('pointercancel', releaseMissile);
+  zoneMissile.addEventListener('pointerleave', releaseMissile);
+  zoneMissile.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
   // ---- Input: keyboard ------------------------------------------------------
   function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
   function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
   function isFireKey(code) { return code === 'Space' || code === 'ArrowUp' || code === 'KeyW'; }
+  // Its own key, since it is its own button now. Edge-triggered in the
+  // keydown handler rather than tracked as a held state.
+  function isMissileKey(code) { return code === 'ShiftLeft' || code === 'ShiftRight' || code === 'KeyS' || code === 'ArrowDown'; }
 
   // The tuning lab (further down) covers the canvas and steals the
   // keyboard while it's open: its sliders answer to the arrow keys and its
@@ -3628,12 +3736,14 @@
     if (isLeftKey(e.code)) { kbLeft = true; composeInput(); }
     else if (isRightKey(e.code)) { kbRight = true; composeInput(); }
     else if (isFireKey(e.code)) { kbFire = true; composeInput(); }
+    else if (isMissileKey(e.code) && !e.repeat) { e.preventDefault(); pressMissile(null); }
   });
   document.addEventListener('keyup', function (e) {
     if (labOpen) return;
     if (isLeftKey(e.code)) { kbLeft = false; composeInput(); }
     else if (isRightKey(e.code)) { kbRight = false; composeInput(); }
     else if (isFireKey(e.code)) { kbFire = false; composeInput(); }
+    else if (isMissileKey(e.code)) { releaseMissile(); }
   });
 
   function forceReleaseKeyboard() {
@@ -3830,7 +3940,6 @@
     if (state.input.fire) {
       if (!state.fireHeld) {
         this.fireBullet();
-        this.launchOrbiters(); // the same tap fires every gun that is loaded
         state.fireHeld = true;
         state.fireHeldMs = 0;
         state.nextPowerupTickMs = FIRE_LONG_PRESS_MS;
@@ -4598,6 +4707,47 @@
   // ---- Orbiter shots -----------------------------------------------------
   // See the ORBITER_* constants block for the design.
 
+  // The shot's real hit radius at the current size setting. Kept as one
+  // function used by BOTH the sprite scale and every collision test, so
+  // the size slider can never end up lying about what it is hitting.
+  function orbiterRadius() { return ORBITER_RADIUS * TUNING.orbiterSize; }
+
+  // Arms the missile button when there is anything to fire, and renders
+  // one pip per banked dot - solid for a loaded gun, hollow while its
+  // shot is out. Called every frame; it rebuilds the pips only when the
+  // bank's shape actually changes, so this is a string compare per frame
+  // rather than DOM churn.
+  MainScene.prototype.syncMissileButton = function () {
+    var btn = document.getElementById('zoneMissile');
+    if (!btn) return;
+    var state = this.state;
+    var dots = state.powerup.dots;
+    var armed = TUNING.orbiterEnabled && !state.challenge && state.phase === 'playing' && dots.length > 0;
+    btn.classList.toggle('armed', armed);
+
+    var self = this;
+    var key = dots.map(function (d) {
+      return d.colorKey + (self.gunHasShotInFlight(d.gunId) ? '-' : '+');
+    }).join(',');
+    if (key === this.missilePipKey) return;
+    this.missilePipKey = key;
+
+    var pips = document.getElementById('missilePips');
+    if (!pips) return;
+    pips.textContent = '';
+    dots.forEach(function (d) {
+      var inFlight = self.gunHasShotInFlight(d.gunId);
+      var hex = '#' + STRIP_COLORS[d.colorKey].toString(16).padStart(6, '0');
+      var pip = document.createElement('span');
+      pip.className = 'missile-pip ' + (inFlight ? 'spent' : 'loaded');
+      // color drives both the fill and, via currentColor, the glow on a
+      // loaded pip and the ring on a spent one.
+      pip.style.color = hex;
+      pip.style.background = hex;
+      pips.appendChild(pip);
+    });
+  };
+
   MainScene.prototype.gunHasShotInFlight = function (gunId) {
     var orbiters = this.state.orbiters;
     for (var i = 0; i < orbiters.length; i++) {
@@ -4606,9 +4756,17 @@
     return false;
   };
 
-  // Called on the same tap that fires an ordinary bullet. Every dot that
-  // is not already reloading fires, so the number of shots per tap is the
-  // number of guns you have ready - never a burst you have to manage.
+  // Fired from the missile button, not the main fire pad - see
+  // syncMissileButton(). Keeping it off the fire button is what makes the
+  // timing a real choice: you pick the moment the ring is pointing where
+  // you want, instead of taking whatever angle the shot you were already
+  // firing happened to leave on.
+  //
+  // Every dot that is not already reloading fires, so the number of shots
+  // per press is the number of guns you have ready - never a burst you
+  // have to manage. Holding does NOT repeat, deliberately: auto-firing
+  // each gun the instant it reloaded would fire at whatever angle the
+  // orbit happened to be at, which is exactly the aiming this is for.
   MainScene.prototype.launchOrbiters = function () {
     var state = this.state;
     if (!TUNING.orbiterEnabled) return;
@@ -4643,6 +4801,7 @@
       trail: [{ x: x, y: y }],
       sprite: this.add.sprite(x, y, 'orbiterTex_' + dot.colorKey)
     });
+    state.orbiters[state.orbiters.length - 1].sprite.setScale(TUNING.orbiterSize);
   };
 
   // Nearest live enemy of this shot's own colour family, within range.
@@ -4694,6 +4853,7 @@
       o.y += Math.sin(o.heading) * speed * dt;
       o.sprite.x = o.x;
       o.sprite.y = o.y;
+      o.sprite.setScale(TUNING.orbiterSize); // re-applied per frame so the lab slider is felt live, mid-flight
 
       o.trailTimer += dt;
       if (o.trailTimer >= ORBITER_TRAIL_SAMPLE) {
@@ -4715,7 +4875,7 @@
     for (var i = 0; i < state.formation.length; i++) {
       var slot = state.formation[i];
       if (!slot.alive || slot.colorKey !== o.colorKey) continue;
-      if (!circleHit(o.x, o.y, slot.x, slot.y, slot.radius + ORBITER_RADIUS)) continue;
+      if (!circleHit(o.x, o.y, slot.x, slot.y, slot.radius + orbiterRadius())) continue;
       slot.sprite.destroy();
       slot.alive = false;
       this.addScore(slot.score);
@@ -4724,7 +4884,7 @@
     for (var s = state.brickShards.length - 1; s >= 0; s--) {
       var sh = state.brickShards[s];
       if (sh.colorKey !== o.colorKey) continue;
-      if (!circleHit(o.x, o.y, sh.x, sh.y, BRICK_SHARD_RADIUS + ORBITER_RADIUS)) continue;
+      if (!circleHit(o.x, o.y, sh.x, sh.y, BRICK_SHARD_RADIUS + orbiterRadius())) continue;
       sh.sprite.destroy();
       state.brickShards.splice(s, 1);
       this.addScore(BRICK_SHARD_SCORE);
@@ -5577,6 +5737,7 @@
 
     this.updateBackground(dt);
     this.renderOrbiterTrails();
+    this.syncMissileButton();
     this.shipSprite.x = state.ship.x;
 
     var invuln = isInvulnerable(state);
@@ -5694,6 +5855,7 @@
       { section: 'labOrbiter', key: 'orbiterSpeed', label: 'Shot speed', min: 40, max: 400, step: 10, unit: 'px/s' },
       { section: 'labOrbiter', key: 'orbiterTurnRate', label: 'Homing strength', min: 0, max: 3, step: 0.05, unit: 'rad/s' },
       { section: 'labOrbiter', key: 'orbiterLifetime', label: 'Shot lifetime', min: 1, max: 15, step: 0.5, unit: 's' },
+      { section: 'labOrbiter', key: 'orbiterSize', label: 'Shot size', min: 0.4, max: 2, step: 0.05, unit: '×' },
       { section: 'labChallenge', key: 'challengeVolleys', label: 'Volleys per stage', min: 1, max: 20, step: 1, unit: '' },
       { section: 'labChallenge', key: 'challengeMeteorSpeed', label: 'Meteor speed', min: 100, max: 600, step: 10, unit: 'px/s' },
       { section: 'labChallenge', key: 'challengeStagesToArrival', label: 'Stages to the planet', min: 1, max: 12, step: 1, unit: '',
