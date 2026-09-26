@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Painted Lands (Prototype)</title>
+<style>
+  :root {
+    --bg-1: #0f172a;
+    --text: #f1e9dc;
+    --muted: #b9ad98;
+    --accent: #e8c07a;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+  body {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100vw;
+    background: var(--bg-1);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #gameRoot { position: fixed; inset: 0; z-index: 0; }
+  #gameRoot canvas { display: block; }
+
+  .hud-bar {
+    position: fixed;
+    top: env(safe-area-inset-top);
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px max(12px, env(safe-area-inset-left));
+    z-index: 10;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
+  }
+
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    pointer-events: auto;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  .back-link:hover { color: var(--text); }
+
+  .proto-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(241, 233, 220, 0.2);
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+
+  .hint {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 46px);
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--text);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 1.1s ease;
+  }
+  .hint.hidden { opacity: 0; }
+
+  .control-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    touch-action: none;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .control-bar > * { pointer-events: auto; }
+
+  /* ---- Left thumb: NES-style D-pad, cross of 4 hold-zones ---- */
+  .dpad {
+    display: grid;
+    grid-template-columns: 54px 54px 54px;
+    grid-template-rows: 54px 54px 54px;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .dpad-btn {
+    border: none;
+    outline: none;
+    background: rgba(20, 16, 12, 0.55);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    transition: background 0.1s, transform 0.08s;
+  }
+  .dpad-btn:active, .dpad-btn.active { background: rgba(60, 48, 34, 0.85); transform: scale(0.94); }
+  .dpad-up { grid-column: 2; grid-row: 1; }
+  .dpad-left { grid-column: 1; grid-row: 2; }
+  .dpad-hub {
+    grid-column: 2; grid-row: 2;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .dpad-hub-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(241, 233, 220, 0.25); }
+  .dpad-right { grid-column: 3; grid-row: 2; }
+  .dpad-down { grid-column: 2; grid-row: 3; }
+
+  .arrow { display: block; pointer-events: none; width: 0; height: 0; }
+  .arrow-up { border-left: 11px solid transparent; border-right: 11px solid transparent; border-bottom: 15px solid var(--text); }
+  .arrow-down { border-left: 11px solid transparent; border-right: 11px solid transparent; border-top: 15px solid var(--text); }
+  .arrow-left { border-top: 11px solid transparent; border-bottom: 11px solid transparent; border-right: 15px solid var(--text); }
+  .arrow-right { border-top: 11px solid transparent; border-bottom: 11px solid transparent; border-left: 15px solid var(--text); }
+
+  /* ---- Center: current mood label ---- */
+  .mood-status {
+    flex: 1;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  /* ---- Right hand: single round action button ---- */
+  .action-btn {
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 2px solid rgba(241, 233, 220, 0.35);
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.9), rgba(120, 90, 40, 0.55) 70%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 0.08s, filter 0.1s;
+  }
+  .action-btn:active, .action-btn.active { transform: scale(0.93); filter: brightness(1.15); }
+
+  .action-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(255, 250, 235, 0.9);
+    box-shadow: 0 0 10px 3px rgba(255, 235, 190, 0.5);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div id="gameRoot"></div>
+
+  <div class="hud-bar">
+    <a class="back-link" href="index.html">&larr; All</a>
+    <div class="proto-tag">prototype</div>
+  </div>
+
+  <div class="hint" id="hint">Left thumb walks &middot; right button shifts the mood</div>
+
+  <div class="control-bar" id="controlBar">
+    <div class="dpad" id="dpad">
+      <button type="button" class="dpad-btn dpad-up" id="dpadUp" aria-label="Walk away"><span class="arrow arrow-up" aria-hidden="true"></span></button>
+      <button type="button" class="dpad-btn dpad-left" id="dpadLeft" aria-label="Walk left"><span class="arrow arrow-left" aria-hidden="true"></span></button>
+      <div class="dpad-hub" aria-hidden="true"><span class="dpad-hub-dot"></span></div>
+      <button type="button" class="dpad-btn dpad-right" id="dpadRight" aria-label="Walk right"><span class="arrow arrow-right" aria-hidden="true"></span></button>
+      <button type="button" class="dpad-btn dpad-down" id="dpadDown" aria-label="Walk toward you"><span class="arrow arrow-down" aria-hidden="true"></span></button>
+    </div>
+
+    <div class="mood-status" id="moodStatus">Dusk</div>
+
+    <button type="button" class="action-btn" id="actionBtn" aria-label="Shift the mood">
+      <span class="action-icon" aria-hidden="true"></span>
+    </button>
+  </div>
+
+<script src="phaser.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ==================================================================
+  // Moods: each is a full palette + ambience preset. Cycling through
+  // them is the whole "game" for this prototype - the point is to see
+  // how far color alone can carry the feeling of a painted place.
+  // ==================================================================
+  var MOODS = [
+    { name: 'Dawn',  sky: [0x2b1b4e, 0xff9d6c], glow: 0xffd58a, glowAlpha: 0.55,
+      mtnFar: 0x6a5b7a, mtnMid: 0x4a3560, groundFar: 0x5a6e4a, groundNear: 0x3c5a34,
+      starsAlpha: 0.15, fireflyWeight: 0, windCutoff: 900, windGain: 0.035 },
+    { name: 'Day',   sky: [0x3aa0d1, 0xcfeeff], glow: 0xfff3b0, glowAlpha: 0.75,
+      mtnFar: 0x7fa8c9, mtnMid: 0x5b83a8, groundFar: 0x5f9a52, groundNear: 0x3f7a3c,
+      starsAlpha: 0.0, fireflyWeight: 0, windCutoff: 1500, windGain: 0.03 },
+    { name: 'Dusk',  sky: [0x1b1035, 0xff6f61], glow: 0xffb27a, glowAlpha: 0.6,
+      mtnFar: 0x5b3e65, mtnMid: 0x351f45, groundFar: 0x3a4a30, groundNear: 0x213a1f,
+      starsAlpha: 0.35, fireflyWeight: 0.5, windCutoff: 650, windGain: 0.04 },
+    { name: 'Night', sky: [0x05061a, 0x131b3a], glow: 0xcfd8ff, glowAlpha: 0.35,
+      mtnFar: 0x1a2036, mtnMid: 0x0e1226, groundFar: 0x152a1e, groundNear: 0x0b1912,
+      starsAlpha: 0.85, fireflyWeight: 1, windCutoff: 320, windGain: 0.045 }
+  ];
+  var MOOD_TWEEN_MS = 1800;
+
+  // ==================================================================
+  // Perspective helpers - the "simulated 3D": a character walking on a
+  // trapezoid of ground, shrinking and slowing toward a horizon line.
+  // ==================================================================
+  var MOVE_SPEED_X = 0.6;      // worldX units/sec, worldX in [-1, 1]
+  var MOVE_SPEED_DEPTH = 0.42; // depth units/sec, depth in [0 far, 1 near]
+  var MIN_SCALE = 0.34;
+  var HORIZON_FRAC = 0.44;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  // ==================================================================
+  // Procedural ambience (Web Audio, zero asset files)
+  // ==================================================================
+  var Sound = (function () {
+    var ctx = null;
+    var windSrc = null, windFilter = null, windGain = null, windOn = false;
+    var noiseBuffer = null;
+
+    function ensureAudio() {
+      if (!ctx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+
+    function getNoiseBuffer() {
+      if (noiseBuffer) return noiseBuffer;
+      var len = ctx.sampleRate * 2;
+      noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      var data = noiseBuffer.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return noiseBuffer;
+    }
+
+    function startWind(cutoff, gainVal) {
+      if (!ctx || windOn) return;
+      windOn = true;
+      windSrc = ctx.createBufferSource();
+      windSrc.buffer = getNoiseBuffer();
+      windSrc.loop = true;
+      windFilter = ctx.createBiquadFilter();
+      windFilter.type = 'lowpass';
+      windFilter.frequency.setValueAtTime(cutoff, ctx.currentTime);
+      windGain = ctx.createGain();
+      windGain.gain.setValueAtTime(0, ctx.currentTime);
+      windGain.gain.linearRampToValueAtTime(gainVal, ctx.currentTime + 0.8);
+      windSrc.connect(windFilter).connect(windGain).connect(ctx.destination);
+      windSrc.start();
+    }
+
+    function setWindMood(cutoff, gainVal, durationMs) {
+      if (!ctx || !windOn) return;
+      var t = ctx.currentTime;
+      windFilter.frequency.linearRampToValueAtTime(cutoff, t + durationMs / 1000);
+      windGain.gain.linearRampToValueAtTime(gainVal, t + durationMs / 1000);
+    }
+
+    function playChime() {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      [660, 990].forEach(function (freq, i) {
+        var osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t + i * 0.09);
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(0, t + i * 0.09);
+        g.gain.linearRampToValueAtTime(0.16, t + i * 0.09 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.9);
+        osc.connect(g).connect(ctx.destination);
+        osc.start(t + i * 0.09);
+        osc.stop(t + i * 0.09 + 0.95);
+      });
+    }
+
+    return {
+      ensureAudio: ensureAudio,
+      startWind: startWind,
+      setWindMood: setWindMood,
+      playChime: playChime
+    };
+  })();
+
+  // ==================================================================
+  // Phaser scene
+  // ==================================================================
+  var mainScene = null;
+
+  function MainScene() {
+    Phaser.Scene.call(this, { key: 'Main' });
+  }
+  MainScene.prototype = Object.create(Phaser.Scene.prototype);
+  MainScene.prototype.constructor = MainScene;
+
+  MainScene.prototype.create = function () {
+    mainScene = this;
+
+    this.moodIndex = 2; // start at Dusk
+    this.cur = this.snapshotMood(MOODS[this.moodIndex]);
+
+    this.worldX = 0;      // -1 (left edge) .. 1 (right edge)
+    this.depth = 0.75;    // 0 far/horizon .. 1 near/bottom
+    this.flipX = false;
+    this.bobPhase = 0;
+    this.idlePhase = Math.random() * 10;
+
+    this.mountainLayers = {
+      far: { amp1: 0.05, amp2: 0.03, freq1: 1.3, freq2: 2.7, phase1: 1.1, phase2: 4.2, baseFrac: 1.0 },
+      mid: { amp1: 0.075, amp2: 0.04, freq1: 0.9, freq2: 2.1, phase1: 3.4, phase2: 0.7, baseFrac: 1.03 }
+    };
+    this.clouds = [
+      { xFrac: 0.15, yFrac: 0.12, scale: 1.0, speed: 0.006 },
+      { xFrac: 0.55, yFrac: 0.2, scale: 1.4, speed: 0.004 },
+      { xFrac: 0.85, yFrac: 0.1, scale: 0.8, speed: 0.005 }
+    ];
+    this.fireflies = [];
+    for (var i = 0; i < 16; i++) {
+      this.fireflies.push({
+        xFrac: Math.random(), depth: 0.15 + Math.random() * 0.8,
+        phase: Math.random() * Math.PI * 2, speed: 0.4 + Math.random() * 0.4
+      });
+    }
+
+    this.buildTextures();
+    this.buildLayers();
+    this.buildCharacter();
+    this.redrawAll();
+
+    var self = this;
+    this.scale.on('resize', function () { self.redrawAll(); });
+
+    this.input.walking = false;
+    this.updateMoodLabel(MOODS[this.moodIndex].name, 1);
+  };
+
+  MainScene.prototype.snapshotMood = function (mood) {
+    return {
+      skyTop: mood.sky[0], skyBottom: mood.sky[1],
+      glow: mood.glow, glowAlpha: mood.glowAlpha,
+      mtnFar: mood.mtnFar, mtnMid: mood.mtnMid,
+      groundFar: mood.groundFar, groundNear: mood.groundNear,
+      starsAlpha: mood.starsAlpha, fireflyWeight: mood.fireflyWeight
+    };
+  };
+
+  MainScene.prototype.buildTextures = function () {
+    // Traveler sprite: hooded cloak + head, warm tones against the cool
+    // landscape so it reads clearly at every scale.
+    var w = 40, h = 58;
+    var g = this.make.graphics({ x: 0, y: 0, add: false });
+    g.fillStyle(0x1c1a1e, 0.35);
+    g.fillEllipse(w / 2, h - 4, w * 0.55, 8); // soft ground shadow
+    g.fillStyle(0xc2543a, 1);
+    g.lineStyle(2, 0x5c2415, 1);
+    g.beginPath();
+    g.moveTo(w / 2, h * 0.28);
+    g.lineTo(w * 0.14, h - 8);
+    g.lineTo(w * 0.86, h - 8);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+    g.fillStyle(0xe0c9a6, 1);
+    g.fillCircle(w / 2, h * 0.24, w * 0.22);
+    g.fillStyle(0xc2543a, 1);
+    g.lineStyle(2, 0x5c2415, 1);
+    g.beginPath();
+    g.arc(w / 2, h * 0.22, w * 0.27, Math.PI * 1.05, Math.PI * 1.95, false);
+    g.strokePath();
+    g.fillStyle(0xffe9c2, 0.5);
+    g.fillEllipse(w * 0.4, h * 0.55, w * 0.16, h * 0.22);
+    g.generateTexture('travelerTex', w, h);
+    g.destroy();
+  };
+
+  MainScene.prototype.buildLayers = function () {
+    this.skyGfx = this.add.graphics().setDepth(-20);
+    this.glowGfx = this.add.graphics().setDepth(-19);
+    this.starsGfx = this.add.graphics().setDepth(-18);
+    this.mtnFarGfx = this.add.graphics().setDepth(-17);
+    this.mtnMidGfx = this.add.graphics().setDepth(-16);
+    this.cloudsGfx = this.add.graphics().setDepth(-15);
+    this.groundGfx = this.add.graphics().setDepth(-10);
+    this.pathGfx = this.add.graphics().setDepth(-9);
+    this.firefliesGfx = this.add.graphics().setDepth(-5);
+  };
+
+  MainScene.prototype.buildCharacter = function () {
+    this.character = this.add.sprite(0, 0, 'travelerTex').setOrigin(0.5, 0.92).setDepth(0);
+  };
+
+  // ---- Geometry that depends on current canvas size ----------------
+  MainScene.prototype.horizonY = function () { return this.scale.height * HORIZON_FRAC; };
+  MainScene.prototype.groundBottomY = function () { return this.scale.height; };
+  MainScene.prototype.depthToScreenY = function (depth) {
+    return lerp(this.horizonY(), this.groundBottomY(), depth);
+  };
+  MainScene.prototype.depthToScale = function (depth) { return lerp(MIN_SCALE, 1, depth); };
+  MainScene.prototype.depthToHalfWidth = function (depth) {
+    var W = this.scale.width;
+    return lerp(W * 0.05, W * 0.48, depth);
+  };
+
+  MainScene.prototype.mountainHeight = function (layer, xFrac) {
+    var n = layer.amp1 * (0.5 + 0.5 * Math.sin(xFrac * Math.PI * 2 * layer.freq1 + layer.phase1))
+          + layer.amp2 * (0.5 + 0.5 * Math.sin(xFrac * Math.PI * 2 * layer.freq2 + layer.phase2));
+    return n * this.scale.height;
+  };
+
+  // ---- Drawing (re-run on resize and on every mood-tween tick) -----
+  MainScene.prototype.redrawAll = function () {
+    var W = this.scale.width, H = this.scale.height;
+    var cur = this.cur;
+    var horizonY = this.horizonY();
+
+    this.skyGfx.clear();
+    this.skyGfx.fillGradientStyle(cur.skyTop, cur.skyTop, cur.skyBottom, cur.skyBottom, 1);
+    this.skyGfx.fillRect(0, 0, W, horizonY + 2);
+
+    this.glowGfx.clear();
+    var gx = W * 0.74, gy = horizonY * 0.42, baseR = H * 0.22;
+    for (var r = 4; r >= 1; r--) {
+      this.glowGfx.fillStyle(cur.glow, cur.glowAlpha * (0.16 * (5 - r)));
+      this.glowGfx.fillCircle(gx, gy, baseR * (r / 4));
+    }
+
+    if (!this.starPositions || this.starPositions.w !== W || this.starPositions.h !== horizonY) {
+      var pts = [];
+      var count = Math.round((W * horizonY) / 3200);
+      for (var i = 0; i < count; i++) pts.push({ x: Math.random() * W, y: Math.random() * horizonY * 0.9, r: Math.random() * 1.1 + 0.3 });
+      this.starPositions = { w: W, h: horizonY, pts: pts };
+    }
+    this.starsGfx.clear();
+    this.starsGfx.fillStyle(0xffffff, 1);
+    this.starsGfx.alpha = cur.starsAlpha;
+    this.starPositions.pts.forEach(function (p) { this.starsGfx.fillCircle(p.x, p.y, p.r); }, this);
+
+    this.drawMountainLayer(this.mtnFarGfx, this.mountainLayers.far, cur.mtnFar, horizonY, 0.75);
+    this.drawMountainLayer(this.mtnMidGfx, this.mountainLayers.mid, cur.mtnMid, horizonY + H * 0.015, 1);
+
+    this.cloudsGfx.clear();
+    this.cloudsGfx.fillStyle(cur.skyBottom, 0.5);
+    this.clouds.forEach(function (c) {
+      var cx = ((c.xFrac % 1) + 1) % 1 * (W + 200) - 100;
+      var cy = c.yFrac * horizonY;
+      var s = c.scale;
+      this.cloudsGfx.fillEllipse(cx, cy, 70 * s, 20 * s);
+      this.cloudsGfx.fillEllipse(cx + 30 * s, cy + 6 * s, 46 * s, 16 * s);
+      this.cloudsGfx.fillEllipse(cx - 28 * s, cy + 5 * s, 42 * s, 15 * s);
+    }, this);
+
+    this.groundGfx.clear();
+    this.groundGfx.fillGradientStyle(cur.groundFar, cur.groundFar, cur.groundNear, cur.groundNear, 1);
+    this.groundGfx.fillRect(0, horizonY, W, H - horizonY);
+
+    var topHalf = this.depthToHalfWidth(0), botHalf = this.depthToHalfWidth(1);
+    this.pathGfx.clear();
+    this.pathGfx.fillStyle(0xd9c98f, 0.26);
+    this.pathGfx.beginPath();
+    this.pathGfx.moveTo(W / 2 - topHalf * 0.35, horizonY);
+    this.pathGfx.lineTo(W / 2 + topHalf * 0.35, horizonY);
+    this.pathGfx.lineTo(W / 2 + botHalf * 0.5, H);
+    this.pathGfx.lineTo(W / 2 - botHalf * 0.5, H);
+    this.pathGfx.closePath();
+    this.pathGfx.fillPath();
+
+    this.buildVignette(W, H);
+  };
+
+  MainScene.prototype.drawMountainLayer = function (gfx, layer, colorInt, baseY, overlapFrac) {
+    var W = this.scale.width;
+    var overlapDown = this.scale.height * 0.04 * overlapFrac;
+    gfx.clear();
+    gfx.fillStyle(colorInt, 1);
+    var steps = 40;
+    gfx.beginPath();
+    gfx.moveTo(0, baseY + overlapDown);
+    for (var i = 0; i <= steps; i++) {
+      var xFrac = i / steps;
+      var x = xFrac * W;
+      var y = baseY - this.mountainHeight(layer, xFrac);
+      gfx.lineTo(x, y);
+    }
+    gfx.lineTo(W, baseY + overlapDown);
+    gfx.closePath();
+    gfx.fillPath();
+  };
+
+  MainScene.prototype.buildVignette = function (W, H) {
+    var key = 'vignetteTex';
+    if (this.textures.exists(key)) this.textures.remove(key);
+    var tex = this.textures.createCanvas(key, W, H);
+    var ctx = tex.getContext();
+    var grad = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.12, W / 2, H * 0.55, H * 0.78);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    tex.refresh();
+    if (this.vignetteImg) this.vignetteImg.destroy();
+    this.vignetteImg = this.add.image(0, 0, key).setOrigin(0, 0).setDepth(50).setBlendMode(Phaser.BlendModes.MULTIPLY);
+  };
+
+  // ---- Mood transition ----------------------------------------------
+  MainScene.prototype.cycleMood = function () {
+    if (this.moodTween) return; // ignore taps mid-transition
+    var self = this;
+    var from = this.cur;
+    var toMood = MOODS[(this.moodIndex + 1) % MOODS.length];
+    var to = this.snapshotMood(toMood);
+    var fromColors = {
+      skyTop: Phaser.Display.Color.ValueToColor(from.skyTop),
+      skyBottom: Phaser.Display.Color.ValueToColor(from.skyBottom),
+      glow: Phaser.Display.Color.ValueToColor(from.glow),
+      mtnFar: Phaser.Display.Color.ValueToColor(from.mtnFar),
+      mtnMid: Phaser.Display.Color.ValueToColor(from.mtnMid),
+      groundFar: Phaser.Display.Color.ValueToColor(from.groundFar),
+      groundNear: Phaser.Display.Color.ValueToColor(from.groundNear)
+    };
+    var toColors = {
+      skyTop: Phaser.Display.Color.ValueToColor(to.skyTop),
+      skyBottom: Phaser.Display.Color.ValueToColor(to.skyBottom),
+      glow: Phaser.Display.Color.ValueToColor(to.glow),
+      mtnFar: Phaser.Display.Color.ValueToColor(to.mtnFar),
+      mtnMid: Phaser.Display.Color.ValueToColor(to.mtnMid),
+      groundFar: Phaser.Display.Color.ValueToColor(to.groundFar),
+      groundNear: Phaser.Display.Color.ValueToColor(to.groundNear)
+    };
+
+    Sound.playChime();
+    Sound.setWindMood(toMood.windCutoff, toMood.windGain, MOOD_TWEEN_MS);
+    this.updateMoodLabel(toMood.name, 0);
+
+    function mixColor(c1, c2, t) {
+      return Phaser.Display.Color.GetColor(
+        Math.round(lerp(c1.r, c2.r, t)),
+        Math.round(lerp(c1.g, c2.g, t)),
+        Math.round(lerp(c1.b, c2.b, t))
+      );
+    }
+
+    var obj = { t: 0 };
+    this.moodTween = this.tweens.add({
+      targets: obj,
+      t: 1,
+      duration: MOOD_TWEEN_MS,
+      ease: 'Sine.easeInOut',
+      onUpdate: function () {
+        var t = obj.t;
+        function mix(key) { return mixColor(fromColors[key], toColors[key], t); }
+        self.cur.skyTop = mix('skyTop');
+        self.cur.skyBottom = mix('skyBottom');
+        self.cur.glow = mix('glow');
+        self.cur.glowAlpha = lerp(from.glowAlpha, to.glowAlpha, t);
+        self.cur.mtnFar = mix('mtnFar');
+        self.cur.mtnMid = mix('mtnMid');
+        self.cur.groundFar = mix('groundFar');
+        self.cur.groundNear = mix('groundNear');
+        self.cur.starsAlpha = lerp(from.starsAlpha, to.starsAlpha, t);
+        self.cur.fireflyWeight = lerp(from.fireflyWeight, to.fireflyWeight, t);
+        self.redrawAll();
+      },
+      onComplete: function () {
+        self.moodIndex = (self.moodIndex + 1) % MOODS.length;
+        self.moodTween = null;
+        self.updateMoodLabel(MOODS[self.moodIndex].name, 1);
+      }
+    });
+  };
+
+  MainScene.prototype.updateMoodLabel = function (name, opacity) {
+    var el = document.getElementById('moodStatus');
+    el.textContent = name;
+    el.style.opacity = String(opacity);
+    if (opacity < 1) {
+      var self = this;
+      clearTimeout(this._labelTimer);
+      this._labelTimer = setTimeout(function () { el.style.opacity = '1'; }, MOOD_TWEEN_MS);
+    }
+  };
+
+  MainScene.prototype.pulseAtFeet = function () {
+    var W = this.scale.width;
+    var screenX = W / 2 + this.worldX * this.depthToHalfWidth(this.depth);
+    var screenY = this.depthToScreenY(this.depth);
+    var g = this.add.graphics().setDepth(1);
+    var obj = { r: 4, a: 0.7 };
+    this.tweens.add({
+      targets: obj,
+      r: 30,
+      a: 0,
+      duration: 650,
+      ease: 'Cubic.easeOut',
+      onUpdate: function () {
+        g.clear();
+        g.lineStyle(2, 0xffe9c2, obj.a);
+        g.strokeEllipse(screenX, screenY, obj.r * 1.6, obj.r * 0.6);
+      },
+      onComplete: function () { g.destroy(); }
+    });
+  };
+
+  // ---- Per-frame update ----------------------------------------------
+  MainScene.prototype.update = function (time, delta) {
+    var dt = Math.min(delta / 1000, 0.05);
+    var input = window.__paintedLandsInput;
+
+    var moveX = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    var moveY = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+    var walking = moveX !== 0 || moveY !== 0;
+
+    if (walking) {
+      var len = Math.hypot(moveX, moveY) || 1;
+      var nx = moveX / len, ny = moveY / len;
+      this.worldX = clamp(this.worldX + nx * MOVE_SPEED_X * dt, -1, 1);
+      this.depth = clamp(this.depth + ny * MOVE_SPEED_DEPTH * dt, 0, 1);
+      if (moveX > 0) this.flipX = false;
+      else if (moveX < 0) this.flipX = true;
+      this.bobPhase += dt * 9;
+      this.idlePhase = 0;
+      this.hideHint();
+    } else {
+      this.idlePhase += dt;
+    }
+
+    var scale = this.depthToScale(this.depth);
+    var halfW = this.depthToHalfWidth(this.depth);
+    var screenX = this.scale.width / 2 + this.worldX * halfW;
+    var baseY = this.depthToScreenY(this.depth);
+    var bobOffset = walking ? Math.sin(this.bobPhase) * 3 * scale : Math.sin(this.idlePhase * 1.2) * 1;
+
+    this.character.setPosition(screenX, baseY + bobOffset);
+    this.character.setScale(scale);
+    this.character.setFlipX(this.flipX);
+    this.character.setDepth(baseY);
+
+    this.mtnFarGfx.x = -this.worldX * 8;
+    this.mtnMidGfx.x = -this.worldX * 22;
+
+    this.clouds.forEach(function (c) { c.xFrac += c.speed * dt * 0.2; });
+
+    this.updateFireflies(time, dt);
+
+    if (this.moodTween) {
+      // colors already redrawn by the tween's onUpdate
+    } else {
+      this.cloudsGfx.clear();
+      var W = this.scale.width, horizonY = this.horizonY();
+      this.cloudsGfx.fillStyle(this.cur.skyBottom, 0.5);
+      this.clouds.forEach(function (c) {
+        var cx = ((c.xFrac % 1) + 1) % 1 * (W + 200) - 100;
+        var cy = c.yFrac * horizonY;
+        var s = c.scale;
+        this.cloudsGfx.fillEllipse(cx, cy, 70 * s, 20 * s);
+        this.cloudsGfx.fillEllipse(cx + 30 * s, cy + 6 * s, 46 * s, 16 * s);
+        this.cloudsGfx.fillEllipse(cx - 28 * s, cy + 5 * s, 42 * s, 15 * s);
+      }, this);
+    }
+  };
+
+  MainScene.prototype.updateFireflies = function (time, dt) {
+    var weight = this.cur.fireflyWeight;
+    this.firefliesGfx.clear();
+    if (weight <= 0.02) return;
+    var W = this.scale.width;
+    var self = this;
+    this.fireflies.forEach(function (f) {
+      f.phase += dt * f.speed;
+      var driftX = Math.sin(f.phase) * 14;
+      var driftY = Math.cos(f.phase * 1.3) * 8;
+      var x = f.xFrac * W + driftX;
+      var y = self.depthToScreenY(f.depth) - 20 + driftY;
+      var twinkle = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(f.phase * 3));
+      var a = weight * twinkle;
+      self.firefliesGfx.fillStyle(0xfff3b0, a * 0.25);
+      self.firefliesGfx.fillCircle(x, y, 6);
+      self.firefliesGfx.fillStyle(0xfff9d6, a);
+      self.firefliesGfx.fillCircle(x, y, 1.6);
+    });
+  };
+
+  MainScene.prototype.hideHint = function () {
+    var el = document.getElementById('hint');
+    if (el && !el.classList.contains('hidden')) el.classList.add('hidden');
+  };
+
+  // ==================================================================
+  // Input: reusable left-thumb D-pad + right-hand action button
+  // (touch-hardening patterns ported from asteroids-2.html)
+  // ==================================================================
+  var inputState = { up: false, down: false, left: false, right: false };
+  var kb = { up: false, down: false, left: false, right: false };
+  window.__paintedLandsInput = inputState;
+
+  function composeInput() {
+    inputState.up = kb.up || inputState.touchUp;
+    inputState.down = kb.down || inputState.touchDown;
+    inputState.left = kb.left || inputState.touchLeft;
+    inputState.right = kb.right || inputState.touchRight;
+  }
+  inputState.touchUp = inputState.touchDown = inputState.touchLeft = inputState.touchRight = false;
+
+  var HOLD_WATCHDOG_MS = 12000;
+  var heldZoneResets = [];
+
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
+  function bindHoldZone(el, setFlag) {
+    var activeId = null;
+    var watchdogTimer = null;
+    suppressCallout(el);
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+      setFlag(false);
+      composeInput();
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      Sound.startWind(650, 0.04);
+      hardRelease();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      setFlag(true);
+      composeInput();
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  }
+
+  bindHoldZone(document.getElementById('dpadUp'), function (v) { inputState.touchUp = v; });
+  bindHoldZone(document.getElementById('dpadDown'), function (v) { inputState.touchDown = v; });
+  bindHoldZone(document.getElementById('dpadLeft'), function (v) { inputState.touchLeft = v; });
+  bindHoldZone(document.getElementById('dpadRight'), function (v) { inputState.touchRight = v; });
+
+  (function bindActionButton() {
+    var el = document.getElementById('actionBtn');
+    var activeId = null;
+    var watchdogTimer = null;
+    suppressCallout(el);
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      Sound.startWind(650, 0.04);
+      hardRelease();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+      if (mainScene) {
+        mainScene.pulseAtFeet();
+        mainScene.cycleMood();
+      }
+    });
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  })();
+
+  function isUpKey(code) { return code === 'ArrowUp' || code === 'KeyW'; }
+  function isDownKey(code) { return code === 'ArrowDown' || code === 'KeyS'; }
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isActionKey(code) { return code === 'Space' || code === 'KeyZ' || code === 'KeyX' || code === 'KeyE'; }
+
+  document.addEventListener('keydown', function (e) {
+    Sound.ensureAudio();
+    Sound.startWind(650, 0.04);
+    if (isUpKey(e.code) || isDownKey(e.code) || isActionKey(e.code)) e.preventDefault();
+    if (isActionKey(e.code)) {
+      if (!e.repeat && mainScene) { mainScene.pulseAtFeet(); mainScene.cycleMood(); }
+      return;
+    }
+    if (e.repeat) return;
+    if (isUpKey(e.code)) { kb.up = true; composeInput(); }
+    else if (isDownKey(e.code)) { kb.down = true; composeInput(); }
+    else if (isLeftKey(e.code)) { kb.left = true; composeInput(); }
+    else if (isRightKey(e.code)) { kb.right = true; composeInput(); }
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (isUpKey(e.code)) { kb.up = false; composeInput(); }
+    else if (isDownKey(e.code)) { kb.down = false; composeInput(); }
+    else if (isLeftKey(e.code)) { kb.left = false; composeInput(); }
+    else if (isRightKey(e.code)) { kb.right = false; composeInput(); }
+  });
+
+  function forceReleaseKeyboard() {
+    if (kb.up || kb.down || kb.left || kb.right) {
+      kb.up = kb.down = kb.left = kb.right = false;
+      composeInput();
+    }
+  }
+
+  function forceReleaseAllInput() {
+    heldZoneResets.forEach(function (fn) { fn(); });
+    forceReleaseKeyboard();
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) forceReleaseAllInput();
+  });
+  window.addEventListener('blur', forceReleaseAllInput);
+
+  var controlBar = document.getElementById('controlBar');
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
+
+  // ==================================================================
+  // Prevent / auto-recover from accidental page pinch-zoom
+  // ==================================================================
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var resetTimer = null;
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+    function scheduleZoomCheck() {
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+  })();
+
+  setTimeout(function () {
+    var el = document.getElementById('hint');
+    if (el) el.classList.add('hidden');
+  }, 6000);
+
+  // ==================================================================
+  // Boot
+  // ==================================================================
+  var config = {
+    type: Phaser.AUTO,
+    parent: 'gameRoot',
+    backgroundColor: 0x0f172a,
+    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER },
+    scene: [MainScene],
+    disableContextMenu: true
+  };
+
+  new Phaser.Game(config);
+})();
+</script>
+</body>
+</html>
+</content>
