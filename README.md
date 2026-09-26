@@ -79,7 +79,34 @@ full-screen layout.
   shortcut
 - 3 lives, live score, and a persisted high score (saved locally)
 
-All four games share the same color palette and type system; the first
+### Painted Lands (Prototype)
+
+[`painted-lands.html`](painted-lands.html) &mdash; an early prototype for a
+different kind of game: no score, no fail state, just a single painterly
+scene to wander and a mood to shift. Built to try out two things before
+committing to a full game around them:
+
+- **A reusable NES-style controller** &mdash; the left-thumb turn zones from
+  Asteroids II extended into a proper 4-way D-pad, paired with one
+  right-hand action button. Same touch-hardening (pointer capture, stuck-hold
+  watchdogs, iOS long-press/callout suppression, pinch-zoom recovery) ported
+  over verbatim, plus a keyboard fallback (arrows/WASD to walk, Space/Z/X/E
+  for the action button)
+- **Simulated 3D, old-adventure-game style** &mdash; the D-pad's up/down
+  walks toward or away from the horizon; the character shrinks and slows
+  as it recedes, sized and positioned by a perspective trapezoid rather
+  than a real 3D camera. Distant hills drift at a different rate than the
+  ground when you move sideways, for cheap parallax depth
+- **Deep-color mood over detail** &mdash; the action button cross-fades the
+  whole scene through four hand-picked palettes (dawn/day/dusk/night),
+  swapping sky gradient, mountain silhouettes, ground tones, stars, and
+  fireflies together, so the "painting" feeling comes from color harmony
+  rather than pixel detail
+- Procedural ambience (looping filtered wind, a soft two-note chime on
+  each mood shift) via Web Audio, same zero-asset-files approach as the
+  other games
+
+All five games share the same color palette and type system; the first
 three additionally share a centered-card page layout, while Asteroids II
-breaks out to an edge-to-edge full-screen layout suited to its controls.
-Every screen links back to the games hub.
+and Painted Lands break out to an edge-to-edge full-screen layout suited
+to their controls. Every screen links back to the games hub.
