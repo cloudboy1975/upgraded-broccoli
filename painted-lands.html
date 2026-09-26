@@ -102,47 +102,57 @@
   }
   .control-bar > * { pointer-events: auto; }
 
-  /* ---- Left thumb: NES-style D-pad, cross of 4 hold-zones ---- */
-  .dpad {
-    display: grid;
-    grid-template-columns: 54px 54px 54px;
-    grid-template-rows: 54px 54px 54px;
-    gap: 4px;
+  /* ---- Left thumb: analog stick, simulated at the point of touch ----
+     Wherever the thumb first lands becomes the stick's neutral center
+     for that press (no fixed base to hunt for) - ported from the
+     touch-point-anchored thumbstick in head-on.html, extended from its
+     1-axis left/right toggle to a full 2-axis analog vector so walking
+     speed scales with how far off-center the thumb sits. */
+  .stick-zone {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: rgba(20, 16, 12, 0.4);
+    border: 1px solid rgba(241, 233, 220, 0.15);
     flex-shrink: 0;
-  }
-  .dpad-btn {
-    border: none;
-    outline: none;
-    background: rgba(20, 16, 12, 0.55);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
     touch-action: none;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
     -webkit-user-drag: none;
-    transition: background 0.1s, transform 0.08s;
+    overflow: visible;
   }
-  .dpad-btn:active, .dpad-btn.active { background: rgba(60, 48, 34, 0.85); transform: scale(0.94); }
-  .dpad-up { grid-column: 2; grid-row: 1; }
-  .dpad-left { grid-column: 1; grid-row: 2; }
-  .dpad-hub {
-    grid-column: 2; grid-row: 2;
-    display: flex; align-items: center; justify-content: center;
+  .stick-anchor {
+    position: absolute;
+    top: 0; left: 0;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.35);
     pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
   }
-  .dpad-hub-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(241, 233, 220, 0.25); }
-  .dpad-right { grid-column: 3; grid-row: 2; }
-  .dpad-down { grid-column: 2; grid-row: 3; }
+  .stick-anchor.visible { opacity: 1; }
 
-  .arrow { display: block; pointer-events: none; width: 0; height: 0; }
-  .arrow-up { border-left: 11px solid transparent; border-right: 11px solid transparent; border-bottom: 15px solid var(--text); }
-  .arrow-down { border-left: 11px solid transparent; border-right: 11px solid transparent; border-top: 15px solid var(--text); }
-  .arrow-left { border-top: 11px solid transparent; border-bottom: 11px solid transparent; border-right: 15px solid var(--text); }
-  .arrow-right { border-top: 11px solid transparent; border-bottom: 11px solid transparent; border-left: 15px solid var(--text); }
+  .stick-knob {
+    position: absolute;
+    top: 0; left: 0;
+    width: 50px;
+    height: 50px;
+    margin-left: -25px;
+    margin-top: -25px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.16);
+    border: 2px solid rgba(241, 233, 220, 0.45);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-knob.visible { opacity: 1; }
 
   /* ---- Center: current mood label ---- */
   .mood-status {
@@ -196,15 +206,12 @@
     <div class="proto-tag">prototype</div>
   </div>
 
-  <div class="hint" id="hint">Left thumb walks &middot; right button shifts the mood</div>
+  <div class="hint" id="hint">Push the left stick to walk &middot; right button shifts the mood</div>
 
   <div class="control-bar" id="controlBar">
-    <div class="dpad" id="dpad">
-      <button type="button" class="dpad-btn dpad-up" id="dpadUp" aria-label="Walk away"><span class="arrow arrow-up" aria-hidden="true"></span></button>
-      <button type="button" class="dpad-btn dpad-left" id="dpadLeft" aria-label="Walk left"><span class="arrow arrow-left" aria-hidden="true"></span></button>
-      <div class="dpad-hub" aria-hidden="true"><span class="dpad-hub-dot"></span></div>
-      <button type="button" class="dpad-btn dpad-right" id="dpadRight" aria-label="Walk right"><span class="arrow arrow-right" aria-hidden="true"></span></button>
-      <button type="button" class="dpad-btn dpad-down" id="dpadDown" aria-label="Walk toward you"><span class="arrow arrow-down" aria-hidden="true"></span></button>
+    <div class="stick-zone" id="stickZone" aria-label="Walk (press anywhere and drag)">
+      <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
+      <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
     </div>
 
     <div class="mood-status" id="moodStatus">Dusk</div>
@@ -376,6 +383,8 @@
 
     this.input.walking = false;
     this.updateMoodLabel(MOODS[this.moodIndex].name, 1);
+
+    window.__paintedLandsDebug = { scene: this };
   };
 
   MainScene.prototype.snapshotMood = function (mood) {
@@ -649,18 +658,19 @@
     var dt = Math.min(delta / 1000, 0.05);
     var input = window.__paintedLandsInput;
 
-    var moveX = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    var moveY = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-    var walking = moveX !== 0 || moveY !== 0;
+    // input.x / input.y are analog, each already clamped to [-1, 1] with
+    // combined magnitude <= 1 - see the stick binder below. Walking speed
+    // is directly proportional to that magnitude, not just its sign.
+    var moveX = input.x, moveY = input.y;
+    var magnitude = Math.hypot(moveX, moveY);
+    var walking = magnitude > 0.04;
 
     if (walking) {
-      var len = Math.hypot(moveX, moveY) || 1;
-      var nx = moveX / len, ny = moveY / len;
-      this.worldX = clamp(this.worldX + nx * MOVE_SPEED_X * dt, -1, 1);
-      this.depth = clamp(this.depth + ny * MOVE_SPEED_DEPTH * dt, 0, 1);
-      if (moveX > 0) this.flipX = false;
-      else if (moveX < 0) this.flipX = true;
-      this.bobPhase += dt * 9;
+      this.worldX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
+      this.depth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0, 1);
+      if (moveX > 0.08) this.flipX = false;
+      else if (moveX < -0.08) this.flipX = true;
+      this.bobPhase += dt * (6 + magnitude * 6);
       this.idlePhase = 0;
       this.hideHint();
     } else {
@@ -729,20 +739,34 @@
   };
 
   // ==================================================================
-  // Input: reusable left-thumb D-pad + right-hand action button
-  // (touch-hardening patterns ported from asteroids-2.html)
+  // Input: reusable left-thumb analog stick + right-hand action button
+  // (touch-hardening patterns ported from asteroids-2.html; the stick's
+  // touch-point-anchored center is ported from head-on.html's thumbstick
+  // zone, generalized from a 1-axis toggle to a 2-axis analog vector)
   // ==================================================================
-  var inputState = { up: false, down: false, left: false, right: false };
-  var kb = { up: false, down: false, left: false, right: false };
+  var inputState = { x: 0, y: 0 };
   window.__paintedLandsInput = inputState;
 
+  var touchX = 0, touchY = 0; // from the stick, each already in [-1, 1]
+  var kb = { up: false, down: false, left: false, right: false };
+  var kbX = 0, kbY = 0;
+
   function composeInput() {
-    inputState.up = kb.up || inputState.touchUp;
-    inputState.down = kb.down || inputState.touchDown;
-    inputState.left = kb.left || inputState.touchLeft;
-    inputState.right = kb.right || inputState.touchRight;
+    var x = touchX + kbX, y = touchY + kbY;
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    inputState.x = x;
+    inputState.y = y;
   }
-  inputState.touchUp = inputState.touchDown = inputState.touchLeft = inputState.touchRight = false;
+
+  function updateKbVector() {
+    var x = (kb.right ? 1 : 0) - (kb.left ? 1 : 0);
+    var y = (kb.down ? 1 : 0) - (kb.up ? 1 : 0);
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    kbX = x; kbY = y;
+    composeInput();
+  }
 
   var HOLD_WATCHDOG_MS = 12000;
   var heldZoneResets = [];
@@ -751,17 +775,40 @@
     el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
   }
 
-  function bindHoldZone(el, setFlag) {
+  // Stick radius in px: how far the thumb has to travel from its
+  // press-down point to reach full speed. Displacement beyond this is
+  // clamped (the knob stops following), same as a real stick's hard
+  // stop, and the vector magnitude at that point is exactly 1.
+  var STICK_MAX_RADIUS_PX = 44;
+
+  function bindThumbstick(el, anchorEl, knobEl) {
     var activeId = null;
     var watchdogTimer = null;
+    var anchorX = 0, anchorY = 0;
+
     suppressCallout(el);
+
+    function applyVector(clientX, clientY) {
+      var dx = clientX - anchorX, dy = clientY - anchorY;
+      var dist = Math.hypot(dx, dy);
+      var clamped = Math.min(dist, STICK_MAX_RADIUS_PX);
+      var kx = dist > 0 ? (dx / dist) * clamped : 0;
+      var ky = dist > 0 ? (dy / dist) * clamped : 0;
+      knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+      touchX = kx / STICK_MAX_RADIUS_PX;
+      touchY = ky / STICK_MAX_RADIUS_PX;
+      composeInput();
+    }
 
     function hardRelease() {
       if (activeId === null) return;
       activeId = null;
       clearTimeout(watchdogTimer);
       el.classList.remove('active');
-      setFlag(false);
+      anchorEl.classList.remove('visible');
+      knobEl.classList.remove('visible');
+      knobEl.style.transform = 'translate(0px, 0px)';
+      touchX = 0; touchY = 0;
       composeInput();
     }
 
@@ -769,15 +816,32 @@
       e.preventDefault();
       Sound.ensureAudio();
       Sound.startWind(650, 0.04);
-      hardRelease();
+      hardRelease(); // release any stale/stuck session instead of ignoring the new press
       activeId = e.pointerId;
       try { el.setPointerCapture(activeId); } catch (err) {}
       el.classList.add('active');
-      setFlag(true);
+      var rect = el.getBoundingClientRect();
+      anchorX = e.clientX; // this touch becomes the stick's center, for this press only
+      anchorY = e.clientY;
+      var localX = anchorX - rect.left, localY = anchorY - rect.top;
+      anchorEl.style.left = localX + 'px';
+      anchorEl.style.top = localY + 'px';
+      knobEl.style.left = localX + 'px';
+      knobEl.style.top = localY + 'px';
+      knobEl.style.transform = 'translate(0px, 0px)';
+      anchorEl.classList.add('visible');
+      knobEl.classList.add('visible');
+      touchX = 0; touchY = 0;
       composeInput();
       clearTimeout(watchdogTimer);
       watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
     });
+
+    el.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== activeId) return;
+      applyVector(e.clientX, e.clientY);
+    });
+
     function release(e) {
       if (e.pointerId !== activeId) return;
       hardRelease();
@@ -789,10 +853,11 @@
     heldZoneResets.push(hardRelease);
   }
 
-  bindHoldZone(document.getElementById('dpadUp'), function (v) { inputState.touchUp = v; });
-  bindHoldZone(document.getElementById('dpadDown'), function (v) { inputState.touchDown = v; });
-  bindHoldZone(document.getElementById('dpadLeft'), function (v) { inputState.touchLeft = v; });
-  bindHoldZone(document.getElementById('dpadRight'), function (v) { inputState.touchRight = v; });
+  bindThumbstick(
+    document.getElementById('stickZone'),
+    document.getElementById('stickAnchor'),
+    document.getElementById('stickKnob')
+  );
 
   (function bindActionButton() {
     var el = document.getElementById('actionBtn');
@@ -848,23 +913,23 @@
       return;
     }
     if (e.repeat) return;
-    if (isUpKey(e.code)) { kb.up = true; composeInput(); }
-    else if (isDownKey(e.code)) { kb.down = true; composeInput(); }
-    else if (isLeftKey(e.code)) { kb.left = true; composeInput(); }
-    else if (isRightKey(e.code)) { kb.right = true; composeInput(); }
+    if (isUpKey(e.code)) { kb.up = true; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = true; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = true; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = true; updateKbVector(); }
   });
 
   document.addEventListener('keyup', function (e) {
-    if (isUpKey(e.code)) { kb.up = false; composeInput(); }
-    else if (isDownKey(e.code)) { kb.down = false; composeInput(); }
-    else if (isLeftKey(e.code)) { kb.left = false; composeInput(); }
-    else if (isRightKey(e.code)) { kb.right = false; composeInput(); }
+    if (isUpKey(e.code)) { kb.up = false; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = false; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = false; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = false; updateKbVector(); }
   });
 
   function forceReleaseKeyboard() {
     if (kb.up || kb.down || kb.left || kb.right) {
       kb.up = kb.down = kb.left = kb.right = false;
-      composeInput();
+      updateKbVector();
     }
   }
 
