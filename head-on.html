@@ -1549,6 +1549,32 @@
   var COLOR_BOSS_HULL_BARE = 0xa78bfa; // the same body once the shielding is gone: visibly pale and soft
   var COLOR_BOSS_TENTACLE = 0x4c1d95;  // the arm the plates are bolted to, drawn under them
   var COLOR_BOSS_EYE = 0xfbbf24;
+  var COLOR_BOSS_CORE_SOCKET = 0x0f172a; // the dark floor a core's light sits in, and all that is left once it's out
+
+  // ---- Telling the player a hit landed -----------------------------------
+  // Every part of him answers a hit twice: once immediately (a white
+  // flash and, on a core, a kick outward) and once cumulatively (the
+  // core's light recedes, the plates crack, the hull dims toward
+  // dead). The immediate half says "that one counted"; the cumulative
+  // half says "you are getting somewhere", and a boss with a 26-hit hull
+  // needs the second one or the last stretch of the fight is a blank wall
+  // you shoot at on faith.
+  var BOSS_FLASH_DURATION = 0.14;   // seconds a struck part stays lit white
+  var BOSS_CORE_POP_DURATION = 0.2; // ...and how long its impact kick takes to settle
+  var BOSS_CORE_POP_SCALE = 0.45;   // extra scale on the disc at the instant of impact
+  var BOSS_CORE_DRAIN_MIN = 0.32;   // how small a core's light gets on its LAST hit point, as a fraction of full
+  var COLOR_BOSS_FLASH = 0xffffff;
+  // What the bare hull is tinted toward as it is shot to pieces. Chosen
+  // by rendering the whole 26-hit range in four candidates side by side:
+  //   a light red   went PALER as he died - it read as charging up
+  //   a deep crimson worked, but landed on the home world's own red, and
+  //                 he is flying in front of it
+  //   an ember orange read loudest, and orange in this game already means
+  //                 hazard - it is the enemy bullet and the engine flame
+  // A dim slate-violet is the one that reads as the light going out of
+  // him, stays distinct from the planet behind him, and gives the white
+  // hit flash the most to pop against.
+  var COLOR_BOSS_HULL_SPENT = 0x4c3a52;
 
   // One volley of meteors, in the same shape as the sortie and fly-in
   // books above: each pattern only decides WHERE rock enters and how it
@@ -1978,6 +2004,20 @@
   // so they test each axis with this rather than as circles.
   function spanHit(a, b, halfSpan) {
     return Math.abs(a - b) <= halfSpan;
+  }
+
+  // Blends two packed 0xRRGGBB colours, per channel. Used for the boss's
+  // hull darkening as it takes damage - a tint that steps between two
+  // fixed colours reads as a state change, where a continuous one reads
+  // as wear.
+  function mixColor(a, b, t) {
+    t = clamp(t, 0, 1);
+    var out = 0;
+    for (var shift = 16; shift >= 0; shift -= 8) {
+      var ca = (a >> shift) & 0xff, cb = (b >> shift) & 0xff;
+      out |= Math.round(ca + (cb - ca) * t) << shift;
+    }
+    return out;
   }
 
   // Circle-vs-ellipse, for the one thing in the game that is not round:
@@ -2467,28 +2507,29 @@
     bakeBossBody('bossHullTex', COLOR_BOSS_HULL, COLOR_BOSS_HULL_LIT);
     bakeBossBody('bossHullBareTex', COLOR_BOSS_HULL_BARE, COLOR_BOSS_HULL);
 
-    // A belly core, one per colour: a bright disc of that colour ringed in
-    // the hull tone, so it reads as set INTO him rather than stuck on.
-    // Only a matching orbiter can touch one - see orbiterVsBossCores().
+    // A belly core is TWO sprites, not one: a fixed socket, and a lit disc
+    // sitting in it that shrinks as the core is drained (see layoutBoss()).
+    // That split is the whole point - a single texture can only swap
+    // between states, so a core could say "full" or "dead" and nothing in
+    // between, and four of its five hits would land with nothing to show
+    // for them. With a fixed rim to shrink against, every hit is visible
+    // as the light receding into the hull.
+    var coreTexSize = BOSS_CORE_RADIUS * 2 + 6;
+    bakeTexture(self, 'bossCoreSocketTex', coreTexSize, coreTexSize, function (g) {
+      var c = coreTexSize / 2;
+      g.fillStyle(COLOR_BOSS_HULL, 1);
+      g.fillCircle(c, c, BOSS_CORE_RADIUS + 3);
+      g.fillStyle(COLOR_BOSS_CORE_SOCKET, 1);
+      g.fillCircle(c, c, BOSS_CORE_RADIUS);
+    });
     STRIP_COLOR_KEYS.forEach(function (key) {
-      var size = BOSS_CORE_RADIUS * 2 + 6;
-      bakeTexture(self, 'bossCoreTex_' + key, size, size, function (g) {
-        var c = size / 2;
-        g.fillStyle(COLOR_BOSS_HULL, 1);
-        g.fillCircle(c, c, BOSS_CORE_RADIUS + 3);
+      bakeTexture(self, 'bossCoreTex_' + key, coreTexSize, coreTexSize, function (g) {
+        var c = coreTexSize / 2;
         g.fillStyle(STRIP_COLORS[key], 0.95);
         g.fillCircle(c, c, BOSS_CORE_RADIUS);
         g.fillStyle(0xffffff, 0.55);
         g.fillCircle(c - BOSS_CORE_RADIUS * 0.3, c - BOSS_CORE_RADIUS * 0.3, BOSS_CORE_RADIUS * 0.34);
       });
-    });
-    // A deadened core: the same socket with the light gone out of it.
-    bakeTexture(self, 'bossCoreDeadTex', BOSS_CORE_RADIUS * 2 + 6, BOSS_CORE_RADIUS * 2 + 6, function (g) {
-      var c = BOSS_CORE_RADIUS + 3;
-      g.fillStyle(COLOR_BOSS_HULL, 1);
-      g.fillCircle(c, c, BOSS_CORE_RADIUS + 3);
-      g.fillStyle(0x0f172a, 1);
-      g.fillCircle(c, c, BOSS_CORE_RADIUS);
     });
 
     // Tentacle armour plates. Deliberately NOT the colour-bar segment
@@ -3934,6 +3975,10 @@
       return {
         colorKey: key, ox: ox, oy: BOSS_CORE_DY,
         hp: hp, maxHp: hp, alive: true,
+        flash: 0, // 1 at the instant of a hit, decayed to 0 by updateBoss()
+        // Socket first, so the light draws over it. A dead core is simply
+        // this one on its own - there is no separate "dead" texture.
+        socketSprite: self.add.sprite(0, 0, 'bossCoreSocketTex'),
         sprite: self.add.sprite(0, 0, 'bossCoreTex_' + key)
       };
     });
@@ -3952,6 +3997,7 @@
         var brick = {
           colorKey: key, side: side, ox: ox, oy: oy,
           hp: hp, maxHp: hp, alive: true,
+          flash: 0, // same one-frame "that landed" cue the cores and the hull get
           sprite: self.add.sprite(0, 0, 'bossArmourTex_' + key),
           crackSprite: self.add.sprite(0, 0, 'bossArmourCrackTex')
         };
@@ -3994,6 +4040,7 @@
       y: PLANET_Y,
       driftPhase: 0,
       hullHp: Math.max(1, Math.round(TUNING.bossHullHp)),
+      hullFlash: 0, // 1 at the instant of a hull hit, decayed to 0 by updateBoss()
       addTimer: BOSS_FIRST_ADD_DELAY,
       addsSpawned: 0,
       sprite: body,
@@ -4043,10 +4090,22 @@
     });
 
     boss.cores.forEach(function (c) {
-      c.sprite.x = boss.x + c.ox * scale;
-      c.sprite.y = boss.y + c.oy * scale;
-      c.sprite.setScale(scale);
+      var x = boss.x + c.ox * scale, y = boss.y + c.oy * scale;
+      c.socketSprite.x = c.sprite.x = x;
+      c.socketSprite.y = c.sprite.y = y;
+      c.socketSprite.setScale(scale);
+      c.socketSprite.setAlpha(boss.sprite.alpha);
+      // The light: gone entirely when the core is dead, otherwise sized
+      // by how much of the core is left, plus a brief kick outward at the
+      // moment of impact. The socket behind it never moves, so the
+      // shrinking is measured against a fixed rim rather than against
+      // nothing.
+      c.sprite.setVisible(c.alive);
+      if (!c.alive) return;
+      var drain = BOSS_CORE_DRAIN_MIN + (1 - BOSS_CORE_DRAIN_MIN) * (Math.max(0, c.hp) / c.maxHp);
+      c.sprite.setScale(scale * (drain + BOSS_CORE_POP_SCALE * c.flash));
       c.sprite.setAlpha(boss.sprite.alpha);
+      setBossFlash(c.sprite, c.flash);
     });
     boss.bricks.forEach(function (b) {
       if (!b.alive) return;
@@ -4055,8 +4114,43 @@
       b.sprite.setScale(scale);
       b.crackSprite.setScale(scale);
       b.sprite.setAlpha(boss.sprite.alpha);
+      setBossFlash(b.sprite, b.flash);
     });
   };
+
+  // The body's own two cues. While he is still armoured there is nothing
+  // to show - ordinary fire cannot touch him, and a hull that flinched at
+  // shots doing nothing would be a lie about what is working. Once he is
+  // bare, every hit flashes him white and the accumulated damage dims
+  // him steadily toward dead, so 26 hits read as a visible slide rather
+  // than as 25 nothings and a death.
+  MainScene.prototype.paintBossHull = function () {
+    var boss = this.state.boss;
+    if (!boss) return;
+    if (boss.hullFlash > 0.35) { boss.sprite.setTintFill(COLOR_BOSS_FLASH); return; }
+    // No "only once exposed" guard, deliberately: nothing can take the
+    // hull's hp down while he is still armoured, so hurt is 0 and the
+    // tint is plain white until the moment ordinary fire starts landing.
+    // One expression covers both states, and the guard that used to be
+    // here changed nothing - which is how the mutation test found it.
+    var maxHp = Math.max(1, Math.round(TUNING.bossHullHp));
+    var hurt = clamp(1 - boss.hullHp / maxHp, 0, 1);
+    boss.sprite.setTint(mixColor(0xffffff, COLOR_BOSS_HULL_SPENT, hurt));
+  };
+
+  // One white frame on the part that was hit. setTintFill replaces the
+  // sprite's colours outright rather than multiplying them, which is what
+  // makes this read at a glance on a busy screen - a multiplied tint over
+  // an already-bright core is barely a change.
+  //
+  // Held solid for the first part of the decay and then released, instead
+  // of fading out: a flash that eases away reads as a glow, and a glow
+  // reads as a state ("this one is special") rather than as an event
+  // ("that shot landed").
+  function setBossFlash(sprite, flash) {
+    if (flash > 0.35) sprite.setTintFill(COLOR_BOSS_FLASH);
+    else sprite.clearTint();
+  }
 
   // How much of his shielding is left, 0 to 1 - cores and plates pooled,
   // by hit points rather than by piece, so chipping a plate counts for
@@ -4158,6 +4252,7 @@
         boss.addTimer = this.bossAddInterval();
       }
       boss.sprite.setTexture(this.bossExposed() ? 'bossHullBareTex' : 'bossHullTex');
+      this.paintBossHull();
     } else {
       // Dying: he judders in place and fades, and the adds he already put
       // in the air are left to be dodged or shot - the fight doesn't end
@@ -4167,6 +4262,15 @@
                (Math.random() * 2 - 1) * BOSS_DEATH_SHAKE;
       boss.sprite.setAlpha(1 - dt2);
     }
+
+    // Decay every hit cue, here rather than in layoutBoss(): layout runs
+    // whenever something needs repositioning, and a flash tied to that
+    // would last a different length of time depending on how often that
+    // happened to be.
+    var fade = dt / BOSS_FLASH_DURATION, pop = dt / BOSS_CORE_POP_DURATION;
+    boss.hullFlash = Math.max(0, (boss.hullFlash || 0) - fade);
+    boss.cores.forEach(function (c) { c.flash = Math.max(0, c.flash - pop); });
+    boss.bricks.forEach(function (b) { b.flash = Math.max(0, b.flash - fade); });
 
     // Dead adds pile up in state.formation otherwise - nothing else in the
     // game ever removes a slot, because a wave's array is thrown away
@@ -4190,6 +4294,13 @@
     var boss = this.state.boss;
     boss.phase = 'dying';
     boss.age = 0;
+    // Settle him on the spent colour for the fade. paintBossHull() only
+    // runs in the 'fight' branch, so whatever tint the killing frame left
+    // would otherwise stick for the whole death - and that frame is a hull
+    // hit, so it would be the white flash: a solid white silhouette fading
+    // out, with his shape gone.
+    boss.hullFlash = 0;
+    boss.sprite.setTint(COLOR_BOSS_HULL_SPENT);
     this.triggerStarburst(boss.x, boss.y, {
       awardScore: true,
       brickDamage: 0, // the bars are off screen for this fight - see startBoss()
@@ -4203,7 +4314,7 @@
     if (!boss) return;
     boss.sprite.destroy();
     boss.arms.forEach(function (a) { a.destroy(); });
-    boss.cores.forEach(function (c) { c.sprite.destroy(); });
+    boss.cores.forEach(function (c) { c.sprite.destroy(); c.socketSprite.destroy(); });
     boss.bricks.forEach(function (b) {
       if (!b.alive) return; // a broken plate destroyed its own sprites already
       b.sprite.destroy();
@@ -4293,10 +4404,10 @@
       var cx = boss.x + c.ox, cy = boss.y + c.oy;
       if (!circleHit(o.x, o.y, cx, cy, BOSS_CORE_RADIUS + orbiterRadius())) continue;
       c.hp--;
+      c.flash = 1; // layoutBoss() turns this into the white frame and the kick
       this.triggerShieldFizzle(cx, cy, c.colorKey);
       if (c.hp <= 0) {
-        c.alive = false;
-        c.sprite.setTexture('bossCoreDeadTex');
+        c.alive = false; // layoutBoss() hides the light, leaving the empty socket
         this.addScore(BOSS_CORE_SCORE);
       }
       return true;
@@ -4331,6 +4442,7 @@
 
   MainScene.prototype.pulseDamagesBossBrick = function (b, br, level) {
     br.hp -= level;
+    br.flash = 1;
     b.trailLevels[br.colorKey] = 0;
     if (b.trailSprites[br.colorKey]) {
       b.trailSprites[br.colorKey].destroy();
@@ -4362,6 +4474,7 @@
       if (!br.alive || br.colorKey !== bolt.colorKey) continue;
       if (!spanHit(bolt.sprite.x, boss.x + br.ox, BOSS_ARMOUR_W / 2 + POWERUP_BOLT_WIDTH / 2)) continue;
       br.hp -= POWERUP_BOLT_TICK_DAMAGE;
+      br.flash = 1;
       if (br.hp > 0) { this.updateBossBrickCrack(br); continue; }
       br.alive = false;
       br.sprite.destroy();
@@ -4384,6 +4497,8 @@
     destroyBulletSprites(b);
     state.bullets.splice(bi, 1);
     boss.hullHp--;
+    boss.hullFlash = 1;
+    this.paintBossHull(); // immediately, so the flash lands on THIS frame rather than the next
     this.triggerBrickFizzle(b.x, b.y);
     if (boss.hullHp <= 0) this.startBossDeath();
     return true;

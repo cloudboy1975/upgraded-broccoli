@@ -219,17 +219,125 @@ harness.run(async (page, check, ctx) => {
     const hits = [];
     for (let i = 0; i < c.maxHp + 2; i++) {
       const hit = scene.orbiterVsBossCores(orbiterAt(boss.x + c.ox, boss.y + c.oy, c.colorKey));
-      hits.push({ hit, hp: c.hp, alive: c.alive });
+      scene.layoutBoss();
+      hits.push({ hit, hp: c.hp, alive: c.alive, light: +c.sprite.scaleX.toFixed(3),
+                  lit: c.sprite.visible });
     }
-    ({ maxHp: c.maxHp, hits, texture: c.sprite.texture.key, score: state.score });
+    ({ maxHp: c.maxHp, hits, socket: c.socketSprite.visible, score: state.score });
   `);
   check('a core takes exactly its tuned number of matching hits to deaden',
     coreKill.hits[coreKill.maxHp - 1].alive === false &&
     coreKill.hits[coreKill.maxHp - 2].alive === true, coreKill.hits);
   check('a deadened core stops responding to further hits',
     coreKill.hits.slice(coreKill.maxHp).every(h => h.hit === false), coreKill.hits);
-  check('it visibly goes out', coreKill.texture === 'bossCoreDeadTex', coreKill);
+  check('it visibly goes out, leaving the empty socket behind',
+    coreKill.hits[coreKill.maxHp - 1].lit === false && coreKill.socket === true, coreKill);
   check('and killing it scores', coreKill.score > 0, coreKill);
+
+  // --- telling the player a hit landed ------------------------------------
+  // A core takes five hits and a hull twenty-six. Without these, four
+  // fifths of the core work and twenty-five twenty-sixths of the hull
+  // work land with nothing on screen to show for them - which is what
+  // "the missiles just disappear into the orbs" is.
+  const drain = await page.evaluate(FIGHT(ALL, ALL) + ORBITER_AT + `
+    const c = boss.cores[0];
+    const settle = () => { // let the impact kick decay so this measures the DRAIN
+      for (let i = 0; i < 40; i++) window.__headOnDebug.stepBoss(0.016);
+    };
+    settle();
+    const sizes = [+c.sprite.scaleX.toFixed(4)];
+    const popped = [];
+    for (let i = 0; i < c.maxHp; i++) {
+      scene.orbiterVsBossCores(orbiterAt(boss.x + c.ox, boss.y + c.oy, c.colorKey));
+      window.__headOnDebug.stepBoss(0.016);
+      popped.push(+c.sprite.scaleX.toFixed(4)); // mid-kick
+      settle();
+      if (c.alive) sizes.push(+c.sprite.scaleX.toFixed(4));
+    }
+    ({ sizes, popped, socketFixed: +c.socketSprite.scaleX.toFixed(4) });
+  `);
+  check('every hit on a core visibly shrinks its light, not just the last one',
+    drain.sizes.length === tune.core &&
+    drain.sizes.every((v, i) => i === 0 || v < drain.sizes[i - 1]), drain.sizes);
+  check('and the socket it sits in does not move, so the shrinking has a rim to read against',
+    drain.socketFixed === 1, drain);
+  check('a hit also kicks the light outward for a moment',
+    drain.popped[0] > drain.sizes[0], drain);
+
+  const flashes = await page.evaluate(FIGHT(ALL, ALL) + ORBITER_AT + BULLET_AT + `
+    const lit = s => ({ tinted: s.isTinted, fill: s.tintFill, tint: s.tintTopLeft });
+    const c = boss.cores[0], br = boss.bricks[0];
+
+    scene.orbiterVsBossCores(orbiterAt(boss.x + c.ox, boss.y + c.oy, c.colorKey));
+    window.__headOnDebug.stepBoss(0.016);
+    const coreOn = lit(c.sprite);
+    for (let i = 0; i < 40; i++) window.__headOnDebug.stepBoss(0.016);
+    const coreOff = lit(c.sprite);
+
+    const bullet = bulletAt(boss.x + br.ox, boss.y + br.oy, { [br.colorKey]: 1 });
+    scene.pulseTrailVsBossArmour(bullet);
+    window.__headOnDebug.stepBoss(0.016);
+    const plateOn = lit(br.sprite);
+    for (let i = 0; i < 40; i++) window.__headOnDebug.stepBoss(0.016);
+    const plateOff = lit(br.sprite);
+
+    ({ coreOn, coreOff, plateOn, plateOff });
+  `);
+  check('a struck core flashes white', flashes.coreOn.fill === true, flashes);
+  check('and stops', flashes.coreOff.tinted === false, flashes);
+  check('a struck plate flashes too', flashes.plateOn.fill === true, flashes);
+  check('and stops', flashes.plateOff.tinted === false, flashes);
+
+  const hullCues = await page.evaluate(FIGHT(ALL, ALL) + BULLET_AT + `
+    const lit = () => ({ tinted: boss.sprite.isTinted, fill: boss.sprite.tintFill,
+                         tint: boss.sprite.tintTopLeft });
+    // A shot that bounces off the sealed hull is NOT consumed - it flies
+    // on, and stepBoss() runs a full collision pass, so one left sitting
+    // in the air lands the moment the last plate breaks. That is correct
+    // in play and wrong in a test that wants a clean reading of each
+    // state, hence the sweep between probes.
+    const clearShots = () => { state.bullets.forEach(b => b.sprite.destroy()); state.bullets = []; };
+
+    // Sealed: ordinary fire does nothing to him, so he must not flinch.
+    scene.bulletVsBossHull(bulletAt(boss.x, boss.y, {}), state.bullets.length - 1);
+    window.__headOnDebug.stepBoss(0.016);
+    const sealed = lit();
+    clearShots();
+
+    boss.cores.forEach(c => { c.hp = 0; c.alive = false; });
+    boss.bricks.forEach(b => { b.hp = 0; b.alive = false; b.sprite.destroy(); b.crackSprite.destroy(); });
+    window.__headOnDebug.stepBoss(0.016);
+    const bare = lit();
+
+    scene.bulletVsBossHull(bulletAt(boss.x, boss.y, {}), state.bullets.length - 1);
+    const struck = lit(); // paintBossHull() runs on the hit itself, not a frame later
+    for (let i = 0; i < 40; i++) window.__headOnDebug.stepBoss(0.016);
+    const settled = lit();
+
+    // ...and the burn deepens as he is worn down.
+    const burn = [];
+    for (let i = 0; i < 5; i++) {
+      boss.hullHp = Math.max(1, boss.hullHp - 4);
+      boss.hullFlash = 0;
+      scene.paintBossHull();
+      burn.push(boss.sprite.tintTopLeft);
+    }
+    ({ sealed, bare, struck, settled, burn, hullHp: boss.hullHp });
+  `);
+  // Not "is it tinted" - a neutral white tint and no tint at all render
+  // identically, so that would pass for free. What matters is that fire
+  // which does nothing to him produces no FLASH, and that an undamaged
+  // hull is drawn in its own colours whatever state it is in.
+  check('an armoured hull does not flinch at fire that cannot hurt it',
+    hullCues.sealed.fill === false && hullCues.sealed.tint === 0xffffff, hullCues);
+  check('and an unhurt bare hull is not drawn as damaged either',
+    hullCues.bare.fill === false && hullCues.bare.tint === 0xffffff, hullCues);
+  check('a bare hull flashes white on the frame it is hit',
+    hullCues.struck.fill === true, hullCues);
+  check('and settles back out of the flash', hullCues.settled.fill === false, hullCues);
+  check('the bare hull darkens steadily as it is worn down',
+    hullCues.burn.every((v, i) => i === 0 || v < hullCues.burn[i - 1]) &&
+    hullCues.burn[0] !== hullCues.bare.tint, hullCues.burn);
 
   // The homing has to know about cores, or hitting one would be luck.
   const seek = await page.evaluate(FIGHT(ALL, ALL) + ORBITER_AT + `
