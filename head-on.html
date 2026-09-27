@@ -4347,12 +4347,37 @@
   // and lets you dial that in rather than starting from whatever you
   // happened to be carrying.
 
+  // Opens from a live run OR from a finished one. Refusing on game over
+  // meant restarting by hand and then clearing a wave before the button
+  // did anything, which is exactly the friction this exists to remove.
+  //
+  // The two cases differ in one way only: a live run has to be PAUSED so
+  // the loadout you pick is the loadout you arrive with, and a finished
+  // one is already stopped. The restart is deliberately deferred to the
+  // Fight button rather than done here, so Cancel leaves the game-over
+  // screen exactly as it was instead of silently throwing the run away.
   MainScene.prototype.openBossSetup = function () {
     var state = this.state;
-    if (state.phase !== 'playing') return false;
-    state.phase = 'paused'; // update() gates on 'playing', so this freezes everything by itself
-    forceReleaseAllInput(); // or a held fire button resumes firing into the fight
     var el = document.getElementById('bossSetupOverlay');
+    // Guarded on the CHOOSER, not on the phase. The lab sits above every
+    // overlay (z-index 50), so it can be reopened over the chooser with
+    // the backquote key and this button pressed a second time - and on
+    // the game-over path the phase is still 'gameover' at that point, so
+    // a phase guard would wave it straight through. The second open would
+    // then recompute bossSetupHidGameOver against an already-hidden
+    // overlay, and Cancel would never put the game-over screen back.
+    if (el && el.classList.contains('visible')) return false;
+    this.bossSetupFrom = state.phase;
+    if (state.phase === 'playing') {
+      state.phase = 'paused'; // update() gates on 'playing', so this freezes everything by itself
+      forceReleaseAllInput(); // or a held fire button resumes firing into the fight
+    }
+    // Both overlays are full-bleed and translucent, and the game-over one
+    // is later in the DOM, so leaving it up would paint over the chooser
+    // (and show through it where it didn't). It comes back on Cancel.
+    var over = document.getElementById('gameOverOverlay');
+    this.bossSetupHidGameOver = !!over && over.classList.contains('visible');
+    if (this.bossSetupHidGameOver) over.classList.remove('visible');
     if (el) el.classList.add('visible');
     this.renderHud();
     return true;
@@ -4361,11 +4386,22 @@
   MainScene.prototype.closeBossSetup = function (loadout) {
     var el = document.getElementById('bossSetupOverlay');
     if (el) el.classList.remove('visible');
-    if (this.state.phase === 'paused') this.state.phase = 'playing';
     if (loadout) {
+      // A finished run has nothing to fight in - no lives, no bars, and
+      // the game-over overlay still up - so it is restarted first.
+      // resetGame() puts all of that back and clears the overlay itself.
+      if (this.bossSetupFrom === 'gameover') this.resetGame();
+      if (this.state.phase === 'paused') this.state.phase = 'playing';
       this.applyBossLoadout(loadout);
       this.startBoss();
+    } else {
+      if (this.state.phase === 'paused') this.state.phase = 'playing';
+      if (this.bossSetupHidGameOver) {
+        document.getElementById('gameOverOverlay').classList.add('visible');
+      }
     }
+    this.bossSetupFrom = null;
+    this.bossSetupHidGameOver = false;
     this.renderHud();
   };
 
@@ -7319,7 +7355,9 @@
     buildBossSetup();
 
     document.getElementById('labBossNowBtn').addEventListener('click', function () {
-      if (!mainScene || mainScene.state.phase !== 'playing') return;
+      // No phase check here - openBossSetup() owns that, and it takes a
+      // finished run as well as a live one.
+      if (!mainScene) return;
       if (mainScene.state.challenge || mainScene.state.boss) return;
       setLabOpen(false);
       mainScene.openBossSetup();

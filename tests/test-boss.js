@@ -716,6 +716,130 @@ harness.run(async (page, check, ctx) => {
   check('Cancel resumes without starting anything',
     frozen.resumed === 'playing' && frozen.boss === false, frozen);
 
+  // ...and it opens from a finished run too, which is the case that
+  // matters most for playtesting: the run you want to try the fight
+  // from is usually the one that just killed you.
+  const fromOver = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    scene.resetGame();
+    state.lives = 1;
+    scene.shipHit('test');
+    const dead = { phase: state.phase, lives: state.lives,
+                   overlay: document.getElementById('gameOverOverlay').classList.contains('visible') };
+    const opened = scene.openBossSetup();
+    const chooser = {
+      opened,
+      chooser: document.getElementById('bossSetupOverlay').classList.contains('visible'),
+      // The game-over screen is later in the DOM and just as full-bleed,
+      // so it has to be out of the way or it paints over the chooser.
+      gameOver: document.getElementById('gameOverOverlay').classList.contains('visible'),
+      phase: state.phase
+    };
+    scene.closeBossSetup({ orbs: { red: 1, green: 1, blue: 0 }, fire: { red: 0, green: 0, blue: 2 } });
+    return { dead, chooser, after: {
+      phase: state.phase, boss: !!state.boss, lives: state.lives, wave: state.wave, score: state.score,
+      overlay: document.getElementById('gameOverOverlay').classList.contains('visible'),
+      chooser: document.getElementById('bossSetupOverlay').classList.contains('visible'),
+      bars: state.colorBars.filter(b => b.alive).length,
+      dots: state.powerup.dots.map(d => d.colorKey).sort(),
+      levels: Object.assign({}, state.colorLevels)
+    } };
+  });
+  check('the run really was over before this', fromOver.dead.phase === 'gameover' && fromOver.dead.overlay, fromOver.dead);
+  check('the chooser opens from a finished run', fromOver.chooser.opened && fromOver.chooser.chooser, fromOver.chooser);
+  check('and the game-over screen gets out of its way', fromOver.chooser.gameOver === false, fromOver.chooser);
+  check('Fight restarts the run and drops straight into the fight',
+    fromOver.after.phase === 'playing' && fromOver.after.boss &&
+    fromOver.after.lives === 3 && fromOver.after.wave === 1 && fromOver.after.score === 0, fromOver.after);
+  check('with the bars restored and the game-over screen gone',
+    fromOver.after.bars > 0 && fromOver.after.overlay === false &&
+    fromOver.after.chooser === false, fromOver.after);
+  check('carrying the loadout that was chosen, not the dead run\'s',
+    JSON.stringify(fromOver.after.dots) === JSON.stringify(['green', 'red']) &&
+    fromOver.after.levels.blue === 2, fromOver.after);
+
+  // Cancel is the half that is easy to get wrong: the restart is
+  // deferred to Fight precisely so backing out does not quietly throw
+  // the finished run away before you have looked at the score.
+  const cancelFromOver = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    scene.resetGame();
+    state.score = 4242;
+    state.lives = 1;
+    scene.shipHit('test');
+    const score = state.score;
+    scene.openBossSetup();
+    scene.closeBossSetup(null);
+    return { phase: state.phase, boss: !!state.boss, score, scoreNow: state.score,
+             overlay: document.getElementById('gameOverOverlay').classList.contains('visible'),
+             chooser: document.getElementById('bossSetupOverlay').classList.contains('visible') };
+  });
+  check('Cancel from a finished run leaves it finished',
+    cancelFromOver.phase === 'gameover' && cancelFromOver.boss === false, cancelFromOver);
+  check('with the game-over screen back and the score untouched',
+    cancelFromOver.overlay === true && cancelFromOver.chooser === false &&
+    cancelFromOver.scoreNow === cancelFromOver.score, cancelFromOver);
+
+  // The lab sits above every overlay, so it can be reopened over the
+  // chooser and this pressed twice. The second open must not re-read the
+  // game-over screen's state after the first one already hid it.
+  const doubleOpen = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    scene.resetGame();
+    state.lives = 1;
+    scene.shipHit('test');
+    const first = scene.openBossSetup();
+    const second = scene.openBossSetup();
+    scene.closeBossSetup(null);
+    return { first, second, phase: state.phase,
+             overlay: document.getElementById('gameOverOverlay').classList.contains('visible'),
+             chooser: document.getElementById('bossSetupOverlay').classList.contains('visible') };
+  });
+  check('opening the chooser twice is a no-op the second time', doubleOpen.second === false, doubleOpen);
+  check('so Cancel still puts the game-over screen back',
+    doubleOpen.overlay === true && doubleOpen.chooser === false &&
+    doubleOpen.phase === 'gameover', doubleOpen);
+
+  // Fight from a LIVE run must not restart it - the restart belongs to
+  // the game-over path alone. Getting this wrong wipes the score and
+  // wave you were opening the chooser from.
+  const midRun = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    scene.resetGame();
+    state.score = 7777;
+    state.wave = 6;
+    state.lives = 2;
+    scene.openBossSetup();
+    scene.closeBossSetup({ orbs: { red: 1, green: 0, blue: 0 }, fire: { red: 0, green: 0, blue: 0 } });
+    return { phase: state.phase, boss: !!state.boss, score: state.score,
+             wave: state.wave, lives: state.lives };
+  });
+  check('jumping to the boss mid-run keeps the run you were in',
+    midRun.boss && midRun.score === 7777 && midRun.wave === 6 && midRun.lives === 2, midRun);
+
+  // And the lab button itself, with a real click, from a real game over.
+  await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene;
+    scene.resetGame();
+    scene.state.lives = 1;
+    scene.shipHit('test');
+    window.__headOnTuning.setLabOpen(true);
+  });
+  await page.click('#labBossNowBtn');
+  const overButton = await page.evaluate(() => ({
+    chooser: document.getElementById('bossSetupOverlay').classList.contains('visible'),
+    phase: window.__headOnDebug.scene.state.phase
+  }));
+  check('the lab button opens the chooser from a game over, not just mid-run',
+    overButton.chooser && overButton.phase === 'gameover', overButton);
+  await page.click('#bossSetupFightBtn');
+  const overFought = await page.evaluate(() => {
+    const state = window.__headOnDebug.scene.state;
+    return { phase: state.phase, boss: !!state.boss, lives: state.lives };
+  });
+  check('and Fight gets a live boss out of it',
+    overFought.boss && overFought.phase === 'playing' && overFought.lives === 3, overFought);
+
   // Replacing, not topping up: "arrive with two reds" has to mean two.
   const replaces = await page.evaluate(() => {
     const scene = window.__headOnDebug.scene, state = scene.state;
