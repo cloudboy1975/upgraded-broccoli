@@ -1004,6 +1004,26 @@
   var ORBITER_LIFETIME = 6;       // seconds before one gives up and fades
   var ORBITER_SIZE = 1;           // scales the shot, VISUAL AND HIT RADIUS TOGETHER - see updateOrbiters()
 
+  // What a meteor does to a banked shield. Everywhere else in the game a
+  // hazard that clips an orbiting dot spends it - the dot IS the shield,
+  // and where it happens to be is the mechanic. In a meteor stage that
+  // rule turns the reward into the trap:
+  //
+  //   corridor needed by the bare ship        26px
+  //   corridor needed by the orbiting ring    52px
+  //
+  // Every volley pair leaves a 26px corridor. 7.4% of them leave no 52px
+  // one. So banking shields doubles your width, and roughly one moment in
+  // thirteen there is nowhere for a shielded ship to be - you lose dots to
+  // rock that would have sailed straight past an unshielded hull.
+  //
+  // So in a stage, and ONLY in a stage, meteors ignore the ring entirely.
+  // A shield is spent only on a hit that would otherwise have killed you,
+  // which makes a deep bank what it should be - more attempts at the
+  // gauntlet - instead of a bigger target.
+  var METEOR_SHIELD_SPENDS_ALL = false; // true = one save costs the whole bank, however deep
+  var METEOR_SHIELD_GRACE_MS = 600;     // brief mercy after a save, or the same rock strips the next dot next frame
+
   // Zigzag's oscillation - same placement rule as the rest: TUNING is
   // seeded from these, so they have to be declared above it.
   //
@@ -1102,6 +1122,7 @@
       orbiterTurnRate: ORBITER_TURN_RATE,
       orbiterLifetime: ORBITER_LIFETIME,
       orbiterSize: ORBITER_SIZE,
+      meteorShieldSpendsAll: METEOR_SHIELD_SPENDS_ALL,
       zigzagFreq: ZIGZAG_FREQ,
       zigzagAmplitude: ZIGZAG_AMPLITUDE,
       zigzagVariation: ZIGZAG_VARIATION,
@@ -3765,13 +3786,43 @@
     var meteors = state.challenge.meteors;
     for (var i = 0; i < meteors.length; i++) {
       var m = meteors[i];
-      if (this.shieldDotBlocks(m.x, m.y, m.radius)) return;
-      if (circleHit(m.x, m.y, state.ship.x, SHIP_Y, state.ship.radius + m.radius)) {
-        this.shipHit('meteor', { pattern: state.challenge.lastPattern });
-        return;
-      }
+      // Deliberately NO shieldDotBlocks() here, unlike every other hazard
+      // in the game - see METEOR_SHIELD_SPENDS_ALL. Rock is tested against
+      // the hull alone, so the ring never widens the target.
+      if (!circleHit(m.x, m.y, state.ship.x, SHIP_Y, state.ship.radius + m.radius)) continue;
+      if (this.spendShieldOnMeteor(m)) return; // a shield took it
+      this.shipHit('meteor', { pattern: state.challenge.lastPattern });
+      return;
     }
   };
+
+  // Spends the bank to survive a hit that would otherwise have been fatal.
+  // Returns false when there is nothing left to spend.
+  MainScene.prototype.spendShieldOnMeteor = function (m) {
+    var state = this.state;
+    var pu = state.powerup;
+    if (!pu.dots.length) return false;
+    if (TUNING.meteorShieldSpendsAll) {
+      while (pu.dots.length) this.consumeShieldDot(0);
+    } else {
+      this.consumeShieldDot(nearestShieldDotIndex(pu.dots, m.x, m.y));
+    }
+    // Without this the rock is still overlapping next frame and takes the
+    // next dot too, emptying a deep bank on a single impact.
+    state.ship.invulnerableUntil = performance.now() + METEOR_SHIELD_GRACE_MS;
+    return true;
+  };
+
+  // The dot nearest the impact, so the fizzle goes off where you were hit.
+  function nearestShieldDotIndex(dots, x, y) {
+    var best = 0, bestD = Infinity;
+    for (var i = 0; i < dots.length; i++) {
+      var dx = dots[i].sprite.x - x, dy = dots[i].sprite.y - y;
+      var d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
 
   // ---- Input: composition ------------------------------------------------------
   var touchLeft = false, touchRight = false, touchFire = false;
@@ -6151,6 +6202,10 @@
     addCheckbox('labOrbiter', 'Park as mines near the top',
       function () { return TUNING.orbiterMines; },
       function (v) { TUNING.orbiterMines = v; });
+
+    addCheckbox('labChallenge', 'A meteor hit spends the whole bank',
+      function () { return TUNING.meteorShieldSpendsAll; },
+      function (v) { TUNING.meteorShieldSpendsAll = v; });
 
     addCheckbox('labChallenge', 'Challenge stages on',
       function () { return TUNING.challengeEnabled; },

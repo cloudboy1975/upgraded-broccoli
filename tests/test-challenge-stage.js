@@ -214,27 +214,112 @@ harness.run(async (page, check, ctx) => {
   check('a meteor cannot touch you while you are respawn-invulnerable',
     invuln.livesAfter === invuln.lives, invuln);
 
-  // A banked shield dot blocks a meteor like every other hazard - but
-  // unlike a diver, the rock is NOT destroyed by being blocked.
-  const shield = await page.evaluate(SETTLE + `
+  // --- shields in a stage ---------------------------------------------------
+  // The rule here is the OPPOSITE of everywhere else in the game. A hazard
+  // that clips an orbiting dot normally spends it - the dot is the shield
+  // and its position is the mechanic. In a stage that made the reward the
+  // trap: the bare ship needs a 26px corridor, the orbiting ring needs
+  // 52px, every volley pair leaves the first and 7.4% leave no second. So
+  // banking shields doubled your width and cost you dots to rock that
+  // would have missed an unshielded hull entirely.
+  const passesRing = await page.evaluate(SETTLE + `
     window.__headOnDebug.forceChallenge();
     state.ship.invulnerableUntil = 0;
-    scene.collectColor('red');
+    window.__headOnDebug.giveOrbs('red', 2);
+    scene.updatePowerupDots(0.25);
     const dot = state.powerup.dots[0];
     const lives = state.lives;
-    const m = { x: dot.sprite.x, y: dot.sprite.y, vx: 0, vy: 0, radius: 10, spin: 0,
+    // Sitting exactly on a dot, but clear of the hull.
+    const m = { x: dot.sprite.x, y: dot.sprite.y, vx: 0, vy: 0, radius: 3, spin: 0,
                 sprite: scene.add.sprite(dot.sprite.x, dot.sprite.y, 'meteorTex_0') };
     state.challenge.meteors.push(m);
+    const clearOfHull = Math.hypot(m.x - state.ship.x, m.y - 413) > state.ship.radius + m.radius;
     scene.shipVsMeteors();
-    ({
-      lives, livesAfter: state.lives,
-      dotsLeft: state.powerup.dots.length,
-      meteorSurvived: state.challenge.meteors.indexOf(m) !== -1
-    });
+    ({ lives, livesAfter: state.lives, clearOfHull,
+       dotsLeft: state.powerup.dots.length,
+       meteorSurvived: state.challenge.meteors.indexOf(m) !== -1 });
   `);
-  check('a shield dot blocks a meteor', shield.livesAfter === shield.lives, shield);
-  check('and is spent doing it', shield.dotsLeft === 0, shield);
-  check('but the meteor is not destroyed by being blocked', shield.meteorSurvived, shield);
+  check('the test rock really was clear of the hull', passesRing.clearOfHull, passesRing);
+  check('rock passing through the shield ring costs nothing',
+    passesRing.dotsLeft === 2 && passesRing.livesAfter === passesRing.lives, passesRing);
+  check('and the rock carries on regardless', passesRing.meteorSurvived, passesRing);
+
+  const saved = await page.evaluate(SETTLE + `
+    window.__headOnDebug.forceChallenge();
+    state.ship.invulnerableUntil = 0;
+    window.__headOnDebug.giveOrbs('red', 3);
+    scene.updatePowerupDots(0.25);
+    const lives = state.lives;
+    const m = { x: state.ship.x, y: 413, vx: 0, vy: 0, radius: 12, spin: 0,
+                sprite: scene.add.sprite(state.ship.x, 413, 'meteorTex_0') };
+    state.challenge.meteors.push(m);
+    scene.shipVsMeteors();
+    const afterFirst = { dots: state.powerup.dots.length, lives: state.lives };
+    // The same rock is still overlapping - without a grace window it would
+    // strip the rest of the bank one frame at a time.
+    scene.shipVsMeteors();
+    scene.shipVsMeteors();
+    ({ lives, afterFirst, dotsAfterRepeats: state.powerup.dots.length,
+       invulnerable: state.ship.invulnerableUntil > performance.now(),
+       meteorSurvived: state.challenge.meteors.indexOf(m) !== -1 });
+  `);
+  check('a hit on the hull spends exactly one shield, not the bank',
+    saved.afterFirst.dots === 2, saved);
+  check('and costs no life', saved.afterFirst.lives === saved.lives, saved);
+  check('the same rock cannot strip the rest of the bank next frame',
+    saved.dotsAfterRepeats === 2 && saved.invulnerable, saved);
+  check('the rock still is not destroyed by being blocked', saved.meteorSurvived, saved);
+
+  const emptied = await page.evaluate(SETTLE + `
+    window.__headOnDebug.forceChallenge();
+    state.ship.invulnerableUntil = 0;
+    const lives = state.lives;
+    state.challenge.meteors.push({ x: state.ship.x, y: 413, vx: 0, vy: 0, radius: 12, spin: 0,
+      sprite: scene.add.sprite(state.ship.x, 413, 'meteorTex_0') });
+    scene.shipVsMeteors();
+    ({ lives, livesAfter: state.lives });
+  `);
+  check('with the bank empty, a hull hit costs a life as before',
+    emptied.livesAfter === emptied.lives - 1, emptied);
+
+  // The alternative rule, on a lab toggle: one save, whatever the bank.
+  const spendAll = await page.evaluate(SETTLE + `
+    const T = window.__headOnTuning.tuning;
+    T.meteorShieldSpendsAll = true;
+    window.__headOnDebug.forceChallenge();
+    state.ship.invulnerableUntil = 0;
+    window.__headOnDebug.giveOrbs('blue', 3);
+    scene.updatePowerupDots(0.25);
+    const lives = state.lives;
+    state.challenge.meteors.push({ x: state.ship.x, y: 413, vx: 0, vy: 0, radius: 12, spin: 0,
+      sprite: scene.add.sprite(state.ship.x, 413, 'meteorTex_0') });
+    scene.shipVsMeteors();
+    const out = { lives, livesAfter: state.lives, dotsLeft: state.powerup.dots.length };
+    T.meteorShieldSpendsAll = window.__headOnTuning.defaults().meteorShieldSpendsAll;
+    out;
+  `);
+  check('the spend-all rule empties the bank for one save',
+    spendAll.dotsLeft === 0 && spendAll.livesAfter === spendAll.lives, spendAll);
+
+  // Outside a stage the ORIGINAL positional rule must be untouched - this
+  // change is scoped to meteors, and divers still get blocked by whichever
+  // dot happens to be in the way.
+  const diverStillBlocked = await page.evaluate(SETTLE + `
+    window.__headOnDebug.skipFormationEntry();
+    state.ship.invulnerableUntil = 0;
+    window.__headOnDebug.giveOrbs('green', 1);
+    scene.updatePowerupDots(0.25);
+    const dot = state.powerup.dots[0];
+    const diver = state.formation.filter(f => f.alive)[0];
+    diver.diving = true;
+    diver.x = dot.sprite.x; diver.y = dot.sprite.y;
+    const lives = state.lives;
+    scene.shipVsDivers();
+    ({ lives, livesAfter: state.lives, dotsLeft: state.powerup.dots.length, diverDead: !diver.alive });
+  `);
+  check('outside a stage a dot still blocks a diver on contact, as before',
+    diverStillBlocked.dotsLeft === 0 && diverStillBlocked.livesAfter === diverStillBlocked.lives &&
+    diverStillBlocked.diverDead, diverStillBlocked);
 
   // Bullets spark off rock and are spent - v1 meteors cannot be broken,
   // but the fire button still has to answer.
