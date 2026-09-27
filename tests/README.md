@@ -79,3 +79,18 @@ real miss rather than from a style guide:
 - **Assert intent, not a blinking sprite.** Things that flash during
   respawn invulnerability sample dark at random. Check the state flag the
   animation is derived from.
+- **Return booleans across `page.evaluate`, not live objects.** Returning
+  `state.boss` gives you `null` on the other side whether or not there is
+  a boss - Playwright cannot serialise the Phaser sprite graph hanging
+  off it - so `x === null` passes for free. Several boss checks were
+  vacuous this way until a mutation that should have broken them didn't.
+  Return `!!state.boss`.
+- **A surviving mutation is sometimes the code's fault.** Two guards for
+  the same condition mean breaking either one changes nothing, and the
+  fix is to delete the redundant one rather than to write a test for an
+  unreachable line. `test-boss.js` lost a `state.boss &&` at a call site
+  and a whole `if (!boss)` block this way.
+- **Step helpers can only agree with themselves.** `stepBoss()` is a
+  model of the boss slice of `update()`, so it can never show that
+  `update()` leaves something out. Anything about *which systems run*
+  needs real frames.

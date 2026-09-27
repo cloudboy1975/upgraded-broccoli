@@ -97,6 +97,36 @@
   }
   .turn-dot.playing { background: var(--accent); }
   .turn-dot.gameover { background: var(--danger); }
+  .turn-dot.paused { background: #fbbf24; }
+
+  /* The boss-fight back door's loadout chooser - see openBossSetup().
+     Reuses .overlay wholesale (it is the same "freeze the board and put
+     something over it" job the game-over screen does), and adds only the
+     rows of 0-3 steppers. */
+  .boss-setup { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 290px; }
+  .boss-setup-head {
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    text-align: left;
+    margin-top: 8px;
+  }
+  .boss-setup-row { display: flex; align-items: center; gap: 7px; }
+  .bs-swatch { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  .bs-label { flex: 0 0 44px; text-align: left; color: var(--muted); font-size: 0.78rem; }
+  .bs-steps { display: flex; gap: 4px; flex: 1 1 auto; }
+  .bs-step {
+    flex: 1 1 0;
+    padding: 5px 0;
+    border-radius: 7px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .bs-step.on { background: var(--accent); border-color: var(--accent); color: #06240f; font-weight: 700; }
 
   .hud-stats {
     display: flex;
@@ -507,6 +537,19 @@
       <div class="missile-btn" id="missileBtn" role="button" aria-label="Fire missiles">
         <span class="missile-pips" id="missilePips" aria-hidden="true"></span>
       </div>
+      <!-- The boss-fight back door. Opened from the lab; it pauses the
+           run where it stands so the loadout you pick is the loadout you
+           arrive with, rather than whatever the next two seconds of
+           play leave you holding. -->
+      <div class="overlay" id="bossSetupOverlay">
+        <div class="overlay-title">Boss fight</div>
+        <div class="overlay-score">Arrive with&hellip;</div>
+        <div class="boss-setup" id="bossSetupRows"></div>
+        <div class="overlay-actions">
+          <button type="button" class="btn primary" id="bossSetupFightBtn">Fight</button>
+          <button type="button" class="btn secondary" id="bossSetupCancelBtn">Cancel</button>
+        </div>
+      </div>
       <div class="overlay" id="gameOverOverlay">
         <div class="overlay-title">Game Over</div>
         <div class="overlay-score">Score: <b id="overlayScore">0</b></div>
@@ -574,6 +617,13 @@
         <div id="labChallenge"></div>
         <div class="lab-actions">
           <button type="button" class="lab-btn wide primary" id="labChallengeNowBtn">Run a stage now</button>
+        </div>
+      </div>
+      <div class="lab-section">
+        <h3>Boss</h3>
+        <div id="labBoss"></div>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide primary" id="labBossNowBtn">Jump to the boss&hellip;</button>
         </div>
       </div>
       <div class="lab-section">
@@ -1037,6 +1087,29 @@
   // than by making the whole board harmless for a second and a half.
   var METEOR_HIT_GRACE_MS = 0;
 
+  // ---- The boss ----------------------------------------------------------
+  // Arrives instead of a meteor stage once the home world is close enough,
+  // rising out of it. Three things armour him, and each answers to exactly
+  // one of the player's tools:
+  //
+  //   belly cores      one per colour, killed ONLY by an orbiter shot of
+  //                    the matching colour - i.e. by the banked orbs
+  //   tentacle armour  coloured bricks, chipped by a bullet's colour trail
+  //                    exactly like a colour bar - i.e. by the strips
+  //   hull             plain, and invulnerable until both of the above are
+  //                    gone, then ordinary fire finishes him
+  //
+  // So arriving with all three orb colours AND all three strip levels means
+  // you can work on every part at once; arriving short means surviving on
+  // his adds until the powerups you are missing come round. That is the
+  // whole motivation to turn up loaded, and it is why the powerup economy
+  // keeps running through the fight while the formation and the bars do not.
+  var BOSS_HULL_HP = 26;          // plain bullet hits once the shielding is down
+  var BOSS_CORE_HP = 5;           // matching orbiter hits per belly core
+  var BOSS_ARMOUR_HP = 4;         // trail damage per tentacle brick
+  var BOSS_ADD_INTERVAL = 2.4;    // seconds between spawned attackers at FULL shielding
+  var BOSS_ADD_INTERVAL_MIN = 5.5; // ...and once stripped bare, so clearing armour visibly calms him
+
   // Zigzag's oscillation - same placement rule as the rest: TUNING is
   // seeded from these, so they have to be declared above it.
   //
@@ -1137,6 +1210,11 @@
       orbiterSize: ORBITER_SIZE,
       meteorShieldSpendsAll: METEOR_SHIELD_SPENDS_ALL,
       meteorHitGraceMs: METEOR_HIT_GRACE_MS,
+      bossEnabled: true,
+      bossHullHp: BOSS_HULL_HP,
+      bossCoreHp: BOSS_CORE_HP,
+      bossArmourHp: BOSS_ARMOUR_HP,
+      bossAddInterval: BOSS_ADD_INTERVAL,
       zigzagFreq: ZIGZAG_FREQ,
       zigzagAmplitude: ZIGZAG_AMPLITUDE,
       zigzagVariation: ZIGZAG_VARIATION,
@@ -1428,6 +1506,49 @@
   var COLOR_PLANET = 0x7f1d1d;      // a dull red world
   var COLOR_PLANET_BAND = 0x991b1b; // lighter banding across it
   var COLOR_PLANET_DARK = 0x450a0a; // the shadowed limb
+
+  // ---- The boss's body ---------------------------------------------------
+  // Shape and timing only - the HP and spawn numbers are TUNING-seeded and
+  // therefore live up with the other constants above the seed.
+  //
+  // He rises out of the home world, so his starting point is the planet's
+  // own centre and he grows into view rather than sliding in from an edge:
+  // at that point the planet fills a third of the screen, and something
+  // flying out of it is the only entrance that reads as "from there".
+  var BOSS_Y = Math.round(GAME_HEIGHT * 0.27); // where he settles - below the bars' band, well above the formation rows
+  var BOSS_RISE_DURATION = 2.4;   // seconds from speck-inside-the-planet to full size at BOSS_Y
+  var BOSS_DEATH_DURATION = 2.2;  // seconds of coming apart before the wave resumes
+  var BOSS_FIRST_ADD_DELAY = 1.6; // grace between arriving and the first spawn, so the entrance is watchable
+  var BOSS_BODY_WIDTH = 132;
+  var BOSS_BODY_HEIGHT = 56;
+  var BOSS_DRIFT_RANGE = 62;      // px either side of centre
+  var BOSS_DRIFT_SPEED = 0.42;    // rad/sec of the drift sine - slow, so his belly is a shot you can plan
+  var BOSS_DEATH_SHAKE = 5;       // px of judder while he comes apart
+
+  // The belly: one core per colour, in fixed left-to-right order so you
+  // learn where your colour is rather than re-reading it every fight.
+  var BOSS_CORE_RADIUS = 11;
+  var BOSS_CORE_SPACING = 36;
+  var BOSS_CORE_DY = 19; // below the body's centre
+  var BOSS_CORE_SCORE = 400;
+
+  // The tentacles: two arms of armour plates splaying down and out from
+  // the body's lower corners. Each arm carries one plate of each colour,
+  // so every colour of fire power has somewhere to go on either side.
+  var BOSS_ARMOUR_W = 26;
+  var BOSS_ARMOUR_H = 14;
+  var BOSS_TENTACLE_X0 = 56;  // px from centre to the first plate of an arm - clear of the outermost belly core
+  var BOSS_TENTACLE_Y0 = 34;  // ...and below the body centre, so the arms hang off him rather than crossing his belly
+  var BOSS_TENTACLE_STEP_X = 14; // each plate further down splays this much further out
+  var BOSS_TENTACLE_STEP_Y = 18;
+  var BOSS_ARMOUR_SCORE = 250;
+  var BOSS_SCORE = 6000; // the kill itself, on top of everything chipped off him
+
+  var COLOR_BOSS_HULL = 0x3b0764;      // deep violet - no other enemy in the game is purple
+  var COLOR_BOSS_HULL_LIT = 0x6d28d9;  // its highlight/plating
+  var COLOR_BOSS_HULL_BARE = 0xa78bfa; // the same body once the shielding is gone: visibly pale and soft
+  var COLOR_BOSS_TENTACLE = 0x4c1d95;  // the arm the plates are bolted to, drawn under them
+  var COLOR_BOSS_EYE = 0xfbbf24;
 
   // One volley of meteors, in the same shape as the sortie and fly-in
   // books above: each pattern only decides WHERE rock enters and how it
@@ -1857,6 +1978,15 @@
   // so they test each axis with this rather than as circles.
   function spanHit(a, b, halfSpan) {
     return Math.abs(a - b) <= halfSpan;
+  }
+
+  // Circle-vs-ellipse, for the one thing in the game that is not round:
+  // the boss's body. Normalising each axis by its own radius turns the
+  // ellipse back into a unit circle, so this is circleHit() with a
+  // squash applied first.
+  function ellipseHit(ax, ay, bx, by, rx, ry) {
+    var dx = (ax - bx) / rx, dy = (ay - by) / ry;
+    return dx * dx + dy * dy <= 1;
   }
 
   // Comfortably outside the playfield in any direction - the shared "this
@@ -2302,6 +2432,97 @@
       }
     });
 
+    // ---- The boss --------------------------------------------------------
+    // Two versions of the same body, swapped in place the moment the last
+    // piece of shielding comes off: the dark one is armoured and immune,
+    // the pale one is the thing ordinary fire can finally hurt. The switch
+    // is the entire "he's vulnerable now" signal, so it has to be a
+    // whole-body colour change rather than a detail.
+    function bakeBossBody(key, hullColor, litColor) {
+      var w = BOSS_BODY_WIDTH, h = BOSS_BODY_HEIGHT;
+      var pad = 4; // room for the lower shoulders to sit inside the texture
+      bakeTexture(self, key, w, h + pad, function (g) {
+        var cx = w / 2, cy = h / 2;
+        g.fillStyle(hullColor, 1);
+        g.fillEllipse(cx, cy, w, h);
+        // Plated ridges across the back, narrowing toward the nose.
+        g.fillStyle(litColor, 0.85);
+        [-0.34, -0.12, 0.1].forEach(function (frac) {
+          var ry = cy + frac * h;
+          var halfW = (w / 2) * Math.sqrt(Math.max(0, 1 - Math.pow((ry - cy) / (h / 2), 2)));
+          g.fillRect(cx - halfW * 0.82, ry - 2, halfW * 1.64, 4);
+        });
+        // Shoulders the tentacles hang from, so the arms read as attached
+        // rather than as floating bricks.
+        g.fillStyle(litColor, 1);
+        [-1, 1].forEach(function (side) {
+          g.fillEllipse(cx + side * (w * 0.33), cy + h * 0.32, w * 0.24, h * 0.34);
+        });
+        g.fillStyle(COLOR_BOSS_EYE, 0.9);
+        [-1, 1].forEach(function (side) {
+          g.fillEllipse(cx + side * (w * 0.14), cy - h * 0.16, 9, 6);
+        });
+      });
+    }
+    bakeBossBody('bossHullTex', COLOR_BOSS_HULL, COLOR_BOSS_HULL_LIT);
+    bakeBossBody('bossHullBareTex', COLOR_BOSS_HULL_BARE, COLOR_BOSS_HULL);
+
+    // A belly core, one per colour: a bright disc of that colour ringed in
+    // the hull tone, so it reads as set INTO him rather than stuck on.
+    // Only a matching orbiter can touch one - see orbiterVsBossCores().
+    STRIP_COLOR_KEYS.forEach(function (key) {
+      var size = BOSS_CORE_RADIUS * 2 + 6;
+      bakeTexture(self, 'bossCoreTex_' + key, size, size, function (g) {
+        var c = size / 2;
+        g.fillStyle(COLOR_BOSS_HULL, 1);
+        g.fillCircle(c, c, BOSS_CORE_RADIUS + 3);
+        g.fillStyle(STRIP_COLORS[key], 0.95);
+        g.fillCircle(c, c, BOSS_CORE_RADIUS);
+        g.fillStyle(0xffffff, 0.55);
+        g.fillCircle(c - BOSS_CORE_RADIUS * 0.3, c - BOSS_CORE_RADIUS * 0.3, BOSS_CORE_RADIUS * 0.34);
+      });
+    });
+    // A deadened core: the same socket with the light gone out of it.
+    bakeTexture(self, 'bossCoreDeadTex', BOSS_CORE_RADIUS * 2 + 6, BOSS_CORE_RADIUS * 2 + 6, function (g) {
+      var c = BOSS_CORE_RADIUS + 3;
+      g.fillStyle(COLOR_BOSS_HULL, 1);
+      g.fillCircle(c, c, BOSS_CORE_RADIUS + 3);
+      g.fillStyle(0x0f172a, 1);
+      g.fillCircle(c, c, BOSS_CORE_RADIUS);
+    });
+
+    // Tentacle armour plates. Deliberately NOT the colour-bar segment
+    // texture: a bar segment is washed out on purpose (COLOR_BAR_ALPHA) so
+    // it stays background, and a piece of the boss has to read as
+    // foreground. Same MECHANIC as a bar segment - a matching colour trail
+    // chips it - just not the same art.
+    STRIP_COLOR_KEYS.forEach(function (key) {
+      bakeTexture(self, 'bossArmourTex_' + key, BOSS_ARMOUR_W, BOSS_ARMOUR_H, function (g) {
+        g.fillStyle(STRIP_COLORS[key], 0.9);
+        g.fillRect(0, 0, BOSS_ARMOUR_W, BOSS_ARMOUR_H);
+        g.lineStyle(1.5, COLOR_BOSS_HULL, 1);
+        g.strokeRect(0.75, 0.75, BOSS_ARMOUR_W - 1.5, BOSS_ARMOUR_H - 1.5);
+      });
+    });
+    // Same spreading-fracture idea as brickSegCrackTex, at the plate's own
+    // size - revealed in proportion to damage, see updateBossBrickCrack().
+    bakeTexture(self, 'bossArmourCrackTex', BOSS_ARMOUR_W, BOSS_ARMOUR_H, function (g) {
+      var w = BOSS_ARMOUR_W, h = BOSS_ARMOUR_H;
+      g.lineStyle(1.4, 0x000000, 0.9);
+      g.beginPath();
+      g.moveTo(w * 0.42, 0); g.lineTo(w * 0.58, h * 0.4); g.lineTo(w * 0.38, h * 0.7); g.lineTo(w * 0.52, h);
+      g.strokePath();
+      g.beginPath();
+      g.moveTo(w * 0.58, h * 0.4); g.lineTo(w * 0.85, h * 0.55);
+      g.strokePath();
+    });
+    // The arm itself, drawn under the plates so they look bolted to
+    // something. One segment per gap between plates.
+    bakeTexture(self, 'bossTentacleTex', 10, BOSS_TENTACLE_STEP_Y + BOSS_ARMOUR_H, function (g) {
+      g.fillStyle(COLOR_BOSS_TENTACLE, 1);
+      g.fillRect(0, 0, 10, BOSS_TENTACLE_STEP_Y + BOSS_ARMOUR_H);
+    });
+
     // Orb pod: a small translucent diamond (same palette and translucency
     // as the color strips - one texture per color, assigned at spawn like
     // a strip). The second powerup type, differing from the strips in
@@ -2395,6 +2616,7 @@
       diveTimer: TUNING.diveIntervalStart,
       waveClearTimer: 0, // > 0 while waiting to spawn the next formation
       challenge: null,      // the active challenge stage, or null during ordinary combat - see startChallenge()
+      boss: null,           // the active boss fight, or null - see startBoss(). Never non-null at the same time as challenge
       challengesDone: 0,    // completed challenge stages this run; drives how close the home world is
       starSpeedScale: 1,    // starfield speed multiplier - ramps up and back down across a challenge stage
       meteorBag: [],        // shuffle bag of volley pattern ids - see drawMeteorPattern()
@@ -3322,7 +3544,15 @@
       // the formation flying in, and endChallenge() spawns that formation
       // afterwards. Checked after the increment, against the number of
       // waves actually cleared.
-      if (this.challengeDue()) { this.startChallenge(); return; }
+      //
+      // Once the approach has actually arrived at the home world, the boss
+      // takes that same slot instead: the interruption you were expecting,
+      // but it is him. See bossDue().
+      if (this.challengeDue()) {
+        if (this.bossDue()) this.startBoss();
+        else this.startChallenge();
+        return;
+      }
       state.diveTimer = this.diveInterval();
       this.spawnFormation();
     }
@@ -3673,6 +3903,491 @@
     }
     return best;
   }
+
+  // ---- The boss ----------------------------------------------------------
+  // See the BOSS_* constants for the design. The short version: three
+  // kinds of armour, each answering to exactly one of the player's tools,
+  // and a hull that nothing can touch until all of it is off.
+  //
+  // He takes over the wave slot a challenge stage would have used, which
+  // is why he lives next to it and shares its habits: the colour bars go
+  // away, difficulty.elapsed stops, and checkWaveClear() does not run. He
+  // differs from a stage in the one way that matters for the fight - the
+  // powerup economy KEEPS RUNNING, because turning up short of a colour
+  // has to be survivable rather than fatal.
+
+  // A boss arrives instead of the next challenge stage, once the approach
+  // has actually reached the home world. Checked at the same moment
+  // challengeDue() is, so the cadence of interruptions doesn't change -
+  // only what the interruption is.
+  MainScene.prototype.bossDue = function () {
+    if (!TUNING.bossEnabled) return false;
+    return this.planetApproach() >= 1;
+  };
+
+  // The three cores, left to right in STRIP_COLOR_KEYS order.
+  MainScene.prototype.buildBossCores = function () {
+    var self = this;
+    var hp = Math.max(1, Math.round(TUNING.bossCoreHp));
+    return STRIP_COLOR_KEYS.map(function (key, i) {
+      var ox = (i - (STRIP_COLOR_KEYS.length - 1) / 2) * BOSS_CORE_SPACING;
+      return {
+        colorKey: key, ox: ox, oy: BOSS_CORE_DY,
+        hp: hp, maxHp: hp, alive: true,
+        sprite: self.add.sprite(0, 0, 'bossCoreTex_' + key)
+      };
+    });
+  };
+
+  // Both arms, as one flat list - "which tentacle" is a visual fact (the
+  // sign of ox), never a rule, so nothing downstream has to group them.
+  MainScene.prototype.buildBossArmour = function () {
+    var self = this;
+    var hp = Math.max(1, Math.round(TUNING.bossArmourHp));
+    var out = [];
+    [-1, 1].forEach(function (side) {
+      STRIP_COLOR_KEYS.forEach(function (key, i) {
+        var ox = side * (BOSS_TENTACLE_X0 + i * BOSS_TENTACLE_STEP_X);
+        var oy = BOSS_TENTACLE_Y0 + i * BOSS_TENTACLE_STEP_Y;
+        var brick = {
+          colorKey: key, side: side, ox: ox, oy: oy,
+          hp: hp, maxHp: hp, alive: true,
+          sprite: self.add.sprite(0, 0, 'bossArmourTex_' + key),
+          crackSprite: self.add.sprite(0, 0, 'bossArmourCrackTex')
+        };
+        brick.crackSprite.setAlpha(0);
+        out.push(brick);
+      });
+    });
+    return out;
+  };
+
+  MainScene.prototype.startBoss = function () {
+    var state = this.state;
+    // Same clear-down as a challenge stage, for the same reason: whatever
+    // was mid-flight belongs to the wave that just ended, not to this.
+    // The exceptions are the ones the fight is ABOUT - banked orbs, fire
+    // power, and the dots orbiting the ship all survive, because arriving
+    // loaded is the whole point.
+    state.bullets.forEach(function (b) { destroyBulletSprites(b); });
+    state.bullets = [];
+    state.enemyBullets.forEach(function (b) { b.sprite.destroy(); });
+    state.enemyBullets = [];
+    state.strips.forEach(function (s) { s.sprite.destroy(); });
+    state.strips = [];
+    state.orbs.forEach(function (o) { o.hostSprite.destroy(); });
+    state.orbs = [];
+    state.orbBullets.forEach(function (h) { h.sprite.destroy(); });
+    state.orbBullets = [];
+    state.brickShards.forEach(function (sh) { sh.sprite.destroy(); });
+    state.brickShards = [];
+    state.formation.forEach(function (slot) { if (slot.alive) { slot.sprite.destroy(); slot.alive = false; } });
+    state.formation = [];
+    if (state.core && state.core.sprite) { state.core.sprite.destroy(); state.core = null; }
+    this.setColorBarsVisible(false);
+
+    var body = this.add.sprite(GAME_WIDTH / 2, PLANET_Y, 'bossHullTex');
+    state.boss = {
+      phase: 'rise', // 'rise' -> 'fight' -> 'dying'
+      age: 0,
+      x: GAME_WIDTH / 2,
+      y: PLANET_Y,
+      driftPhase: 0,
+      hullHp: Math.max(1, Math.round(TUNING.bossHullHp)),
+      addTimer: BOSS_FIRST_ADD_DELAY,
+      addsSpawned: 0,
+      sprite: body,
+      arms: [this.add.sprite(0, 0, 'bossTentacleTex'), this.add.sprite(0, 0, 'bossTentacleTex')],
+      cores: this.buildBossCores(),
+      bricks: this.buildBossArmour()
+    };
+    // A zero-length step rather than a bare layoutBoss(): that also puts
+    // the rise's scale and alpha on, so a boss that has been built but not
+    // yet stepped is already a speck inside the planet. Without it his
+    // first drawn frame is a full-size body at full opacity, which then
+    // shrinks - the entrance played backwards for one frame.
+    this.updateBoss(0);
+    traceEvent('boss_start', {
+      wave: state.wave, elapsed: state.difficulty.elapsed,
+      orbs: state.powerup.colors.slice(),
+      firePower: { red: state.colorLevels.red, green: state.colorLevels.green, blue: state.colorLevels.blue }
+    });
+  };
+
+  // Every part's position is derived from the body's, every frame -
+  // nothing carries its own absolute coordinates. That is what makes the
+  // drift, the rise and the death shake one line each instead of a
+  // bookkeeping exercise across sixteen sprites.
+  MainScene.prototype.layoutBoss = function () {
+    var boss = this.state.boss;
+    if (!boss) return;
+    var scale = boss.sprite.scaleX;
+    boss.sprite.x = boss.x;
+    boss.sprite.y = boss.y;
+
+    // The arms are one stretched segment each, running from the body's
+    // shoulder down to its outermost plate.
+    var lastOx = BOSS_TENTACLE_X0 + (STRIP_COLOR_KEYS.length - 1) * BOSS_TENTACLE_STEP_X;
+    var lastOy = BOSS_TENTACLE_Y0 + (STRIP_COLOR_KEYS.length - 1) * BOSS_TENTACLE_STEP_Y;
+    boss.arms.forEach(function (arm, i) {
+      var side = i === 0 ? -1 : 1;
+      var x0 = boss.x + side * BOSS_TENTACLE_X0 * 0.55 * scale;
+      var y0 = boss.y + (BOSS_TENTACLE_Y0 - BOSS_TENTACLE_STEP_Y) * scale;
+      var x1 = boss.x + side * lastOx * scale;
+      var y1 = boss.y + lastOy * scale;
+      arm.x = (x0 + x1) / 2;
+      arm.y = (y0 + y1) / 2;
+      arm.rotation = Math.atan2(y1 - y0, x1 - x0) - Math.PI / 2;
+      arm.setScale(scale, Math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)) / arm.height);
+      arm.setAlpha(boss.sprite.alpha);
+    });
+
+    boss.cores.forEach(function (c) {
+      c.sprite.x = boss.x + c.ox * scale;
+      c.sprite.y = boss.y + c.oy * scale;
+      c.sprite.setScale(scale);
+      c.sprite.setAlpha(boss.sprite.alpha);
+    });
+    boss.bricks.forEach(function (b) {
+      if (!b.alive) return;
+      b.sprite.x = b.crackSprite.x = boss.x + b.ox * scale;
+      b.sprite.y = b.crackSprite.y = boss.y + b.oy * scale;
+      b.sprite.setScale(scale);
+      b.crackSprite.setScale(scale);
+      b.sprite.setAlpha(boss.sprite.alpha);
+    });
+  };
+
+  // How much of his shielding is left, 0 to 1 - cores and plates pooled,
+  // by hit points rather than by piece, so chipping a plate counts for
+  // something even before it breaks. Drives the spawn rate, which is the
+  // only feedback that says "you are getting somewhere" during the long
+  // middle of the fight.
+  MainScene.prototype.bossShielding = function () {
+    var boss = this.state.boss;
+    if (!boss) return 0;
+    var have = 0, max = 0;
+    // Keyed off alive, not off hp: a piece destroyed by damage ends on
+    // hp <= 0 so either reading works in play, but anything that kills a
+    // piece without driving its hp down (the setup back door, a future
+    // one-shot) would otherwise leave it still counting as shielding.
+    function tally(p) { if (p.alive) have += Math.max(0, p.hp); max += p.maxHp; }
+    boss.cores.forEach(tally);
+    boss.bricks.forEach(tally);
+    return max > 0 ? clamp(have / max, 0, 1) : 0;
+  };
+
+  // The colours that still have something of his left to destroy. Drives
+  // what the powerup economy offers during the fight - see
+  // pickPowerupColor(). A colour drops off this list the moment its core
+  // AND both its plates are gone, so the last stretch of the fight stops
+  // handing you ammunition for work you have already done.
+  MainScene.prototype.bossNeededColors = function () {
+    var boss = this.state.boss;
+    if (!boss) return [];
+    return STRIP_COLOR_KEYS.filter(function (key) {
+      function mine(p) { return p.alive && p.colorKey === key; }
+      return boss.cores.some(mine) || boss.bricks.some(mine);
+    });
+  };
+
+  MainScene.prototype.bossExposed = function () {
+    var boss = this.state.boss;
+    if (!boss) return false;
+    function alive(p) { return p.alive; }
+    return !boss.cores.some(alive) && !boss.bricks.some(alive);
+  };
+
+  // Spawns stretch out as the shielding comes off, so stripping him is
+  // felt as the fight getting quieter rather than only as a number you
+  // cannot see.
+  MainScene.prototype.bossAddInterval = function () {
+    var full = Math.max(0.3, TUNING.bossAddInterval);
+    return BOSS_ADD_INTERVAL_MIN + (full - BOSS_ADD_INTERVAL_MIN) * this.bossShielding();
+  };
+
+  // An add is an ordinary formation slot that skips the formation: it is
+  // pushed straight into state.formation already diving, so updateDivers()
+  // flies it, bulletVsFormation() kills it, orbiterVsEnemies() matches its
+  // colour and shipVsDivers() lets it hurt you - all of it for free, with
+  // no second enemy type to keep in step with the first.
+  MainScene.prototype.spawnBossAdd = function () {
+    var state = this.state, boss = state.boss;
+    var type = FORMATION_ROW_TYPES[Math.floor(Math.random() * FORMATION_ROW_TYPES.length)];
+    var cfg = ENEMY_TYPES[type];
+    var x = clamp(boss.x + (Math.random() * 2 - 1) * (BOSS_BODY_WIDTH * 0.45), 20, GAME_WIDTH - 20);
+    var y = boss.y + BOSS_BODY_HEIGHT * 0.4;
+    var slot = {
+      row: 0, col: 0, baseX: x, baseY: y,
+      x: x, y: y,
+      alive: true, diving: true, entering: false,
+      isBossAdd: true, // so updateBoss() can retire the dead ones - the formation array is never spliced anywhere else
+      launchIn: 0, launchTotal: 0, sortieId: null,
+      fireIn: randomEnemyFireInterval(state.difficulty.elapsed),
+      formationShooter: false, formationShotsFired: 0,
+      age: 0, phase: Math.random() * Math.PI * 2,
+      spawnX: x,
+      diveTargetX: state.ship.x, // the swoop's frozen aim point, same as a real sortie's
+      spinSettle: 0, spinSettleTotal: 0, spinFrom: 0,
+      type: type, radius: cfg.radius, color: cfg.color, score: cfg.score, colorKey: cfg.colorKey
+    };
+    if (type === 'zigzag') rollZigzagWeave(slot);
+    slot.sprite = this.add.sprite(x, y, ENEMY_TEX[type]);
+    state.formation.push(slot);
+    boss.addsSpawned++;
+  };
+
+  MainScene.prototype.updateBoss = function (dt) {
+    var state = this.state, boss = state.boss;
+    boss.age += dt;
+
+    if (boss.phase === 'rise') {
+      var t = Math.min(1, boss.age / BOSS_RISE_DURATION);
+      var eased = t * t * (3 - 2 * t);
+      boss.y = PLANET_Y + (BOSS_Y - PLANET_Y) * eased;
+      boss.sprite.setScale(0.3 + 0.7 * eased);
+      boss.sprite.setAlpha(eased);
+      if (t >= 1) { boss.phase = 'fight'; boss.age = 0; boss.addTimer = BOSS_FIRST_ADD_DELAY; }
+    } else if (boss.phase === 'fight') {
+      boss.driftPhase += BOSS_DRIFT_SPEED * dt;
+      boss.x = GAME_WIDTH / 2 + Math.sin(boss.driftPhase) * BOSS_DRIFT_RANGE;
+      boss.y = BOSS_Y;
+      boss.addTimer -= dt;
+      if (boss.addTimer <= 0) {
+        this.spawnBossAdd();
+        boss.addTimer = this.bossAddInterval();
+      }
+      boss.sprite.setTexture(this.bossExposed() ? 'bossHullBareTex' : 'bossHullTex');
+    } else {
+      // Dying: he judders in place and fades, and the adds he already put
+      // in the air are left to be dodged or shot - the fight doesn't end
+      // the moment he does.
+      var dt2 = Math.min(1, boss.age / BOSS_DEATH_DURATION);
+      boss.x = GAME_WIDTH / 2 + Math.sin(boss.driftPhase) * BOSS_DRIFT_RANGE +
+               (Math.random() * 2 - 1) * BOSS_DEATH_SHAKE;
+      boss.sprite.setAlpha(1 - dt2);
+    }
+
+    // Dead adds pile up in state.formation otherwise - nothing else in the
+    // game ever removes a slot, because a wave's array is thrown away
+    // wholesale by the next spawnFormation() and a boss fight has no such
+    // moment until it ends.
+    state.formation = state.formation.filter(function (s) { return s.alive || !s.isBossAdd; });
+
+    this.layoutBoss();
+
+    // Ends HERE, at the bottom of the update, and everything that reads
+    // state.boss afterwards re-checks it - the collision pass runs after
+    // this and nulling it mid-frame is exactly the shape of the freeze
+    // that shipped at the end of a challenge stage.
+    if (boss.phase === 'dying' && boss.age >= BOSS_DEATH_DURATION) this.endBoss();
+  };
+
+  // Called the moment the hull runs out, from the damage path. The big
+  // ring is the payoff AND the mercy: it takes every add on screen with
+  // it, so the last hit doesn't land you in a swarm.
+  MainScene.prototype.startBossDeath = function () {
+    var boss = this.state.boss;
+    boss.phase = 'dying';
+    boss.age = 0;
+    this.triggerStarburst(boss.x, boss.y, {
+      awardScore: true,
+      brickDamage: 0, // the bars are off screen for this fight - see startBoss()
+      maxRadius: radiusToFarthestCorner(boss.x, boss.y)
+    });
+    traceEvent('boss_killed', { wave: this.state.wave, adds: boss.addsSpawned });
+  };
+
+  MainScene.prototype.clearBoss = function () {
+    var boss = this.state.boss;
+    if (!boss) return;
+    boss.sprite.destroy();
+    boss.arms.forEach(function (a) { a.destroy(); });
+    boss.cores.forEach(function (c) { c.sprite.destroy(); });
+    boss.bricks.forEach(function (b) {
+      if (!b.alive) return; // a broken plate destroyed its own sprites already
+      b.sprite.destroy();
+      b.crackSprite.destroy();
+    });
+    this.state.boss = null;
+  };
+
+  MainScene.prototype.endBoss = function () {
+    var state = this.state;
+    this.addScore(BOSS_SCORE);
+    this.clearBoss();
+    // The approach starts over: you have knocked this world's guardian
+    // down, and the run flies on toward the next one. Without this the
+    // very next cleared wave would summon another boss, since the
+    // approach would still be sitting at 1.
+    state.challengesDone = 0;
+    this.setColorBarsVisible(true);
+    this.updatePlanet();
+    state.diveTimer = this.diveInterval();
+    this.spawnFormation();
+    traceEvent('boss_end', { wave: state.wave, elapsed: state.difficulty.elapsed });
+  };
+
+  // ---- The back door -----------------------------------------------------
+  // Getting to the boss the honest way is five challenge stages deep into
+  // a run, which is no way to iterate on him. This drops straight in,
+  // and because the loadout IS the difficulty (arrive with all six and
+  // it's a workout; arrive with none and it's a siege), it pauses first
+  // and lets you dial that in rather than starting from whatever you
+  // happened to be carrying.
+
+  MainScene.prototype.openBossSetup = function () {
+    var state = this.state;
+    if (state.phase !== 'playing') return false;
+    state.phase = 'paused'; // update() gates on 'playing', so this freezes everything by itself
+    forceReleaseAllInput(); // or a held fire button resumes firing into the fight
+    var el = document.getElementById('bossSetupOverlay');
+    if (el) el.classList.add('visible');
+    this.renderHud();
+    return true;
+  };
+
+  MainScene.prototype.closeBossSetup = function (loadout) {
+    var el = document.getElementById('bossSetupOverlay');
+    if (el) el.classList.remove('visible');
+    if (this.state.phase === 'paused') this.state.phase = 'playing';
+    if (loadout) {
+      this.applyBossLoadout(loadout);
+      this.startBoss();
+    }
+    this.renderHud();
+  };
+
+  // Replaces what you are carrying outright, rather than topping it up -
+  // "arrive with two reds" has to mean two, whatever the run had already
+  // banked, or the chooser would only ever be able to add.
+  MainScene.prototype.applyBossLoadout = function (loadout) {
+    var self = this;
+    this.clearPowerup();
+    this.clearFirePower();
+    if (!loadout) return;
+    STRIP_COLOR_KEYS.forEach(function (key) {
+      var orbs = Math.max(0, Math.round((loadout.orbs && loadout.orbs[key]) || 0));
+      for (var i = 0; i < orbs; i++) self.collectColor(key);
+      var fire = Math.max(0, Math.round((loadout.fire && loadout.fire[key]) || 0));
+      for (var j = 0; j < fire; j++) self.levelUpFirePower(key);
+    });
+  };
+
+  // ---- Boss damage paths -------------------------------------------------
+  // Three of them, one per piece of him, and they never overlap: an
+  // orbiter cannot chip a plate, a colour trail cannot touch a core, and
+  // plain fire cannot reach the hull until both are gone. Each starts by
+  // re-reading state.boss because they run in the collision pass, AFTER
+  // updateBoss() may have ended the fight.
+
+  // A belly core, by a matching orbiter only. A mismatched shot isn't
+  // blocked - it flies straight past, the same as it does over a
+  // mismatched enemy.
+  MainScene.prototype.orbiterVsBossCores = function (o) {
+    var boss = this.state.boss;
+    if (!boss || boss.phase !== 'fight') return false;
+    for (var i = 0; i < boss.cores.length; i++) {
+      var c = boss.cores[i];
+      if (!c.alive || c.colorKey !== o.colorKey) continue;
+      var cx = boss.x + c.ox, cy = boss.y + c.oy;
+      if (!circleHit(o.x, o.y, cx, cy, BOSS_CORE_RADIUS + orbiterRadius())) continue;
+      c.hp--;
+      this.triggerShieldFizzle(cx, cy, c.colorKey);
+      if (c.hp <= 0) {
+        c.alive = false;
+        c.sprite.setTexture('bossCoreDeadTex');
+        this.addScore(BOSS_CORE_SCORE);
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // A tentacle plate, by a bullet's colour trail - the same encounter a
+  // colour bar segment gets, including the all-or-nothing fizzle on a
+  // mismatch, so the skill you learned on the bars is the skill you bring
+  // here. b.trailResolved holds the same line too: one plate per shot.
+  MainScene.prototype.pulseTrailVsBossArmour = function (b) {
+    var boss = this.state.boss;
+    if (!boss || boss.phase !== 'fight') return;
+    if (b.trailResolved || !b.trailLevels) return;
+    var carriesAnyColor = STRIP_COLOR_KEYS.some(function (key) { return b.trailLevels[key] > 0; });
+    if (!carriesAnyColor) return;
+
+    for (var i = 0; i < boss.bricks.length; i++) {
+      var br = boss.bricks[i];
+      if (!br.alive) continue;
+      var bx = boss.x + br.ox, by = boss.y + br.oy;
+      if (!spanHit(b.y, by, BOSS_ARMOUR_H / 2 + BULLET_RADIUS)) continue;
+      if (!spanHit(b.x, bx, BOSS_ARMOUR_W / 2 + BULLET_RADIUS)) continue;
+      var level = b.trailLevels[br.colorKey] || 0;
+      if (level > 0) this.pulseDamagesBossBrick(b, br, level);
+      else this.pulseFizzlesOut(b, bx, by + BOSS_ARMOUR_H / 2);
+      b.trailResolved = true;
+      return;
+    }
+  };
+
+  MainScene.prototype.pulseDamagesBossBrick = function (b, br, level) {
+    br.hp -= level;
+    b.trailLevels[br.colorKey] = 0;
+    if (b.trailSprites[br.colorKey]) {
+      b.trailSprites[br.colorKey].destroy();
+      delete b.trailSprites[br.colorKey];
+    }
+    if (br.hp > 0) {
+      this.updateBossBrickCrack(br);
+      return;
+    }
+    br.alive = false;
+    br.sprite.destroy();
+    br.crackSprite.destroy();
+    this.addScore(BOSS_ARMOUR_SCORE);
+  };
+
+  MainScene.prototype.updateBossBrickCrack = function (br) {
+    br.crackSprite.setAlpha(clamp(1 - br.hp / br.maxHp, 0, 1));
+  };
+
+  // The long-press bolt against the tentacle plates - the boss-fight
+  // stand-in for applyPowerupBoltDamage()'s bar pass, on the same terms:
+  // matching colour only, whatever the column happens to be under, one
+  // tick's worth of damage each.
+  MainScene.prototype.applyPowerupBoltVsBossArmour = function (bolt) {
+    var boss = this.state.boss;
+    if (!boss || boss.phase !== 'fight') return;
+    for (var i = 0; i < boss.bricks.length; i++) {
+      var br = boss.bricks[i];
+      if (!br.alive || br.colorKey !== bolt.colorKey) continue;
+      if (!spanHit(bolt.sprite.x, boss.x + br.ox, BOSS_ARMOUR_W / 2 + POWERUP_BOLT_WIDTH / 2)) continue;
+      br.hp -= POWERUP_BOLT_TICK_DAMAGE;
+      if (br.hp > 0) { this.updateBossBrickCrack(br); continue; }
+      br.alive = false;
+      br.sprite.destroy();
+      br.crackSprite.destroy();
+      this.addScore(BOSS_ARMOUR_SCORE);
+    }
+  };
+
+  // The hull, by ordinary fire, and only once every core is dead and every
+  // plate is broken. Before that a plain bullet passes through him
+  // entirely - there is no "chip damage" path, because a fight you can
+  // eventually win by ignoring the colours would make arriving loaded a
+  // preference rather than the point.
+  MainScene.prototype.bulletVsBossHull = function (b, bi) {
+    var state = this.state, boss = state.boss;
+    if (!boss || boss.phase !== 'fight') return false;
+    if (!this.bossExposed()) return false;
+    if (!ellipseHit(b.x, b.y, boss.x, boss.y,
+                    BOSS_BODY_WIDTH / 2 + BULLET_RADIUS, BOSS_BODY_HEIGHT / 2 + BULLET_RADIUS)) return false;
+    destroyBulletSprites(b);
+    state.bullets.splice(bi, 1);
+    boss.hullHp--;
+    this.triggerBrickFizzle(b.x, b.y);
+    if (boss.hullHp <= 0) this.startBossDeath();
+    return true;
+  };
 
   // ---- Input: composition ------------------------------------------------------
   var touchLeft = false, touchRight = false, touchFire = false;
@@ -4142,8 +4857,18 @@
       var b = state.bullets[i];
       if (this.bulletVsOrbitingCore(b, i)) continue;
       if (this.bulletVsOrbPods(b, i)) continue;
-      this.pulseTrailVsColorBars(b); // never consumes the bullet - see below
+      // The bars are off screen during a boss fight and his tentacle
+      // armour takes their place in the colour-trail economy, so the
+      // bullet resolves against exactly one of the two, never both.
+      if (state.boss) this.pulseTrailVsBossArmour(b); // neither consumes the bullet - see below
+      else this.pulseTrailVsColorBars(b);
       if (this.bulletVsFormation(b, i)) continue;
+      // No state.boss gate: the hull check re-reads it itself, and has
+      // to, because this pass runs AFTER updateBoss() may have ended the
+      // fight mid-frame. Gating here as well would make that guard
+      // unreachable, and an unreachable guard is one nothing is holding
+      // up any more.
+      if (this.bulletVsBossHull(b, i)) continue;
       if (this.bulletVsBrickShards(b, i)) continue;
     }
   };
@@ -4210,7 +4935,7 @@
         if (!seg.alive) continue; // a destroyed segment is a real gap - nothing to hit
         if (!spanHit(b.x, seg.sprite.x, BRICK_SEGMENT_WIDTH / 2 + BULLET_RADIUS)) continue;
         if (level > 0) this.pulseDamagesSegment(b, bar, seg, level);
-        else this.pulseFizzlesOut(b, seg);
+        else this.pulseFizzlesOut(b, seg.sprite.x, seg.sprite.y + state.colorBarHeight / 2);
         b.trailResolved = true;
         return;
       }
@@ -4241,14 +4966,19 @@
 
   // No matching color: the WHOLE pulse is absorbed here - every trail the
   // bullet carries, not just the one that didn't match - doing no damage,
-  // with a brief flash at the segment's bottom edge, where the pulse
-  // actually made contact coming from below. The bullet survives and flies
-  // on as a plain, trail-less shot.
-  MainScene.prototype.pulseFizzlesOut = function (b, seg) {
+  // with a brief flash where the pulse actually made contact coming from
+  // below. The bullet survives and flies on as a plain, trail-less shot.
+  //
+  // Takes the flash's position rather than the thing that absorbed it:
+  // the boss's tentacle armour is a different shape at a different place
+  // and absorbs a mismatch by exactly this rule (see
+  // pulseTrailVsBossArmour()), and passing a fake segment to say so would
+  // be a worse lie than passing two numbers.
+  MainScene.prototype.pulseFizzlesOut = function (b, x, y) {
     for (var key in b.trailSprites) b.trailSprites[key].destroy();
     b.trailSprites = {};
     STRIP_COLOR_KEYS.forEach(function (key) { b.trailLevels[key] = 0; });
-    this.triggerBrickFizzle(seg.sprite.x, seg.sprite.y + this.state.colorBarHeight / 2);
+    this.triggerBrickFizzle(x, y);
   };
 
   // Bullets can hit any live formation member, idle or already mid-dive -
@@ -4696,6 +5426,18 @@
   // one dies, so this is just a safety net, not a real path).
   MainScene.prototype.pickPowerupColor = function () {
     var state = this.state;
+    // In a boss fight the bars are off the board and what you need is not
+    // "whatever colour is still up there" but whatever part of HIM you
+    // still cannot hurt. Without this the weighting below would quietly
+    // make the fight unwinnable: it never drops a colour whose bars all
+    // died earlier in the run, and that colour's core and plates would
+    // then have no answer at all. This is also the thing that makes
+    // arriving short survivable rather than fatal - the drops come round
+    // to the gap.
+    if (state.boss) {
+      var needed = this.bossNeededColors();
+      if (needed.length) return needed[Math.floor(Math.random() * needed.length)];
+    }
     var counts = {};
     var total = 0;
     STRIP_COLOR_KEYS.forEach(function (key) { counts[key] = 0; });
@@ -4999,6 +5741,15 @@
     state.brickShards.forEach(function (sh) {
       consider(sh.x, sh.y, sh.colorKey);
     });
+    // The boss's belly cores are prey too, and have to be: they are the
+    // ONLY thing a matching orbiter can hurt on him, so a shot that would
+    // not steer at one would make the whole mechanic a matter of luck.
+    var boss = state.boss;
+    if (boss && boss.phase === 'fight') {
+      boss.cores.forEach(function (c) {
+        if (c.alive) consider(boss.x + c.ox, boss.y + c.oy, c.colorKey);
+      });
+    }
     return best;
   };
 
@@ -5039,6 +5790,7 @@
         if (o.trail.length > ORBITER_TRAIL_POINTS) o.trail.shift();
       }
 
+      if (this.orbiterVsBossCores(o)) { this.destroyOrbiter(i); continue; }
       if (this.orbiterVsEnemies(o)) { this.destroyOrbiter(i); continue; }
       if (o.age > TUNING.orbiterLifetime || isOffPlayfield(o.x, o.y, 30)) this.destroyOrbiter(i);
     }
@@ -5380,6 +6132,13 @@
     var state = this.state;
     var self = this;
     var anyBarDied = false;
+    // During a boss fight the bars are off screen and his tentacle plates
+    // are the bricks in play, so the bolt chips those instead. Routing it
+    // rather than adding it matters: left alone the bolt would be quietly
+    // grinding down bars nobody can see, and the plates - which the spec
+    // calls bricks, destroyed the way bricks are - would be immune to one
+    // of the two things that destroys a brick.
+    if (state.boss) { this.applyPowerupBoltVsBossArmour(bolt); return; }
     state.colorBars.forEach(function (bar) {
       if (!bar.alive || bar.colorKey !== bolt.colorKey) return;
       if (!spanHit(bolt.sprite.x, bar.x, COLOR_BAR_WIDTH / 2)) return;
@@ -5464,7 +6223,11 @@
       if (TUNING.deathBlast && !alreadyExploded && !state.challenge) {
         this.triggerStarburst(state.ship.x, SHIP_Y, {
           awardScore: false,
-          brickDamage: TUNING.deathBlastBrickDamage,
+          // In a boss fight the blast still does the job it exists for -
+          // it clears his adds off the screen so a death doesn't drop you
+          // straight back into a swarm - but the bars are hidden for the
+          // fight, so chipping them would be damage nobody can see.
+          brickDamage: state.boss ? 0 : TUNING.deathBlastBrickDamage,
           maxRadius: radiusToFarthestCorner(state.ship.x, SHIP_Y)
         });
       }
@@ -5509,6 +6272,10 @@
     // the bars still hidden.
     this.clearMeteors();
     state.challenge = null;
+    // And the boss, for exactly the same reason: sixteen frozen sprites
+    // behind the overlay, and a restart that comes back to his body still
+    // hanging there.
+    this.clearBoss();
     state.starSpeedScale = 1;
     this.flameOn = false;
     this.flameSprite.setVisible(false);
@@ -5531,7 +6298,8 @@
     document.getElementById('scoreVal').textContent = state.score;
     document.getElementById('livesVal').textContent = state.lives;
     document.getElementById('bestVal').textContent = state.highScore;
-    document.getElementById('phaseDot').className = 'turn-dot ' + (state.phase === 'playing' ? 'playing' : 'gameover');
+    var dot = state.phase === 'playing' ? 'playing' : (state.phase === 'paused' ? 'paused' : 'gameover');
+    document.getElementById('phaseDot').className = 'turn-dot ' + dot;
   };
 
   // The lab's own "Live" readout only exists while the panel covers the
@@ -5545,6 +6313,29 @@
     if (!el) return;
     var state = this.state;
     var tier = this.sortieTier();
+
+    // During a boss fight none of the sortie readout below means anything
+    // - there is no formation, no bag and no dive timer running - so this
+    // shows the fight instead: what is left of him, and how hard he is
+    // still spawning.
+    if (state.boss) {
+      var boss = state.boss;
+      var coreLine = boss.cores.map(function (c) {
+        return c.colorKey.charAt(0) + (c.alive ? c.hp : '-');
+      }).join(' ');
+      var plateLine = STRIP_COLOR_KEYS.map(function (key) {
+        var hp = 0;
+        boss.bricks.forEach(function (b) { if (b.alive && b.colorKey === key) hp += b.hp; });
+        return key.charAt(0) + (hp || '-');
+      }).join(' ');
+      el.textContent =
+        'BOSS ' + boss.phase + '  shielding ' + Math.round(this.bossShielding() * 100) + '%\n' +
+        'cores  ' + coreLine + '\n' +
+        'plates ' + plateLine + '\n' +
+        'hull ' + (this.bossExposed() ? boss.hullHp + ' left' : 'sealed') +
+        '  adds ' + boss.addsSpawned + ' every ' + this.bossAddInterval().toFixed(1) + 's';
+      return;
+    }
 
     // A sortie already staged and pulsing (telegraphed, not yet dropped) is
     // more informative than the plain countdown to the next DRAW, so show
@@ -5644,6 +6435,7 @@
     state.shieldFizzles = [];
     this.clearMeteors();
     this.clearOrbiters();
+    this.clearBoss();
     state.challenge = null;
     state.challengesDone = 0;
     state.starSpeedScale = 1;
@@ -5805,6 +6597,39 @@
         updateBullets(state, dt);
         self.updateFiring(dt);
         self.updateChallenge(dt);
+      },
+      // Straight into the boss fight, optionally with a chosen loadout -
+      // the same door the lab's chooser goes through, minus the pause.
+      // Pass nothing to arrive with exactly what you are carrying.
+      forceBoss: function (loadout) {
+        if (loadout) self.applyBossLoadout(loadout);
+        self.startBoss();
+      },
+      // Advances an ACTIVE boss fight by an exact dt - the stepped
+      // equivalent of the boss's slice of the combat branch in update(),
+      // in the same order, collisions included.
+      stepBoss: function (dt) {
+        var state = self.state;
+        if (!state.boss) return;
+        state.clock += dt;
+        updateShip(state, dt);
+        updateBullets(state, dt);
+        updateEnemyBullets(state, dt);
+        updateDivers(state, dt, self.diverSpeedScale(), self);
+        self.updateFiring(dt);
+        self.updateBoss(dt);
+        self.handleCollisions();
+        self.updatePowerupDots(dt);
+        self.updateOrbiters(dt);
+        self.updatePowerupBolts(dt);
+      },
+      // Skips the boss's entrance - for tests and playtests that are
+      // about the fight rather than the arrival.
+      skipBossRise: function () {
+        var boss = self.state.boss;
+        if (!boss || boss.phase !== 'rise') return;
+        boss.age = BOSS_RISE_DURATION;
+        self.updateBoss(0);
       }
     };
     window.__headOnTrace = {
@@ -5878,21 +6703,42 @@
         this.updateShipFill(dt);
       } else {
 
+      // A boss fight is NOT a third branch. It runs inside this one with
+      // the wave-shaped pieces switched off - there is no formation to
+      // bob, fly in or draw sorties from, and the bars are hidden - while
+      // everything about the player (firing, the powerup economy, the
+      // dots, the FX) runs exactly as it always does. That is the whole
+      // reason it shares the branch: the fight is meant to be the ordinary
+      // game with one enormous thing in it, and a second copy of this list
+      // would drift out of step with the first the first time either moved.
+      var boss = !!state.boss;
+
       // Move first: everything that advances on its own this frame, so the
       // collision pass below sees one consistent set of final positions
       // rather than resolving hits against half-stale ones.
       updateShip(state, dt);
       updateBullets(state, dt);
       updateEnemyBullets(state, dt);
+      // These four need no boss gate and deliberately do not have one:
+      // each skips any slot that is already diving, and every add the boss
+      // puts in the air is born diving (see spawnBossAdd()), so during a
+      // fight all four are no-ops over an array of divers. A gate here
+      // would be an unfalsifiable guard implying a difference that isn't
+      // there - the mutation test for it survives, which is how it was
+      // caught.
       updateIdleBob(state);
       updateFormationEntry(state, dt, this);
       updateFormationFire(state, dt, this);
       updatePendingLaunches(state, dt);
-      updateDivers(state, dt, this.diverSpeedScale(), this);
+      updateDivers(state, dt, this.diverSpeedScale(), this); // his adds are divers - see spawnBossAdd()
       this.updateFiring(dt);
-      this.tryTriggerDive(dt);
-      this.updateColorBars(dt);
-      this.updateBrickShards(dt);
+      if (boss) {
+        this.updateBoss(dt);
+      } else {
+        this.tryTriggerDive(dt);
+        this.updateColorBars(dt);
+        this.updateBrickShards(dt);
+      }
       this.updateBrickFizzles(dt);
       this.updateShieldFizzles(dt);
 
@@ -5917,8 +6763,14 @@
       this.updatePowerupBolts(dt);
       this.updateOrbs(dt);
       this.updateOrbBullets(dt);
-      this.checkWaveClear(dt);
-      state.difficulty.elapsed += dt;
+      // Neither of these belongs to a boss fight: there is no wave to
+      // clear (endBoss() spawns the next formation itself), and the fight
+      // is a set piece rather than free escalation - the same rule the
+      // challenge stage follows.
+      if (!state.boss) {
+        this.checkWaveClear(dt);
+        state.difficulty.elapsed += dt;
+      }
       } // end of the ordinary combat branch - see the challenge branch above
       this.updateDiagOverlay();
       this.updateTraceTier();
@@ -6052,6 +6904,10 @@
       { section: 'labChallenge', key: 'challengeVolleys', label: 'Volleys per stage', min: 1, max: 20, step: 1, unit: '' },
       { section: 'labChallenge', key: 'challengeMeteorSpeed', label: 'Meteor speed', min: 100, max: 600, step: 10, unit: 'px/s' },
       { section: 'labChallenge', key: 'meteorHitGraceMs', label: 'Mercy after a hit', min: 0, max: 1500, step: 50, unit: 'ms' },
+      { section: 'labBoss', key: 'bossHullHp', label: 'Hull hits', min: 1, max: 80, step: 1, unit: '' },
+      { section: 'labBoss', key: 'bossCoreHp', label: 'Per belly core', min: 1, max: 15, step: 1, unit: ' missiles' },
+      { section: 'labBoss', key: 'bossArmourHp', label: 'Per armour plate', min: 1, max: 12, step: 1, unit: 'hp' },
+      { section: 'labBoss', key: 'bossAddInterval', label: 'Spawn gap (full armour)', min: 0.5, max: 8, step: 0.1, unit: 's' },
       { section: 'labChallenge', key: 'challengeStagesToArrival', label: 'Stages to the planet', min: 1, max: 12, step: 1, unit: '',
         // Resizing the world the moment the slider moves, rather than at
         // the next stage end, is the whole point of having the slider -
@@ -6070,6 +6926,10 @@
     addCheckbox('labChallenge', 'A meteor hit spends the whole bank',
       function () { return TUNING.meteorShieldSpendsAll; },
       function (v) { TUNING.meteorShieldSpendsAll = v; });
+
+    addCheckbox('labBoss', 'Boss at the end of the approach',
+      function () { return TUNING.bossEnabled; },
+      function (v) { TUNING.bossEnabled = v; });
 
     addCheckbox('labChallenge', 'Challenge stages on',
       function () { return TUNING.challengeEnabled; },
@@ -6280,6 +7140,82 @@
       mainScene.startChallenge();
       setLabOpen(false);
     });
+
+    // ---- The boss back door ----------------------------------------------
+    // Closes the panel, pauses the run and puts the loadout chooser up
+    // over the board. Nothing starts until "Fight" - see openBossSetup().
+    var bossLoadout = { orbs: { red: 0, green: 0, blue: 0 }, fire: { red: 0, green: 0, blue: 0 } };
+    var BOSS_SETUP_MAX = 3;
+    var bossSetupSteps = [];
+
+    function buildBossSetup() {
+      var host = document.getElementById('bossSetupRows');
+      if (!host) return;
+      host.textContent = '';
+      bossSetupSteps = [];
+      [{ group: 'orbs', title: 'Shield orbs — the missile guns' },
+       { group: 'fire', title: 'Fire power — the colour trails' }].forEach(function (sec) {
+        var head = document.createElement('div');
+        head.className = 'boss-setup-head';
+        head.textContent = sec.title;
+        host.appendChild(head);
+        STRIP_COLOR_KEYS.forEach(function (key) {
+          var row = document.createElement('div');
+          row.className = 'boss-setup-row';
+          var swatch = document.createElement('span');
+          swatch.className = 'bs-swatch';
+          swatch.style.background = '#' + STRIP_COLORS[key].toString(16).padStart(6, '0');
+          var label = document.createElement('span');
+          label.className = 'bs-label';
+          label.textContent = key;
+          var steps = document.createElement('span');
+          steps.className = 'bs-steps';
+          for (var n = 0; n <= BOSS_SETUP_MAX; n++) {
+            steps.appendChild(bossSetupStep(sec.group, key, n));
+          }
+          row.appendChild(swatch);
+          row.appendChild(label);
+          row.appendChild(steps);
+          host.appendChild(row);
+        });
+      });
+      syncBossSetup();
+    }
+
+    function bossSetupStep(group, key, n) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'bs-step';
+      btn.textContent = String(n);
+      btn.addEventListener('click', function () {
+        bossLoadout[group][key] = n;
+        syncBossSetup();
+      });
+      bossSetupSteps.push({ el: btn, group: group, key: key, n: n });
+      return btn;
+    }
+
+    function syncBossSetup() {
+      bossSetupSteps.forEach(function (s) {
+        s.el.classList.toggle('on', bossLoadout[s.group][s.key] === s.n);
+      });
+    }
+
+    buildBossSetup();
+
+    document.getElementById('labBossNowBtn').addEventListener('click', function () {
+      if (!mainScene || mainScene.state.phase !== 'playing') return;
+      if (mainScene.state.challenge || mainScene.state.boss) return;
+      setLabOpen(false);
+      mainScene.openBossSetup();
+    });
+    document.getElementById('bossSetupFightBtn').addEventListener('click', function () {
+      if (mainScene) mainScene.closeBossSetup(bossLoadout);
+    });
+    document.getElementById('bossSetupCancelBtn').addEventListener('click', function () {
+      if (mainScene) mainScene.closeBossSetup(null);
+    });
+
     document.getElementById('labResetBtn').addEventListener('click', function () {
       var defaults = sortieDefaultTuning();
       Object.keys(defaults).forEach(function (k) { TUNING[k] = defaults[k]; });
