@@ -1022,7 +1022,20 @@
   // which makes a deep bank what it should be - more attempts at the
   // gauntlet - instead of a bigger target.
   var METEOR_SHIELD_SPENDS_ALL = false; // true = one save costs the whole bank, however deep
-  var METEOR_SHIELD_GRACE_MS = 600;     // brief mercy after a save, or the same rock strips the next dot next frame
+  // A hit inside a stage grants this much invulnerability. Zero by
+  // default, and that is the point.
+  //
+  // A stage has no respawn - you were never off the board - so the usual
+  // 1500ms blink is not mercy here, it is a reward: a volley lands every
+  // 1050ms and a meteor crosses in 1600ms, so one hit used to buy a free
+  // pass through an entire volley cycle. Taking a hit was better than
+  // dodging.
+  //
+  // Nothing needs that window anyway. What it was really preventing was
+  // one rock hitting you over and over while it overlapped, and that is
+  // handled exactly, by marking the rock spent (see shipVsMeteors) rather
+  // than by making the whole board harmless for a second and a half.
+  var METEOR_HIT_GRACE_MS = 0;
 
   // Zigzag's oscillation - same placement rule as the rest: TUNING is
   // seeded from these, so they have to be declared above it.
@@ -1123,6 +1136,7 @@
       orbiterLifetime: ORBITER_LIFETIME,
       orbiterSize: ORBITER_SIZE,
       meteorShieldSpendsAll: METEOR_SHIELD_SPENDS_ALL,
+      meteorHitGraceMs: METEOR_HIT_GRACE_MS,
       zigzagFreq: ZIGZAG_FREQ,
       zigzagAmplitude: ZIGZAG_AMPLITUDE,
       zigzagVariation: ZIGZAG_VARIATION,
@@ -3789,7 +3803,15 @@
       // Deliberately NO shieldDotBlocks() here, unlike every other hazard
       // in the game - see METEOR_SHIELD_SPENDS_ALL. Rock is tested against
       // the hull alone, so the ring never widens the target.
+      //
+      // A rock that has already landed on you is spent and cannot land
+      // again, however long it keeps overlapping. That is what stops one
+      // impact draining a whole bank frame by frame - precisely, and
+      // without making every OTHER rock on screen harmless too, which is
+      // what a blanket invulnerability window did.
+      if (m.spentOnShip) continue;
       if (!circleHit(m.x, m.y, state.ship.x, SHIP_Y, state.ship.radius + m.radius)) continue;
+      m.spentOnShip = true;
       if (this.spendShieldOnMeteor(m)) return; // a shield took it
       this.shipHit('meteor', { pattern: state.challenge.lastPattern });
       return;
@@ -3807,9 +3829,9 @@
     } else {
       this.consumeShieldDot(nearestShieldDotIndex(pu.dots, m.x, m.y));
     }
-    // Without this the rock is still overlapping next frame and takes the
-    // next dot too, emptying a deep bank on a single impact.
-    state.ship.invulnerableUntil = performance.now() + METEOR_SHIELD_GRACE_MS;
+    // No invulnerability, and so no blink: the rock that hit you is
+    // already marked spent by the caller, and every other rock on screen
+    // should still be able to reach you. Losing the shield IS the cost.
     return true;
   };
 
@@ -5580,9 +5602,19 @@
   // the price of one life.
   MainScene.prototype.shipHit = function (cause, extra, alreadyExploded) {
     var state = this.state;
+    var inStage = !!state.challenge;
     this.clearPowerup(); // dying resets whatever orb colors were banked - no carrying progress through a death
     this.clearFirePower(); // and the ship's strip-earned fire power, same rule
-    this.triggerShipBreak(state.ship.x, SHIP_Y); // placeholder death beat - see triggerShipBreak()
+    if (inStage) {
+      // No break-apart inside a stage. That effect HIDES the ship for its
+      // whole duration, which is survivable when you respawn afterwards
+      // and is not when you are still flying through rock - you would be
+      // dodging something you cannot see. A fizzle at the hull says "that
+      // one landed" without taking the ship off the screen.
+      this.triggerShieldFizzle(state.ship.x, SHIP_Y, 'red');
+    } else {
+      this.triggerShipBreak(state.ship.x, SHIP_Y); // placeholder death beat - see triggerShipBreak()
+    }
     state.lives--;
     // Logged here, in the one place every hazard funnels through, rather
     // than at each call site - cause/extra (e.g. which sortie a diver
@@ -5609,6 +5641,9 @@
         });
       }
       this.respawnShip();
+      // A stage has no respawn to be invulnerable FOR - see
+      // METEOR_HIT_GRACE_MS. Default 0, so no free pass and no blink.
+      if (inStage) state.ship.invulnerableUntil = performance.now() + TUNING.meteorHitGraceMs;
     }
     this.renderHud();
   };
@@ -6188,6 +6223,7 @@
       { section: 'labOrbiter', key: 'orbiterSize', label: 'Shot size', min: 0.4, max: 2, step: 0.05, unit: '×' },
       { section: 'labChallenge', key: 'challengeVolleys', label: 'Volleys per stage', min: 1, max: 20, step: 1, unit: '' },
       { section: 'labChallenge', key: 'challengeMeteorSpeed', label: 'Meteor speed', min: 100, max: 600, step: 10, unit: 'px/s' },
+      { section: 'labChallenge', key: 'meteorHitGraceMs', label: 'Mercy after a hit', min: 0, max: 1500, step: 50, unit: 'ms' },
       { section: 'labChallenge', key: 'challengeStagesToArrival', label: 'Stages to the planet', min: 1, max: 12, step: 1, unit: '',
         // Resizing the world the moment the slider moves, rather than at
         // the next stage end, is the whole point of having the slider -

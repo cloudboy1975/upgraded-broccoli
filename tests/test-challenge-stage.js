@@ -266,9 +266,33 @@ harness.run(async (page, check, ctx) => {
   check('a hit on the hull spends exactly one shield, not the bank',
     saved.afterFirst.dots === 2, saved);
   check('and costs no life', saved.afterFirst.lives === saved.lives, saved);
+  // Handled by marking THAT rock spent, not by a window of invulnerability
+  // - so it costs nothing and leaves every other rock still dangerous.
   check('the same rock cannot strip the rest of the bank next frame',
-    saved.dotsAfterRepeats === 2 && saved.invulnerable, saved);
+    saved.dotsAfterRepeats === 2, saved);
+  check('and it does so without going invulnerable', !saved.invulnerable, saved);
   check('the rock still is not destroyed by being blocked', saved.meteorSurvived, saved);
+
+  // The other half of that: a DIFFERENT rock arriving straight after must
+  // still land. A blanket window made one hit a free pass through the
+  // rest of the volley, which is what made taking one better than dodging.
+  const secondRock = await page.evaluate(SETTLE + `
+    window.__headOnDebug.forceChallenge();
+    state.ship.invulnerableUntil = 0;
+    window.__headOnDebug.giveOrbs('red', 2);
+    scene.updatePowerupDots(0.25);
+    const mk = () => {
+      const m = { x: state.ship.x, y: 413, vx: 0, vy: 0, radius: 12, spin: 0,
+                  sprite: scene.add.sprite(state.ship.x, 413, 'meteorTex_0') };
+      state.challenge.meteors.push(m); return m;
+    };
+    mk(); scene.shipVsMeteors();
+    const afterFirst = state.powerup.dots.length;
+    mk(); scene.shipVsMeteors();
+    ({ afterFirst, afterSecond: state.powerup.dots.length });
+  `);
+  check('a different rock arriving next still lands - no free pass',
+    secondRock.afterFirst === 1 && secondRock.afterSecond === 0, secondRock);
 
   const emptied = await page.evaluate(SETTLE + `
     window.__headOnDebug.forceChallenge();
@@ -281,6 +305,55 @@ harness.run(async (page, check, ctx) => {
   `);
   check('with the bank empty, a hull hit costs a life as before',
     emptied.livesAfter === emptied.lives - 1, emptied);
+
+  // A stage has no respawn - you were never off the board - so a hit must
+  // not hand back the 1500ms blink. That window covered more than a whole
+  // volley cycle (one lands every 1050ms), making a hit strictly better
+  // than a dodge.
+  const noFreePass = await page.evaluate(SETTLE + `
+    window.__headOnDebug.forceChallenge();
+    state.ship.invulnerableUntil = 0;
+    scene.clearPowerup();
+    state.challenge.meteors.push({ x: state.ship.x, y: 413, vx: 0, vy: 0, radius: 12, spin: 0,
+      sprite: scene.add.sprite(state.ship.x, 413, 'meteorTex_0') });
+    scene.shipVsMeteors();
+    ({ invulnMs: Math.round(state.ship.invulnerableUntil - performance.now()),
+       hidden: !!state.shipBreakFx });
+  `);
+  check('a stage hit grants no invulnerability, so no blink', noFreePass.invulnMs <= 0, noFreePass);
+  // The break-apart hides the ship for its whole duration. Fine when you
+  // respawn afterwards; not fine while you are still flying through rock.
+  check('and does not hide the ship you are still steering', !noFreePass.hidden, noFreePass);
+
+  // Outside a stage none of this applies - a death is still a death, with
+  // the respawn window and the break-apart intact.
+  const outsideStage = await page.evaluate(SETTLE + `
+    window.__headOnDebug.skipFormationEntry();
+    state.ship.invulnerableUntil = 0;
+    scene.shipHit('test');
+    ({ invulnMs: Math.round(state.ship.invulnerableUntil - performance.now()),
+       broke: !!state.shipBreakFx });
+  `);
+  check('a death outside a stage still grants the respawn window',
+    outsideStage.invulnMs > 1000, outsideStage);
+  check('and still plays the break-apart', outsideStage.broke, outsideStage);
+
+  // The mercy window is a lab slider for anyone who wants some back.
+  const mercy = await page.evaluate(SETTLE + `
+    const T = window.__headOnTuning.tuning;
+    T.meteorHitGraceMs = 800;
+    window.__headOnDebug.forceChallenge();
+    state.ship.invulnerableUntil = 0;
+    scene.clearPowerup();
+    state.challenge.meteors.push({ x: state.ship.x, y: 413, vx: 0, vy: 0, radius: 12, spin: 0,
+      sprite: scene.add.sprite(state.ship.x, 413, 'meteorTex_0') });
+    scene.shipVsMeteors();
+    const ms = Math.round(state.ship.invulnerableUntil - performance.now());
+    T.meteorHitGraceMs = window.__headOnTuning.defaults().meteorHitGraceMs;
+    ({ ms });
+  `);
+  check('the mercy slider puts a window back when asked', mercy.ms > 700, mercy);
+  check('but ships at zero', await page.evaluate(() => window.__headOnTuning.defaults().meteorHitGraceMs) === 0);
 
   // The alternative rule, on a lab toggle: one save, whatever the bank.
   const spendAll = await page.evaluate(SETTLE + `
