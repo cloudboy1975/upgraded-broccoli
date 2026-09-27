@@ -562,6 +562,10 @@
         <div id="labFire"></div>
       </div>
       <div class="lab-section">
+        <h3>Zigzag weave</h3>
+        <div id="labZigzag"></div>
+      </div>
+      <div class="lab-section">
         <h3>Orbiter shots</h3>
         <div id="labOrbiter"></div>
       </div>
@@ -993,6 +997,30 @@
   var ORBITER_LIFETIME = 6;       // seconds before one gives up and fades
   var ORBITER_SIZE = 1;           // scales the shot, VISUAL AND HIT RADIUS TOGETHER - see updateOrbiters()
 
+  // Zigzag's oscillation - same placement rule as the rest: TUNING is
+  // seeded from these, so they have to be declared above it.
+  //
+  // Reported as jarring the eye, and measuring the dive paths said why.
+  // It was not moving sideways faster than a swoop (282 px/s vs 228); it
+  // was cramming the same swing into two thirds the vertical distance:
+  //
+  //             wavelength   swing   ratio
+  //   swoop        222px      92px   0.41
+  //   zigzag       162px     100px   0.62
+  //
+  // A cycle every 162px of descent is a direction change roughly three
+  // times on the way down, at a width that nearly matches the height -
+  // less a weave than a stutter. Stretching the wavelength while keeping
+  // the swing wide keeps the dodge honest and the hardest row still the
+  // hardest; it just gives the eye a curve it can follow.
+  var ZIGZAG_FREQ = 3.6;      // rad/sec - down from 5.2
+  var ZIGZAG_AMPLITUDE = 58;  // up from 50, so a longer wave still covers ground
+  // ...and no two pink dives are identical any more. Each rolls its own
+  // frequency and amplitude within +/- this fraction at the moment it
+  // drops, so the row reads as several attackers rather than one pattern
+  // repeated. 0 makes every dive the textbook wave again.
+  var ZIGZAG_VARIATION = 0.22;
+
   // ---- Live tuning ------------------------------------------------------
   // Everything the sortie system reads at runtime, in one mutable object so
   // the hidden control panel can retune the game between (or during) waves
@@ -1067,6 +1095,9 @@
       orbiterTurnRate: ORBITER_TURN_RATE,
       orbiterLifetime: ORBITER_LIFETIME,
       orbiterSize: ORBITER_SIZE,
+      zigzagFreq: ZIGZAG_FREQ,
+      zigzagAmplitude: ZIGZAG_AMPLITUDE,
+      zigzagVariation: ZIGZAG_VARIATION,
       orbiterMines: false, // park at the top and wait for prey, instead of flying all the way in
       diagnosticOverlay: false // draws elapsed/tier/sortie-activation text over the live game - see updateDiagOverlay()
     };
@@ -1177,12 +1208,8 @@
 
   var ENEMY_DESPAWN_Y = GAME_HEIGHT - 8; // a diver past this has flown by uncaught - gone, no penalty
 
-  // Zigzag's oscillation, tuned down from an early pass that swung ±78
-  // units at 8.4 rad/s - wide and fast enough to read as random rather
-  // than a dodgeable pattern. Slower and narrower still reads as the
-  // hardest row, just legible instead of erratic.
-  var ZIGZAG_FREQ = 5.2;
-  var ZIGZAG_AMPLITUDE = 50;
+  // Zigzag's oscillation. See the ZIGZAG_* block above sortieDefaultTuning()
+  // for the tunable half; this is only the lean, which is not tunable.
   var ZIGZAG_BANK = 0.4; // radians a zigzag leans into its own oscillation - see diverFlightRotation()
   // A diver's lateral weave fades in over its first moments instead of
   // starting at full strength - see diveWeaveScale(). The weave is a sine
@@ -3167,6 +3194,11 @@
       slot.age = 0;
       slot.spawnX = slot.x; // dive formulas anchor to wherever it was (mid-bob) when it broke formation
       slot.phase = Math.random() * Math.PI * 2;
+      // Each dive gets its own wave, so the pink row reads as several
+      // attackers rather than one pattern on repeat. Rolled here with
+      // phase, before the spin's settle target is computed below - that
+      // target calls diverFlightRotation(), which reads these.
+      rollZigzagWeave(slot);
       slot.diveTargetX = state.ship.x; // swoop curves toward this fixed point, not the ship's live position
       slot.fireIn = randomEnemyFireInterval(state.difficulty.elapsed) * 0.5; // first shot lands sooner than a full interval, so the drip starts as soon as it commits
 
@@ -3280,9 +3312,41 @@
     return Math.min(1, slot.age / DIVE_WEAVE_EASE_IN);
   }
 
+  // Rolls one dive's own wave. Frequency and amplitude vary
+  // independently, because varying them together only scales the same
+  // shape up and down - what the eye reads as variety is some ships
+  // sweeping long and wide while others weave short and tight.
+  //
+  // But the two multiply into the lateral speed (a sine's peak rate is
+  // amplitude x frequency), so rolling both high compounds into a dive
+  // that darts harder than the one being tuned away from - measured at
+  // 306 px/s against the old 282. The product is therefore capped: a
+  // dive may be any shape, but none may be more frantic than the
+  // baseline plus one variation step.
+  function rollZigzagWeave(slot) {
+    var vary = TUNING.zigzagVariation;
+    var baseFreq = TUNING.zigzagFreq;
+    var baseAmp = TUNING.zigzagAmplitude;
+    var freq = baseFreq * (1 + (Math.random() * 2 - 1) * vary);
+    var amp = baseAmp * (1 + (Math.random() * 2 - 1) * vary);
+    var cap = baseFreq * baseAmp * (1 + vary);
+    if (freq * amp > cap) amp = cap / freq;
+    slot.weaveFreq = freq;
+    slot.weaveAmplitude = amp;
+  }
+
+  // A diver's own wave, falling back to the tuned values for anything
+  // that never went through a drop (a forced test slot, or a dive rolled
+  // before these existed).
+  function zigzagFreqOf(slot) { return slot.weaveFreq || TUNING.zigzagFreq; }
+  function zigzagAmplitudeOf(slot) { return slot.weaveAmplitude || TUNING.zigzagAmplitude; }
+
   function diverFlightRotation(slot) {
     if (slot.type !== 'zigzag') return 0;
-    return Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * ZIGZAG_BANK * diveWeaveScale(slot);
+    // The same wave the motion below uses - if the lean kept its own
+    // frequency it would drift out of step with the swing it is supposed
+    // to be leaning into, which reads as the sprite rolling at random.
+    return Math.sin(slot.age * zigzagFreqOf(slot) + slot.phase) * ZIGZAG_BANK * diveWeaveScale(slot);
   }
 
   // Same three dive-pattern formulas as earlier prototypes, just anchored
@@ -3310,7 +3374,7 @@
     } else if (slot.type === 'zigzag') {
       // Fast, sharp lateral oscillation, anchored to its break-off point -
       // erratic and hard to predict, doesn't chase the ship at all.
-      slot.x = slot.spawnX + Math.sin(slot.age * ZIGZAG_FREQ + slot.phase) * ZIGZAG_AMPLITUDE * diveWeaveScale(slot);
+      slot.x = slot.spawnX + Math.sin(slot.age * zigzagFreqOf(slot) + slot.phase) * zigzagAmplitudeOf(slot) * diveWeaveScale(slot);
     }
 
     slot.sprite.x = slot.x;
@@ -6057,6 +6121,9 @@
       { section: 'labFire', key: 'formationFireMaxShots', label: 'Max shots before diving', min: 0, max: 5, step: 1, unit: '' },
       { section: 'labDeath', key: 'deathBlastBrickDamage', label: 'Brick damage', min: 0, max: 8, step: 1, unit: 'hp' },
       { section: 'labChallenge', key: 'challengeEveryWaves', label: 'Every N waves', min: 1, max: 10, step: 1, unit: '' },
+      { section: 'labZigzag', key: 'zigzagFreq', label: 'Wave speed', min: 1.5, max: 8, step: 0.1, unit: 'rad/s' },
+      { section: 'labZigzag', key: 'zigzagAmplitude', label: 'Wave width', min: 20, max: 90, step: 2, unit: 'px' },
+      { section: 'labZigzag', key: 'zigzagVariation', label: 'Variation per dive', min: 0, max: 0.6, step: 0.02, unit: '×' },
       { section: 'labOrbiter', key: 'orbiterSpeed', label: 'Shot speed', min: 40, max: 400, step: 10, unit: 'px/s' },
       { section: 'labOrbiter', key: 'orbiterTurnRate', label: 'Homing strength', min: 0, max: 3, step: 0.05, unit: 'rad/s' },
       { section: 'labOrbiter', key: 'orbiterLifetime', label: 'Shot lifetime', min: 1, max: 15, step: 0.5, unit: 's' },
