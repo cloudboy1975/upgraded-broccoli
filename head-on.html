@@ -739,9 +739,16 @@
     }
   ];
 
-  var DIVE_INTERVAL_START = 1.7; // seconds between dive waves
-  var DIVE_INTERVAL_MIN = 0.9;
-  var DIVE_RAMP_SECONDS = 45; // time to ramp from START to MIN
+  // Pace. Raised after smoothing the pink row's weave: measuring said
+  // that edit did NOT change how many attacks arrive per minute (68/83/90
+  // early/mid/late before, 68/88/83 after - noise), it changed how hard
+  // each one is to survive. Same rhythm, easier beats, which reads as the
+  // game having slowed down. So the difficulty that went out of the weave
+  // is put back into the rhythm instead, which is the honest place for it
+  // - the pink row stays readable.
+  var DIVE_INTERVAL_START = 1.58; // seconds between dive waves - was 1.7
+  var DIVE_INTERVAL_MIN = 0.78;   // was 0.9
+  var DIVE_RAMP_SECONDS = 40;     // reach that floor sooner - was 45
   var WAVE_CLEAR_PAUSE = 0.7; // pause before the next full formation spawns - pure dead screen, so kept short
   // Shape of a ship's approach. An ease-out decelerates into place, which
   // is what makes the landing exact and calm - but the flatter the tail,
@@ -822,7 +829,7 @@
   // and are editable at runtime from the hidden control panel (backquote,
   // or triple-tap the HUD's Best label), so all of this can be re-tuned by
   // feel without an edit-reload cycle.
-  var SORTIE_TIER_UNLOCK_SECONDS = [0, 20, 45, 75]; // elapsed seconds at which each tier joins the bag
+  var SORTIE_TIER_UNLOCK_SECONDS = [0, 18, 40, 68]; // elapsed seconds at which each tier joins the bag - pulled in with the pace pass
   var SORTIE_TELEGRAPH_LEAD = 0.45; // seconds a slot flashes in formation before it actually drops
   var SORTIE_TELEGRAPH_SETTLE_MAX = 1.3; // longest the spin may take to ease out into flight orientation - the actual duration is derived per drop so the handoff keeps the spin's own speed, and at default spin speed a full remaining turn needs ~1.26s
   var SORTIE_SPREAD_MIN = GAME_WIDTH * 0.35; // how far apart two slots must be to read as a pincer rather than a clump
@@ -1036,9 +1043,9 @@
       diveIntervalMin: DIVE_INTERVAL_MIN,
       diveRampSeconds: DIVE_RAMP_SECONDS,
       staggerScale: 1,    // multiplies every pattern's own stagger
-      cooldownScale: 1,   // multiplies every pattern's own cooldown
+      cooldownScale: 0.92, // multiplies every pattern's own cooldown - tightened with the intervals above
       diverSpeedStart: 1, // diver speed multiplier at t=0...
-      diverSpeedMax: 1.12, // ...and once fully ramped. Deliberately mild: escalation is meant to come from the book, not from raw speed
+      diverSpeedMax: 1.18, // ...and once fully ramped. Still mild - escalation is meant to come from the book and the rhythm, not from raw speed
       entryDuration: ENTRY_DURATION, // seconds a formation slot takes to fly in, once its own stagger delay elapses
       entryStagger: ENTRY_STAGGER,   // seconds added per grid step - the diagonal sweep across a freshly spawned wave
       entryRowGap: ENTRY_ROW_GAP,    // seconds between rows, for the fly-ins that arrive row by row

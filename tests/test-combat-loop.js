@@ -104,6 +104,40 @@ harness.run(async (page, check, ctx) => {
     over.restarted.phase === 'playing' && over.restarted.lives === 3 &&
     over.restarted.wave === 1 && over.restarted.score === 0, over.restarted);
 
+  // --- pace invariants ------------------------------------------------------
+  // Not the specific numbers - those are meant to be retuned, and a test
+  // that pins them just has to be edited every time. These are the
+  // relationships the ramp depends on, which a careless retune breaks
+  // silently: the game would simply stop escalating.
+  const pace = await page.evaluate(() => {
+    const d = window.__headOnTuning.defaults();
+    return {
+      start: d.diveIntervalStart, min: d.diveIntervalMin, ramp: d.diveRampSeconds,
+      speedStart: d.diverSpeedStart, speedMax: d.diverSpeedMax,
+      tiers: d.tierUnlock, cooldown: d.cooldownScale
+    };
+  });
+  check('dives get more frequent as the run goes on, never less',
+    pace.min < pace.start && pace.ramp > 0, pace);
+  check('divers get faster as the run goes on, never slower',
+    pace.speedMax >= pace.speedStart, pace);
+  check('tier unlocks start at zero and only move forward',
+    pace.tiers[0] === 0 && pace.tiers.every((t, i) => i === 0 || t > pace.tiers[i - 1]), pace);
+
+  // And the ramp has to actually be wired to the clock, not just declared.
+  const ramping = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    const at = t => { state.difficulty.elapsed = t; return +scene.diveInterval().toFixed(3); };
+    const early = at(0), mid = at(window.__headOnTuning.defaults().diveRampSeconds / 2);
+    const late = at(window.__headOnTuning.defaults().diveRampSeconds * 3);
+    state.difficulty.elapsed = 0;
+    return { early, mid, late, floor: window.__headOnTuning.defaults().diveIntervalMin };
+  });
+  check('the gap between dives really does shorten over a run',
+    ramping.early > ramping.mid && ramping.mid > ramping.late, ramping);
+  check('and bottoms out at the floor rather than running away',
+    Math.abs(ramping.late - ramping.floor) < 0.001, ramping);
+
   // --- sprite hygiene in ordinary play ------------------------------------
   const leak = await page.evaluate(() => {
     const scene = window.__headOnDebug.scene, state = scene.state;
