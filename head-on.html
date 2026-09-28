@@ -1107,8 +1107,27 @@
   var BOSS_HULL_HP = 26;          // plain bullet hits once the shielding is down
   var BOSS_CORE_HP = 5;           // matching orbiter hits per belly core
   var BOSS_ARMOUR_HP = 4;         // trail damage per tentacle brick
-  var BOSS_ADD_INTERVAL = 2.4;    // seconds between spawned attackers at FULL shielding
-  var BOSS_ADD_INTERVAL_MIN = 5.5; // ...and once stripped bare, so clearing armour visibly calms him
+  // Both of his pressure systems ramp between a FULL-shielding value and
+  // a STRIPPED-bare one, and they deliberately ramp in opposite
+  // directions, because the two halves of the fight have opposite
+  // problems.
+  //
+  //   spawns  slow DOWN as he is stripped. Clearing his armour has to be
+  //           felt as the screen calming, or the long middle of the fight
+  //           has no payoff you can see.
+  //   fire    speeds UP. Killing a core stops that colour spawning
+  //           outright (see bossSpawnableTypes), so by the time the hull
+  //           is bare the swarm is gone - and the hull is 26 hits, which
+  //           without this is a long quiet turkey shoot.
+  //
+  // Nothing enforces the directions: set either pair the other way round
+  // in the lab and it simply ramps that way.
+  var BOSS_ADD_INTERVAL = 2.4;     // seconds between spawned attackers at FULL shielding
+  var BOSS_ADD_INTERVAL_MIN = 5.5; // ...and once stripped bare
+  var BOSS_ADD_BURST = 1;          // attackers per spawn
+  var BOSS_FIRE_INTERVAL = 1.7;    // seconds between his own shots at FULL shielding
+  var BOSS_FIRE_INTERVAL_MIN = 0.85; // ...and once stripped bare
+  var BOSS_FIRE_BURST = 1;         // shots per volley
 
   // Zigzag's oscillation - same placement rule as the rest: TUNING is
   // seeded from these, so they have to be declared above it.
@@ -1215,6 +1234,12 @@
       bossCoreHp: BOSS_CORE_HP,
       bossArmourHp: BOSS_ARMOUR_HP,
       bossAddInterval: BOSS_ADD_INTERVAL,
+      bossAddIntervalMin: BOSS_ADD_INTERVAL_MIN,
+      bossAddBurst: BOSS_ADD_BURST,
+      bossFireEnabled: true,
+      bossFireInterval: BOSS_FIRE_INTERVAL,
+      bossFireIntervalMin: BOSS_FIRE_INTERVAL_MIN,
+      bossFireBurst: BOSS_FIRE_BURST,
       zigzagFreq: ZIGZAG_FREQ,
       zigzagAmplitude: ZIGZAG_AMPLITUDE,
       zigzagVariation: ZIGZAG_VARIATION,
@@ -4042,7 +4067,9 @@
       hullHp: Math.max(1, Math.round(TUNING.bossHullHp)),
       hullFlash: 0, // 1 at the instant of a hull hit, decayed to 0 by updateBoss()
       addTimer: BOSS_FIRST_ADD_DELAY,
+      fireTimer: BOSS_FIRST_ADD_DELAY * 1.5,
       addsSpawned: 0,
+      shotsFired: 0,
       sprite: body,
       arms: [this.add.sprite(0, 0, 'bossTentacleTex'), this.add.sprite(0, 0, 'bossTentacleTex')],
       cores: this.buildBossCores(),
@@ -4196,8 +4223,69 @@
   // felt as the fight getting quieter rather than only as a number you
   // cannot see.
   MainScene.prototype.bossAddInterval = function () {
-    var full = Math.max(0.3, TUNING.bossAddInterval);
-    return BOSS_ADD_INTERVAL_MIN + (full - BOSS_ADD_INTERVAL_MIN) * this.bossShielding();
+    return bossRamp(TUNING.bossAddInterval, TUNING.bossAddIntervalMin, this.bossShielding());
+  };
+
+  MainScene.prototype.bossFireInterval = function () {
+    return bossRamp(TUNING.bossFireInterval, TUNING.bossFireIntervalMin, this.bossShielding());
+  };
+
+  // Both of his cadences, in one place: `full` at 100% shielding, `bare`
+  // at 0, straight-line between. Which way round they sit is the lab's
+  // business, not this function's - see the BOSS_*_INTERVAL comments.
+  function bossRamp(full, bare, shielding) {
+    return Math.max(0.15, bare + (Math.max(0.15, full) - bare) * clamp(shielding, 0, 1));
+  }
+
+  // Which attackers he can still put in the air. A colour's ships come
+  // out of that colour's belly core, so killing the core shuts that
+  // production line down for good - and killing all three stops the
+  // swarm outright. That is the reward for going after the cores first,
+  // and it is why his own fire ramps the other way: something has to
+  // hold the last stretch of the fight up.
+  MainScene.prototype.bossSpawnableTypes = function () {
+    var boss = this.state.boss;
+    if (!boss) return [];
+    return FORMATION_ROW_TYPES.filter(function (type) {
+      var key = ENEMY_TYPES[type].colorKey;
+      return boss.cores.some(function (c) { return c.alive && c.colorKey === key; });
+    });
+  };
+
+  // Every point on him that is still intact, as something fireEnemyBullet()
+  // can shoot from. Shots come from the parts you have not destroyed yet,
+  // so the barrage visibly narrows as you work through him - nine muzzles
+  // at full, and by the end just the one.
+  MainScene.prototype.bossMuzzles = function () {
+    var boss = this.state.boss;
+    if (!boss) return [];
+    var out = [];
+    boss.cores.forEach(function (c) {
+      if (c.alive) out.push({ x: boss.x + c.ox, y: boss.y + c.oy, radius: BOSS_CORE_RADIUS });
+    });
+    boss.bricks.forEach(function (b) {
+      if (b.alive) out.push({ x: boss.x + b.ox, y: boss.y + b.oy, radius: BOSS_ARMOUR_H / 2 });
+    });
+    // Stripped bare, the body itself is the only thing left to fire from.
+    // Without this the whole hull phase would be silent, which is the
+    // half of the fight that was too easy in the first place.
+    if (!out.length) out.push({ x: boss.x, y: boss.y, radius: BOSS_BODY_HEIGHT / 2 });
+    return out;
+  };
+
+  // Reuses the divers' own fireEnemyBullet(), so his shots are the same
+  // hazard the rest of the game fires: same texture, same speed and aim
+  // knobs, and blocked by a shield dot exactly the same way. A separate
+  // bullet type would be a second thing to keep in step for no gain.
+  MainScene.prototype.fireBossShot = function () {
+    var muzzles = this.bossMuzzles();
+    if (!muzzles.length) return 0;
+    var n = Math.max(1, Math.round(TUNING.bossFireBurst));
+    for (var i = 0; i < n; i++) {
+      this.fireEnemyBullet(muzzles[Math.floor(Math.random() * muzzles.length)]);
+    }
+    this.state.boss.shotsFired += n;
+    return n;
   };
 
   // An add is an ordinary formation slot that skips the formation: it is
@@ -4207,7 +4295,9 @@
   // no second enemy type to keep in step with the first.
   MainScene.prototype.spawnBossAdd = function () {
     var state = this.state, boss = state.boss;
-    var type = FORMATION_ROW_TYPES[Math.floor(Math.random() * FORMATION_ROW_TYPES.length)];
+    var types = this.bossSpawnableTypes();
+    if (!types.length) return false; // every core dead - nothing left to launch anything
+    var type = types[Math.floor(Math.random() * types.length)];
     var cfg = ENEMY_TYPES[type];
     var x = clamp(boss.x + (Math.random() * 2 - 1) * (BOSS_BODY_WIDTH * 0.45), 20, GAME_WIDTH - 20);
     var y = boss.y + BOSS_BODY_HEIGHT * 0.4;
@@ -4229,6 +4319,7 @@
     slot.sprite = this.add.sprite(x, y, ENEMY_TEX[type]);
     state.formation.push(slot);
     boss.addsSpawned++;
+    return true;
   };
 
   MainScene.prototype.updateBoss = function (dt) {
@@ -4241,15 +4332,33 @@
       boss.y = PLANET_Y + (BOSS_Y - PLANET_Y) * eased;
       boss.sprite.setScale(0.3 + 0.7 * eased);
       boss.sprite.setAlpha(eased);
-      if (t >= 1) { boss.phase = 'fight'; boss.age = 0; boss.addTimer = BOSS_FIRST_ADD_DELAY; }
+      if (t >= 1) {
+        boss.phase = 'fight';
+        boss.age = 0;
+        boss.addTimer = BOSS_FIRST_ADD_DELAY;
+        // Offset from the spawn timer rather than equal to it, or his
+        // first shot and his first attacker arrive on the same frame -
+        // one coincident spike instead of two beats.
+        boss.fireTimer = BOSS_FIRST_ADD_DELAY * 1.5;
+      }
     } else if (boss.phase === 'fight') {
       boss.driftPhase += BOSS_DRIFT_SPEED * dt;
       boss.x = GAME_WIDTH / 2 + Math.sin(boss.driftPhase) * BOSS_DRIFT_RANGE;
       boss.y = BOSS_Y;
       boss.addTimer -= dt;
       if (boss.addTimer <= 0) {
-        this.spawnBossAdd();
+        var burst = Math.max(1, Math.round(TUNING.bossAddBurst));
+        for (var n = 0; n < burst; n++) this.spawnBossAdd();
         boss.addTimer = this.bossAddInterval();
+      }
+      // The timer runs whether or not his fire is switched on, same rule
+      // the divers' own fire follows: flipping the lab's checkbox back on
+      // mid-fight resumes the cadence instead of unloading a backlog of
+      // shots that piled up while it was off.
+      boss.fireTimer -= dt;
+      if (boss.fireTimer <= 0) {
+        if (TUNING.bossFireEnabled) this.fireBossShot();
+        boss.fireTimer = this.bossFireInterval();
       }
       boss.sprite.setTexture(this.bossExposed() ? 'bossHullBareTex' : 'bossHullTex');
       this.paintBossHull();
@@ -6479,12 +6588,17 @@
         boss.bricks.forEach(function (b) { if (b.alive && b.colorKey === key) hp += b.hp; });
         return key.charAt(0) + (hp || '-');
       }).join(' ');
+      var spawnable = this.bossSpawnableTypes().map(function (t) {
+        return ENEMY_TYPES[t].colorKey.charAt(0);
+      }).join('') || 'none';
       el.textContent =
         'BOSS ' + boss.phase + '  shielding ' + Math.round(this.bossShielding() * 100) + '%\n' +
         'cores  ' + coreLine + '\n' +
         'plates ' + plateLine + '\n' +
         'hull ' + (this.bossExposed() ? boss.hullHp + ' left' : 'sealed') +
-        '  adds ' + boss.addsSpawned + ' every ' + this.bossAddInterval().toFixed(1) + 's';
+        '  muzzles ' + this.bossMuzzles().length + '\n' +
+        'adds ' + boss.addsSpawned + ' [' + spawnable + '] every ' + this.bossAddInterval().toFixed(1) + 's\n' +
+        'shots ' + boss.shotsFired + ' every ' + this.bossFireInterval().toFixed(1) + 's';
       return;
     }
 
@@ -7058,7 +7172,12 @@
       { section: 'labBoss', key: 'bossHullHp', label: 'Hull hits', min: 1, max: 80, step: 1, unit: '' },
       { section: 'labBoss', key: 'bossCoreHp', label: 'Per belly core', min: 1, max: 15, step: 1, unit: ' missiles' },
       { section: 'labBoss', key: 'bossArmourHp', label: 'Per armour plate', min: 1, max: 12, step: 1, unit: 'hp' },
-      { section: 'labBoss', key: 'bossAddInterval', label: 'Spawn gap (full armour)', min: 0.5, max: 8, step: 0.1, unit: 's' },
+      { section: 'labBoss', key: 'bossAddInterval', label: 'Spawn gap, armoured', min: 0.3, max: 8, step: 0.1, unit: 's' },
+      { section: 'labBoss', key: 'bossAddIntervalMin', label: 'Spawn gap, stripped', min: 0.3, max: 12, step: 0.1, unit: 's' },
+      { section: 'labBoss', key: 'bossAddBurst', label: 'Attackers per spawn', min: 1, max: 5, step: 1, unit: '' },
+      { section: 'labBoss', key: 'bossFireInterval', label: 'Shot gap, armoured', min: 0.2, max: 6, step: 0.05, unit: 's' },
+      { section: 'labBoss', key: 'bossFireIntervalMin', label: 'Shot gap, stripped', min: 0.2, max: 6, step: 0.05, unit: 's' },
+      { section: 'labBoss', key: 'bossFireBurst', label: 'Shots per volley', min: 1, max: 5, step: 1, unit: '' },
       { section: 'labChallenge', key: 'challengeStagesToArrival', label: 'Stages to the planet', min: 1, max: 12, step: 1, unit: '',
         // Resizing the world the moment the slider moves, rather than at
         // the next stage end, is the whole point of having the slider -
@@ -7081,6 +7200,13 @@
     addCheckbox('labBoss', 'Boss at the end of the approach',
       function () { return TUNING.bossEnabled; },
       function (v) { TUNING.bossEnabled = v; });
+
+    // Separate from "Divers return fire" on purpose: his barrage and the
+    // wave's are different problems to tune, and silencing one to look at
+    // the other is most of the reason to have either switch.
+    addCheckbox('labBoss', 'Boss returns fire',
+      function () { return TUNING.bossFireEnabled; },
+      function (v) { TUNING.bossFireEnabled = v; });
 
     addCheckbox('labChallenge', 'Challenge stages on',
       function () { return TUNING.challengeEnabled; },

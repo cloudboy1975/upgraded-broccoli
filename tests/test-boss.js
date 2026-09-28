@@ -64,12 +64,16 @@ harness.run(async (page, check, ctx) => {
   const tune = await page.evaluate(() => {
     const t = window.__headOnTuning.tuning;
     return { hull: t.bossHullHp, core: t.bossCoreHp, armour: t.bossArmourHp,
-             add: t.bossAddInterval, enabled: t.bossEnabled };
+             add: t.bossAddInterval, addMin: t.bossAddIntervalMin, addBurst: t.bossAddBurst,
+             fire: t.bossFireInterval, fireMin: t.bossFireIntervalMin, fireBurst: t.bossFireBurst,
+             enabled: t.bossEnabled, fireOn: t.bossFireEnabled };
   });
   check('every boss tunable reached the live tuning as a real number',
-    [tune.hull, tune.core, tune.armour, tune.add].every(v => typeof v === 'number' && isFinite(v) && v > 0),
+    [tune.hull, tune.core, tune.armour, tune.add, tune.addMin, tune.addBurst,
+     tune.fire, tune.fireMin, tune.fireBurst].every(v => typeof v === 'number' && isFinite(v) && v > 0),
     tune);
-  check('and the boss is on by default', tune.enabled === true, tune);
+  check('and the boss and his fire are both on by default',
+    tune.enabled === true && tune.fireOn === true, tune);
 
   // --- he takes a challenge stage's slot, and only at the planet ----------
   const due = await page.evaluate(() => {
@@ -483,6 +487,153 @@ harness.run(async (page, check, ctx) => {
   check('an add dies to an ordinary bullet like anything else',
     addDeath.hit && addDeath.dead && addDeath.scored > 0, addDeath);
 
+  // --- a colour's ships come out of that colour's core ---------------------
+  // The reward for going after the cores first, and the thing that makes
+  // killing one feel like more than a number going down.
+  const gated = await page.evaluate(FIGHT(ALL, ALL) + `
+    const colourOf = t => ({ straight: 'green', swoop: 'blue', zigzag: 'red' })[t];
+    const spawnRun = n => {
+      const seen = {};
+      for (let i = 0; i < n; i++) {
+        state.formation = [];
+        if (scene.spawnBossAdd()) seen[state.formation[0].colorKey] = true;
+      }
+      state.formation = [];
+      return Object.keys(seen).sort();
+    };
+    const all = spawnRun(120);
+    const typesAll = scene.bossSpawnableTypes().map(colourOf).sort();
+
+    boss.cores.filter(c => c.colorKey === 'red').forEach(c => { c.alive = false; c.hp = 0; });
+    const noRed = spawnRun(120);
+
+    boss.cores.forEach(c => { c.alive = false; c.hp = 0; });
+    const none = spawnRun(60);
+    const spawnedWithNoCores = state.formation.length;
+
+    ({ all, typesAll, noRed, none, spawnedWithNoCores, types: scene.bossSpawnableTypes() });
+  `);
+  check('every colour spawns while every core is alive',
+    JSON.stringify(gated.all) === JSON.stringify(['blue', 'green', 'red']), gated);
+  check('and the spawnable list agrees with what actually comes out',
+    JSON.stringify(gated.typesAll) === JSON.stringify(gated.all), gated);
+  check('killing a core shuts that colour down and leaves the others running',
+    gated.noRed.indexOf('red') === -1 && gated.noRed.length === 2, gated);
+  check('killing all three stops the swarm outright',
+    gated.none.length === 0 && gated.spawnedWithNoCores === 0 && gated.types.length === 0, gated);
+
+  // Through the real timer, not just the spawn function - the gate has to
+  // hold on the path updateBoss() actually takes.
+  const gatedLive = await page.evaluate(FIGHT(ALL, ALL) + `
+    boss.cores.forEach(c => { c.alive = false; c.hp = 0; });
+    const before = boss.addsSpawned;
+    for (let i = 0; i < 2500; i++) window.__headOnDebug.stepBoss(0.016); // ~40s
+    ({ before, after: boss.addsSpawned, alive: state.formation.filter(f => f.alive).length });
+  `);
+  check('and nothing sneaks through the spawn timer either',
+    gatedLive.after === gatedLive.before && gatedLive.alive === 0, gatedLive);
+
+  const burst = await page.evaluate(FIGHT(ALL, ALL) + `
+    window.__headOnTuning.tuning.bossAddBurst = 3;
+    state.formation = [];
+    boss.addTimer = 0;
+    window.__headOnDebug.stepBoss(0.016);
+    const three = state.formation.filter(f => f.alive).length;
+    window.__headOnTuning.tuning.bossAddBurst = 1;
+    state.formation = [];
+    boss.addTimer = 0;
+    window.__headOnDebug.stepBoss(0.016);
+    ({ three, one: state.formation.filter(f => f.alive).length });
+  `);
+  check('the burst knob really controls how many arrive at once',
+    burst.three === 3 && burst.one === 1, burst);
+
+  // --- his own fire --------------------------------------------------------
+  const fire = await page.evaluate(FIGHT(ALL, ALL) + `
+    state.enemyBullets.forEach(b => b.sprite.destroy());
+    state.enemyBullets = [];
+    boss.fireTimer = 0;
+    const n = scene.fireBossShot();
+    const shot = state.enemyBullets[state.enemyBullets.length - 1];
+    // Every muzzle is a live part of him, so a shot has to start ON one.
+    const muzzles = scene.bossMuzzles();
+    const near = muzzles.some(m => Math.abs(m.x - shot.x) < 1 && Math.abs((m.y + m.radius) - shot.y) < 1);
+    ({ n, fired: state.enemyBullets.length, near, down: shot.vy > 0,
+       muzzles: muzzles.length, towardShip: Math.sign(state.ship.x - shot.x) === Math.sign(shot.vx) || shot.vx === 0 });
+  `);
+  check('he fires, and the shot comes out of one of his living parts',
+    fire.fired === 1 && fire.near, fire);
+  check('aimed down the board at the ship', fire.down && fire.towardShip, fire);
+  check('with a muzzle for every intact part', fire.muzzles === 9, fire);
+
+  const muzzleCount = await page.evaluate(FIGHT(ALL, ALL) + `
+    const full = scene.bossMuzzles().length;
+    boss.bricks.forEach(b => { b.alive = false; b.hp = 0; });
+    const noPlates = scene.bossMuzzles().length;
+    boss.cores.forEach(c => { c.alive = false; c.hp = 0; });
+    const bare = scene.bossMuzzles();
+    // Guarded rather than indexed straight in: with no fallback muzzle
+    // this list is empty, and bare[0].x would throw out of the whole
+    // evaluate - which reads as a broken test file rather than as the
+    // failed check it should be.
+    ({ full, noPlates, bareCount: bare.length,
+       bareOnBody: bare.length === 1 &&
+         Math.abs(bare[0].x - boss.x) < 0.001 && Math.abs(bare[0].y - boss.y) < 0.001 });
+  `);
+  check('destroying parts visibly narrows the barrage',
+    muzzleCount.full === 9 && muzzleCount.noPlates === 3, muzzleCount);
+  check('and stripped bare he still fires, from the body itself',
+    muzzleCount.bareCount === 1 && muzzleCount.bareOnBody, muzzleCount);
+
+  const fireRamp = await page.evaluate(FIGHT(ALL, ALL) + `
+    const armoured = scene.bossFireInterval();
+    boss.bricks.forEach(b => { b.alive = false; b.hp = 0; });
+    boss.cores.forEach(c => { c.alive = false; c.hp = 0; });
+    const stripped = scene.bossFireInterval();
+    ({ armoured, stripped, addArmoured: 0 });
+  `);
+  check('his fire speeds up as he is stripped, where the spawning slows down',
+    fireRamp.stripped < fireRamp.armoured, fireRamp);
+  check('and matches the tuned ends of the ramp',
+    Math.abs(fireRamp.armoured - tune.fire) < 0.001 &&
+    Math.abs(fireRamp.stripped - tune.fireMin) < 0.001, { fireRamp, tune });
+
+  const fireLive = await page.evaluate(FIGHT(ALL, ALL) + `
+    // Counted off boss.shotsFired, NOT off fireEnemyBullet: his adds are
+    // divers and fire through that same function, so wrapping it counts
+    // the swarm's shots as his and the switch below looks broken.
+    const start = boss.shotsFired;
+    for (let i = 0; i < 1250; i++) window.__headOnDebug.stepBoss(0.016); // ~20s
+    const on = boss.shotsFired - start;
+    window.__headOnTuning.tuning.bossFireEnabled = false;
+    const mid = boss.shotsFired;
+    for (let i = 0; i < 1250; i++) window.__headOnDebug.stepBoss(0.016);
+    const off = boss.shotsFired - mid;
+    window.__headOnTuning.tuning.bossFireEnabled = true;
+    boss.fireTimer = 0;
+    window.__headOnDebug.stepBoss(0.016);
+    const resumed = boss.shotsFired - mid;
+    ({ on, off, resumed });
+  `);
+  const fireBurst = await page.evaluate(FIGHT(ALL, ALL) + `
+    const count = n => {
+      window.__headOnTuning.tuning.bossFireBurst = n;
+      state.enemyBullets.forEach(b => b.sprite.destroy());
+      state.enemyBullets = [];
+      scene.fireBossShot();
+      return state.enemyBullets.length;
+    };
+    const out = { one: count(1), three: count(3) };
+    window.__headOnTuning.tuning.bossFireBurst = 1;
+    out;
+  `);
+  check('the shots-per-volley knob really controls how many come out',
+    fireBurst.one === 1 && fireBurst.three === 3, fireBurst);
+
+  check('he really does open fire over a stretch of the fight', fireLive.on > 4, fireLive);
+  check('and the switch silences him', fireLive.off === 0, fireLive);
+  check('and switching it back on resumes him', fireLive.resumed > 0, fireLive);
+
   // state.formation is never spliced anywhere else in the game - a wave's
   // array is simply thrown away by the next spawnFormation(), and a boss
   // fight has no such moment until it ends. So dead adds have to be
@@ -555,15 +706,17 @@ harness.run(async (page, check, ctx) => {
 
   // --- the kill, and the handover back ------------------------------------
   const death = await page.evaluate(FIGHT(ALL, ALL) + BULLET_AT + `
-    boss.cores.forEach(c => { c.hp = 0; c.alive = false; });
-    boss.bricks.forEach(b => { b.hp = 0; b.alive = false; });
-    // Step until he actually has something in the air - his adds fly off
-    // the bottom in a couple of seconds, so a fixed number of steps lands
-    // on an empty screen as often as not.
+    // Gather the adds FIRST, while his cores are still alive - once they
+    // are dead nothing can spawn (see bossSpawnableTypes), so stripping
+    // him before this would leave an empty screen to test against. His
+    // adds fly off the bottom in a couple of seconds, so this steps until
+    // two are actually in the air rather than for a fixed count.
     for (let i = 0; i < 900 && state.formation.filter(f => f.alive).length < 2; i++) {
       window.__headOnDebug.stepBoss(0.016);
     }
     const addsBefore = state.formation.filter(f => f.alive).length;
+    boss.cores.forEach(c => { c.hp = 0; c.alive = false; });
+    boss.bricks.forEach(b => { b.hp = 0; b.alive = false; });
     boss.hullHp = 1;
     const scoreBefore = state.score;
     scene.bulletVsBossHull(bulletAt(boss.x, boss.y, {}), state.bullets.length - 1);
