@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Head-On &mdash; Chapter 1</title>
+<style>
+  :root {
+    --bg-1: #05061a;
+    --text: #f1e9dc;
+    --muted: #b9ad98;
+    --accent: #e8c07a;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+  body {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100vw;
+    background: var(--bg-1);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #gameRoot { position: fixed; inset: 0; z-index: 0; }
+  #gameRoot canvas { display: block; }
+
+  .hud-bar {
+    position: fixed;
+    top: env(safe-area-inset-top);
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px max(12px, env(safe-area-inset-left));
+    z-index: 10;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
+  }
+
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    pointer-events: auto;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  .back-link:hover { color: var(--text); }
+
+  .chapter-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: rgba(5, 6, 26, 0.45);
+    border: 1px solid rgba(241, 233, 220, 0.2);
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+
+  /* One line of guidance, top-centre, that fades once you start walking.
+     Same element does double duty as the proximity prompt - see
+     setPrompt() - so there is only ever one piece of text on screen. */
+  .hint {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 46px);
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    z-index: 10;
+    pointer-events: none;
+    padding: 0 20px;
+    transition: opacity 0.5s ease;
+  }
+  .hint.hidden { opacity: 0; }
+
+  .control-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    touch-action: none;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .control-bar > * { pointer-events: auto; }
+  .control-bar.gone { opacity: 0; pointer-events: none; }
+
+  /* Left thumb: the analog stick from painted-lands.html, unchanged -
+     wherever the thumb lands becomes that press's neutral centre. */
+  .stick-zone {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: rgba(20, 16, 12, 0.4);
+    border: 1px solid rgba(241, 233, 220, 0.15);
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    overflow: visible;
+  }
+  .stick-anchor {
+    position: absolute;
+    top: 0; left: 0;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-anchor.visible { opacity: 1; }
+
+  .stick-knob {
+    position: absolute;
+    top: 0; left: 0;
+    width: 50px;
+    height: 50px;
+    margin-left: -25px;
+    margin-top: -25px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.16);
+    border: 2px solid rgba(241, 233, 220, 0.45);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-knob.visible { opacity: 1; }
+
+  /* Right thumb: the express lane.
+     This is NOT a "skip" in the apologetic sense - it does the same thing
+     the scene does, immediately. Anyone who just wants to play taps it and
+     is playing, and it sits exactly where head-on.html's fire button sits,
+     so the thumb is already there on a replay. */
+  .fly-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 2px solid rgba(241, 233, 220, 0.3);
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.85), rgba(90, 70, 35, 0.5) 70%);
+    color: #2b1f08;
+    font-family: inherit;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 0.08s, filter 0.1s;
+  }
+  .fly-btn:active, .fly-btn.active { transform: scale(0.93); filter: brightness(1.15); }
+  .fly-icon {
+    width: 0; height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-bottom: 14px solid rgba(43, 31, 8, 0.85);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div id="gameRoot"></div>
+
+  <div class="hud-bar">
+    <a class="back-link" href="index.html">&larr; All</a>
+    <div class="chapter-tag">Chapter 1</div>
+  </div>
+
+  <div class="hint" id="hint">Walk to your ship</div>
+
+  <div class="control-bar" id="controlBar">
+    <div class="stick-zone" id="stickZone" aria-label="Walk (press anywhere and drag)">
+      <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
+      <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
+    </div>
+
+    <button type="button" class="fly-btn" id="flyBtn" aria-label="Fly now - skip straight to the game">
+      <span class="fly-icon" aria-hidden="true"></span>
+      Fly
+    </button>
+  </div>
+
+<script src="phaser.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ==================================================================
+  // The yard: chapter 1's opening.
+  //
+  // Night, your house on the left, your ship parked in the yard for no
+  // reason anybody has explained yet. Walk into the ship and it takes
+  // off, and you are playing head-on.html.
+  //
+  // The perspective model, the analog stick and the touch hardening are
+  // lifted from painted-lands.html - a character on a trapezoid of
+  // ground, shrinking and slowing toward a horizon. What is new here is
+  // that the trapezoid has things standing on it, and touching one of
+  // them starts the game.
+  //
+  // The governing constraint is that this must never become a chore. It
+  // is a title screen, and it will be crossed hundreds of times by
+  // someone who only wants to shoot things. So: the walk is about a
+  // second and a half, boarding needs no button press (touching the ship
+  // IS the action), the whole takeoff is under three seconds, and the
+  // bottom-right button skips the lot - positioned exactly where the
+  // fire button lives in the game it leads to.
+  // ==================================================================
+
+  var NEXT_PAGE = 'head-on.html';
+
+  // Night, fixed - no mood cycling here. These are painted-lands' own
+  // Night preset; the scene is a specific place at a specific hour now,
+  // not a palette demo.
+  var SKY_TOP = 0x05061a;
+  var SKY_BOTTOM = 0x131b3a;
+  var MOON = 0xcfd8ff;
+  var MOON_ALPHA = 0.38;
+  var MTN_FAR = 0x1a2036;
+  var MTN_MID = 0x0e1226;
+  var GROUND_FAR = 0x102218;
+  var GROUND_NEAR = 0x07120d;
+  var STARS_ALPHA = 0.85;
+
+  // ==================================================================
+  // Perspective - identical model to painted-lands.html
+  // ==================================================================
+  var MOVE_SPEED_X = 0.62;     // worldX units/sec, worldX in [-1, 1]
+  var MOVE_SPEED_DEPTH = 0.44; // depth units/sec, depth in [0 far, 1 near]
+  var MIN_SCALE = 0.34;
+  var HORIZON_FRAC = 0.44;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  // ==================================================================
+  // Where everything stands.
+  //
+  // The start point is deliberately most of the way there already. A
+  // long establishing walk is exactly the chore this must not be, so the
+  // player begins in front of the house with the ship a second or so to
+  // the right - far enough to be a walk, near enough that nobody ever
+  // resents it.
+  // ==================================================================
+  // The ship sits at very nearly the player's own depth, which is not an
+  // aesthetic choice: it means "hold right" reaches it. Putting it
+  // further back made the first screen of the game a lesson in the depth
+  // axis, and the first screen of the game should teach nothing.
+  var HOUSE = { worldX: -0.62, depth: 0.44 };
+  var SHIP = { worldX: 0.52, depth: 0.74 };
+  var START = { worldX: -0.40, depth: 0.78 };
+
+  // How close counts as reaching the ship, in screen px, scaled by the
+  // ship's own perspective scale so it means the same thing wherever the
+  // ship is parked. Generous on purpose: this is an auto-trigger and the
+  // player's intent is never in doubt - nobody walks INTO their ship by
+  // accident on a screen with one ship on it.
+  var BOARD_RADIUS = 62;
+  var DOOR_RADIUS = 58; // ...and the same for the house's door prompt
+
+  // The takeoff, in seconds. Kept short enough to sit through on a
+  // hundredth replay.
+  var BOARD_DURATION = 0.55;   // climbing in: the figure shrinks into the hull
+  var LIFTOFF_DURATION = 1.75; // the climb out of the yard
+  var FADE_DURATION = 0.55;    // ...overlapping the end of it
+
+  // ==================================================================
+  // Procedural ambience (Web Audio, no asset files) - wind from
+  // painted-lands, plus an engine that spools up for the takeoff.
+  // ==================================================================
+  var Sound = (function () {
+    var ctx = null;
+    var windSrc = null, windFilter = null, windGain = null, windOn = false;
+    var noiseBuffer = null;
+
+    function ensureAudio() {
+      if (!ctx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+
+    function getNoiseBuffer() {
+      if (noiseBuffer) return noiseBuffer;
+      var len = ctx.sampleRate * 2;
+      noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      var data = noiseBuffer.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return noiseBuffer;
+    }
+
+    function startWind() {
+      if (!ctx || windOn) return;
+      windOn = true;
+      windSrc = ctx.createBufferSource();
+      windSrc.buffer = getNoiseBuffer();
+      windSrc.loop = true;
+      windFilter = ctx.createBiquadFilter();
+      windFilter.type = 'lowpass';
+      windFilter.frequency.setValueAtTime(320, ctx.currentTime);
+      windGain = ctx.createGain();
+      windGain.gain.setValueAtTime(0, ctx.currentTime);
+      windGain.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 0.8);
+      windSrc.connect(windFilter).connect(windGain).connect(ctx.destination);
+      windSrc.start();
+    }
+
+    // Engine: a noise bed swelling under a rising tone, so the takeoff
+    // has a floor as well as a pitch.
+    function playLaunch(seconds) {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var src = ctx.createBufferSource();
+      src.buffer = getNoiseBuffer();
+      src.loop = true;
+      var lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(180, t);
+      lp.frequency.linearRampToValueAtTime(900, t + seconds * 0.7);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.09, t + 0.35);
+      g.gain.linearRampToValueAtTime(0.0001, t + seconds);
+      src.connect(lp).connect(g).connect(ctx.destination);
+      src.start(t);
+      src.stop(t + seconds + 0.05);
+
+      var osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(70, t);
+      osc.frequency.exponentialRampToValueAtTime(240, t + seconds * 0.8);
+      var og = ctx.createGain();
+      og.gain.setValueAtTime(0, t);
+      og.gain.linearRampToValueAtTime(0.05, t + 0.3);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+      osc.connect(og).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + seconds + 0.05);
+    }
+
+    return { ensureAudio: ensureAudio, startWind: startWind, playLaunch: playLaunch };
+  })();
+
+  // ==================================================================
+  // Scene
+  // ==================================================================
+  var mainScene = null;
+  var navigated = false;
+
+  // One door out, called from the takeoff's end and from the Fly button
+  // alike, and guarded so a double tap cannot fire two navigations.
+  function goToGame() {
+    if (navigated) return;
+    navigated = true;
+    window.location.href = NEXT_PAGE;
+  }
+
+  function MainScene() {
+    Phaser.Scene.call(this, { key: 'Main' });
+  }
+  MainScene.prototype = Object.create(Phaser.Scene.prototype);
+  MainScene.prototype.constructor = MainScene;
+
+  MainScene.prototype.create = function () {
+    mainScene = this;
+
+    this.mode = 'walk'; // 'walk' -> 'board' -> 'liftoff' -> 'gone'
+    this.modeAge = 0;
+
+    this.worldX = START.worldX;
+    this.depth = START.depth;
+    this.flipX = false;
+    this.bobPhase = 0;
+    this.idlePhase = Math.random() * 10;
+    this.prompt = null;
+
+    this.mountainLayers = {
+      far: { amp1: 0.05, amp2: 0.03, freq1: 1.3, freq2: 2.7, phase1: 1.1, phase2: 4.2 },
+      mid: { amp1: 0.075, amp2: 0.04, freq1: 0.9, freq2: 2.1, phase1: 3.4, phase2: 0.7 }
+    };
+    this.fireflies = [];
+    for (var i = 0; i < 14; i++) {
+      this.fireflies.push({
+        xFrac: Math.random(), depth: 0.2 + Math.random() * 0.75,
+        phase: Math.random() * Math.PI * 2, speed: 0.35 + Math.random() * 0.4
+      });
+    }
+
+    this.buildTextures();
+    this.buildLayers();
+    this.buildProps();
+    this.redrawAll();
+
+    var self = this;
+    this.scale.on('resize', function () { self.redrawAll(); self.layoutProps(); });
+
+    this.exposeDebugHooks();
+  };
+
+  // ---- Textures ------------------------------------------------------
+  MainScene.prototype.buildTextures = function () {
+    var self = this;
+
+    // You: a plain figure in a jacket. Deliberately not the hooded
+    // traveler from painted-lands - this is someone standing in their own
+    // back garden, not a wanderer, and the silhouette should say so at
+    // 30px tall.
+    (function () {
+      var w = 34, h = 56;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(w / 2, h - 3, w * 0.5, 7);           // ground shadow
+      g.fillStyle(0x2f3f63, 1);                           // legs
+      g.fillRect(w * 0.34, h * 0.6, w * 0.13, h * 0.36);
+      g.fillRect(w * 0.53, h * 0.6, w * 0.13, h * 0.36);
+      g.fillStyle(0x7d8fb5, 1);                           // jacket
+      g.fillRoundedRect(w * 0.26, h * 0.3, w * 0.48, h * 0.34, 4);
+      g.fillStyle(0x9fb0d4, 1);                           // sleeves
+      g.fillRect(w * 0.18, h * 0.33, w * 0.1, h * 0.26);
+      g.fillRect(w * 0.72, h * 0.33, w * 0.1, h * 0.26);
+      g.fillStyle(0xe6c9a8, 1);                           // head
+      g.fillCircle(w / 2, h * 0.2, w * 0.17);
+      g.fillStyle(0x3a2d24, 1);                           // hair
+      g.fillEllipse(w / 2, h * 0.145, w * 0.36, w * 0.22);
+      g.generateTexture('youTex', w, h);
+      g.destroy();
+    })();
+
+    // The house: a flat gabled cottage with its lights on. At night the
+    // lit windows are the whole read - they are the only warm thing on a
+    // blue screen, which is what makes the yard feel like somewhere you
+    // live rather than a field with a shape in it.
+    (function () {
+      var w = 200, h = 168;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var bodyTop = h * 0.42, bodyBottom = h - 6;
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(w / 2, h - 4, w * 0.8, 12);
+      g.fillStyle(0x2a2438, 1);                           // walls
+      g.fillRect(w * 0.12, bodyTop, w * 0.76, bodyBottom - bodyTop);
+      g.fillStyle(0x191428, 1);                           // roof
+      g.beginPath();
+      g.moveTo(w / 2, h * 0.08);
+      g.lineTo(w * 0.96, bodyTop + 4);
+      g.lineTo(w * 0.04, bodyTop + 4);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x221c33, 1);                           // chimney
+      g.fillRect(w * 0.68, h * 0.14, w * 0.09, h * 0.2);
+      // Lit windows, with a soft bloom so they read at small scale.
+      [[0.24, 0.52], [0.63, 0.52]].forEach(function (p) {
+        var wx = w * p[0], wy = h * p[1];
+        g.fillStyle(0xffd487, 0.16);
+        g.fillCircle(wx + w * 0.065, wy + h * 0.075, w * 0.12);
+        g.fillStyle(0xffd487, 0.95);
+        g.fillRect(wx, wy, w * 0.13, h * 0.15);
+        g.lineStyle(2, 0x151024, 1);
+        g.strokeRect(wx, wy, w * 0.13, h * 0.15);
+        g.beginPath();
+        g.moveTo(wx + w * 0.065, wy);
+        g.lineTo(wx + w * 0.065, wy + h * 0.15);
+        g.strokePath();
+      });
+      // Door, with a porch light over it - this is where the story and
+      // the tutorial go once there is an inside to walk into.
+      var dx = w * 0.44, dy = h * 0.66, dw = w * 0.13, dh = bodyBottom - dy;
+      g.fillStyle(0xffca6e, 0.13);
+      g.fillCircle(dx + dw / 2, dy - h * 0.03, w * 0.11);
+      g.fillStyle(0x3d3252, 1);
+      g.fillRect(dx, dy, dw, dh);
+      g.lineStyle(2, 0x151024, 1);
+      g.strokeRect(dx, dy, dw, dh);
+      g.fillStyle(0xffca6e, 0.9);
+      g.fillCircle(dx + dw / 2, dy - h * 0.035, 2.6);
+      g.generateTexture('houseTex', w, h);
+      g.destroy();
+    })();
+
+    // The ship: the same swept arrowhead the player flies in the game,
+    // seen parked and foreshortened, on three legs. Recognising it in the
+    // yard as the thing you are about to fly is the entire point of the
+    // scene, so the silhouette matches head-on.html's shipTex rather than
+    // being a nicer-looking spacecraft.
+    (function () {
+      var w = 150, h = 104;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var cx = w / 2, baseY = h - 10;
+      g.fillStyle(0x000000, 0.32);
+      g.fillEllipse(cx, h - 5, w * 0.72, 13);
+      // Hull: head-on's dart, squashed vertically as if seen from in
+      // front and slightly above.
+      var r = h * 0.44;
+      g.fillStyle(0xe2e8f0, 1);
+      g.lineStyle(2, 0x94a3b8, 1);
+      g.beginPath();
+      g.moveTo(cx, baseY - h * 0.28 - r);
+      g.lineTo(cx + w * 0.44, baseY - h * 0.28 + r * 0.62);
+      g.lineTo(cx, baseY - h * 0.28 + r * 0.24);
+      g.lineTo(cx - w * 0.44, baseY - h * 0.28 + r * 0.62);
+      g.closePath();
+      g.fillPath();
+      g.strokePath();
+      g.fillStyle(0x38bdf8, 0.85);                        // canopy
+      g.fillEllipse(cx, baseY - h * 0.28 - r * 0.24, w * 0.17, h * 0.15);
+      g.fillStyle(0xffffff, 0.5);
+      g.fillEllipse(cx - w * 0.03, baseY - h * 0.28 - r * 0.3, w * 0.06, h * 0.05);
+      g.generateTexture('shipTex', w, h);
+      g.destroy();
+    })();
+
+    // The landing legs are a SEPARATE sprite from the hull so they can be
+    // retracted. Baked into the hull they stayed deployed all the way up,
+    // which read less as a spacecraft leaving than as a table being
+    // lifted.
+    (function () {
+      var w = 150, h = 104;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var cx = w / 2, baseY = h - 10;
+      g.lineStyle(3, 0x94a3b8, 1);
+      [[-0.3, -0.34], [0.3, 0.34], [0, 0.02]].forEach(function (p) {
+        g.beginPath();
+        g.moveTo(cx + w * p[0] * 0.5, baseY - h * 0.28);
+        g.lineTo(cx + w * p[1] * 0.62, baseY);
+        g.strokePath();
+      });
+      g.generateTexture('shipLegsTex', w, h);
+      g.destroy();
+    })();
+
+    // Exhaust: a tapering plume with its origin at the TOP, so it hangs
+    // from the ship's base and stretches downward as the climb speeds up.
+    (function () {
+      var w = 54, h = 150;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var layers = [
+        { col: 0x38bdf8, a: 0.22, halfTop: w * 0.45, len: h },
+        { col: 0x7dd3fc, a: 0.5, halfTop: w * 0.3, len: h * 0.6 },
+        // Short and wide, not long and thin: a narrow core this bright
+        // over this much length stops looking like flame and starts
+        // looking like a rod holding the ship up.
+        { col: 0xf0f9ff, a: 0.9, halfTop: w * 0.17, len: h * 0.24 }
+      ];
+      layers.forEach(function (L) {
+        g.fillStyle(L.col, L.a);
+        g.beginPath();
+        g.moveTo(w / 2 - L.halfTop, 0);
+        g.lineTo(w / 2 + L.halfTop, 0);
+        g.lineTo(w / 2, L.len);
+        g.closePath();
+        g.fillPath();
+      });
+      g.generateTexture('shipPlumeTex', w, h);
+      g.destroy();
+    })();
+
+    // The idle underglow, drawn under the parked ship and pulsing - the
+    // one thing on screen that says it is powered up and waiting for you
+    // rather than abandoned.
+    (function () {
+      var size = 120;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      for (var i = 4; i >= 1; i--) {
+        g.fillStyle(0x38bdf8, 0.06 * (5 - i));
+        g.fillEllipse(size / 2, size / 2, size * (i / 4), size * 0.32 * (i / 4));
+      }
+      g.generateTexture('shipGlowTex', size, size);
+      g.destroy();
+    })();
+  };
+
+  MainScene.prototype.buildLayers = function () {
+    this.skyGfx = this.add.graphics().setDepth(-20);
+    this.moonGfx = this.add.graphics().setDepth(-19);
+    this.starsGfx = this.add.graphics().setDepth(-18);
+    this.mtnFarGfx = this.add.graphics().setDepth(-17);
+    this.mtnMidGfx = this.add.graphics().setDepth(-16);
+    this.groundGfx = this.add.graphics().setDepth(-10);
+    this.yardGfx = this.add.graphics().setDepth(-9);
+    this.firefliesGfx = this.add.graphics().setDepth(-5);
+    this.fadeGfx = this.add.graphics().setDepth(100);
+  };
+
+  // Everything that stands on the ground is a sprite with its origin at
+  // its feet, sorted by screen Y - so walking in front of the house puts
+  // you in front of it, with no z bookkeeping at all.
+  MainScene.prototype.buildProps = function () {
+    this.houseSprite = this.add.sprite(0, 0, 'houseTex').setOrigin(0.5, 1);
+    this.shipGlow = this.add.sprite(0, 0, 'shipGlowTex').setOrigin(0.5, 0.5);
+    this.shipPlume = this.add.sprite(0, 0, 'shipPlumeTex').setOrigin(0.5, 0).setAlpha(0);
+    this.shipLegs = this.add.sprite(0, 0, 'shipLegsTex').setOrigin(0.5, 1);
+    this.shipSprite = this.add.sprite(0, 0, 'shipTex').setOrigin(0.5, 1);
+    this.you = this.add.sprite(0, 0, 'youTex').setOrigin(0.5, 0.94);
+    this.layoutProps();
+  };
+
+  // ---- Geometry ------------------------------------------------------
+  MainScene.prototype.horizonY = function () { return this.scale.height * HORIZON_FRAC; };
+  MainScene.prototype.depthToScreenY = function (depth) {
+    return lerp(this.horizonY(), this.scale.height, depth);
+  };
+  MainScene.prototype.depthToScale = function (depth) { return lerp(MIN_SCALE, 1, depth); };
+  MainScene.prototype.depthToHalfWidth = function (depth) {
+    return lerp(this.scale.width * 0.05, this.scale.width * 0.48, depth);
+  };
+  MainScene.prototype.placeAt = function (worldX, depth) {
+    return {
+      x: this.scale.width / 2 + worldX * this.depthToHalfWidth(depth),
+      y: this.depthToScreenY(depth),
+      scale: this.depthToScale(depth)
+    };
+  };
+
+  MainScene.prototype.layoutProps = function () {
+    var h = this.placeAt(HOUSE.worldX, HOUSE.depth);
+    this.houseSprite.setPosition(h.x, h.y).setScale(h.scale * 1.15).setDepth(h.y);
+
+    var s = this.placeAt(SHIP.worldX, SHIP.depth);
+    this.shipSprite.setPosition(s.x, s.y).setScale(s.scale).setDepth(s.y);
+    this.shipLegs.setPosition(s.x, s.y).setScale(s.scale).setDepth(s.y - 0.5);
+    this.shipGlow.setPosition(s.x, s.y - 6 * s.scale).setScale(s.scale).setDepth(s.y - 1);
+    this.shipPlume.setPosition(s.x, s.y - 26 * s.scale).setScale(s.scale).setDepth(s.y - 2);
+  };
+
+  MainScene.prototype.mountainHeight = function (layer, xFrac) {
+    var n = layer.amp1 * (0.5 + 0.5 * Math.sin(xFrac * Math.PI * 2 * layer.freq1 + layer.phase1))
+          + layer.amp2 * (0.5 + 0.5 * Math.sin(xFrac * Math.PI * 2 * layer.freq2 + layer.phase2));
+    return n * this.scale.height;
+  };
+
+  // ---- Painting the backdrop -----------------------------------------
+  MainScene.prototype.redrawAll = function () {
+    var W = this.scale.width, H = this.scale.height;
+    var horizonY = this.horizonY();
+
+    this.skyGfx.clear();
+    this.skyGfx.fillGradientStyle(SKY_TOP, SKY_TOP, SKY_BOTTOM, SKY_BOTTOM, 1);
+    this.skyGfx.fillRect(0, 0, W, horizonY + 2);
+
+    // A moon rather than the prototype's sun, high and to the left, so
+    // the house is backlit and the ship catches the light on its right.
+    // Many thin rings rather than the prototype's four fat ones: at this
+    // radius four steps read as concentric circles drawn round the moon
+    // instead of as light coming off it.
+    this.moonGfx.clear();
+    var mx = W * 0.22, my = horizonY * 0.3, baseR = H * 0.15;
+    var steps = 14;
+    for (var r = steps; r >= 1; r--) {
+      var f = r / steps;
+      this.moonGfx.fillStyle(MOON, MOON_ALPHA * 0.07 * (1 - f) * (1 - f));
+      this.moonGfx.fillCircle(mx, my, baseR * f);
+    }
+    this.moonGfx.fillStyle(0xf4f7ff, 0.9);
+    this.moonGfx.fillCircle(mx, my, H * 0.026);
+
+    if (!this.starPositions || this.starPositions.w !== W || this.starPositions.h !== horizonY) {
+      var pts = [];
+      var count = Math.round((W * horizonY) / 2600);
+      for (var i = 0; i < count; i++) {
+        pts.push({ x: Math.random() * W, y: Math.random() * horizonY * 0.95, r: Math.random() * 1.2 + 0.3 });
+      }
+      this.starPositions = { w: W, h: horizonY, pts: pts };
+    }
+    this.starsGfx.clear();
+    this.starsGfx.fillStyle(0xffffff, 1);
+    this.starsGfx.alpha = STARS_ALPHA;
+    this.starPositions.pts.forEach(function (p) { this.starsGfx.fillCircle(p.x, p.y, p.r); }, this);
+
+    this.drawMountainLayer(this.mtnFarGfx, this.mountainLayers.far, MTN_FAR, horizonY, 0.75);
+    this.drawMountainLayer(this.mtnMidGfx, this.mountainLayers.mid, MTN_MID, horizonY + H * 0.015, 1);
+
+    this.groundGfx.clear();
+    this.groundGfx.fillGradientStyle(GROUND_FAR, GROUND_FAR, GROUND_NEAR, GROUND_NEAR, 1);
+    this.groundGfx.fillRect(0, horizonY, W, H - horizonY);
+    // A band of night haze along the horizon. Without it the ridges meet
+    // the field at a drawn line and the distance stops reading as
+    // distance - the one thing a painted backdrop cannot afford.
+    this.groundGfx.fillGradientStyle(MTN_MID, MTN_MID, GROUND_FAR, GROUND_FAR, 0.85, 0.85, 0, 0);
+    this.groundGfx.fillRect(0, horizonY, W, H * 0.075);
+
+    // A mown patch of yard between the house and the ship, so the ground
+    // reads as somebody's garden rather than open country.
+    var topHalf = this.depthToHalfWidth(0.25), botHalf = this.depthToHalfWidth(1);
+    this.yardGfx.clear();
+    // Faint on purpose. At any real strength this repaints the whole
+    // visible field and the night turns back into dusk - it only has to
+    // hint that somebody mows here.
+    this.yardGfx.fillStyle(0x24402a, 0.16);
+    this.yardGfx.beginPath();
+    this.yardGfx.moveTo(W / 2 - topHalf * 1.1, this.depthToScreenY(0.25));
+    this.yardGfx.lineTo(W / 2 + topHalf * 1.1, this.depthToScreenY(0.25));
+    this.yardGfx.lineTo(W / 2 + botHalf * 0.95, H);
+    this.yardGfx.lineTo(W / 2 - botHalf * 0.95, H);
+    this.yardGfx.closePath();
+    this.yardGfx.fillPath();
+
+    this.buildVignette(W, H);
+  };
+
+  MainScene.prototype.drawMountainLayer = function (gfx, layer, colorInt, baseY, overlapFrac) {
+    var W = this.scale.width;
+    var overlapDown = this.scale.height * 0.04 * overlapFrac;
+    gfx.clear();
+    gfx.fillStyle(colorInt, 1);
+    var steps = 40;
+    gfx.beginPath();
+    gfx.moveTo(0, baseY + overlapDown);
+    for (var i = 0; i <= steps; i++) {
+      gfx.lineTo((i / steps) * W, baseY - this.mountainHeight(layer, i / steps));
+    }
+    gfx.lineTo(W, baseY + overlapDown);
+    gfx.closePath();
+    gfx.fillPath();
+  };
+
+  MainScene.prototype.buildVignette = function (W, H) {
+    var key = 'vignetteTex';
+    if (this.textures.exists(key)) this.textures.remove(key);
+    var tex = this.textures.createCanvas(key, W, H);
+    var ctx = tex.getContext();
+    var grad = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.12, W / 2, H * 0.55, H * 0.8);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    tex.refresh();
+    if (this.vignetteImg) this.vignetteImg.destroy();
+    this.vignetteImg = this.add.image(0, 0, key).setOrigin(0, 0).setDepth(50)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY);
+  };
+
+  // ---- Reaching things ------------------------------------------------
+  // Distance from the player's feet to a prop's, in screen px. Screen
+  // space rather than world space on purpose: the ground is a trapezoid,
+  // so the same world-space gap is a very different apparent distance
+  // near the horizon, and what should decide "am I at the ship" is what
+  // the player can see.
+  MainScene.prototype.distanceToProp = function (prop) {
+    var me = this.placeAt(this.worldX, this.depth);
+    var it = this.placeAt(prop.worldX, prop.depth);
+    return Math.hypot(me.x - it.x, me.y - it.y);
+  };
+  MainScene.prototype.atShip = function () {
+    return this.distanceToProp(SHIP) < BOARD_RADIUS * this.depthToScale(SHIP.depth);
+  };
+  MainScene.prototype.atDoor = function () {
+    return this.distanceToProp(HOUSE) < DOOR_RADIUS * this.depthToScale(HOUSE.depth);
+  };
+
+  // ---- The takeoff ----------------------------------------------------
+  MainScene.prototype.board = function () {
+    if (this.mode !== 'walk') return;
+    this.mode = 'board';
+    this.modeAge = 0;
+    this.boardFrom = this.placeAt(this.worldX, this.depth);
+    Sound.ensureAudio();
+    Sound.playLaunch(BOARD_DURATION + LIFTOFF_DURATION);
+    this.setPrompt(null);
+    document.getElementById('hint').classList.add('hidden');
+    document.getElementById('controlBar').classList.add('gone');
+    forceReleaseAllInput(); // or a held stick keeps walking underneath the cutscene
+  };
+
+  MainScene.prototype.updateSequence = function (dt) {
+    var ship = this.placeAt(SHIP.worldX, SHIP.depth);
+
+    if (this.mode === 'board') {
+      // Climbing in, read as the figure being drawn to the hull and
+      // folding into it - no door animation, just the fold.
+      var t = clamp(this.modeAge / BOARD_DURATION, 0, 1);
+      var eased = t * t * (3 - 2 * t);
+      this.you.setPosition(
+        lerp(this.boardFrom.x, ship.x, eased),
+        lerp(this.boardFrom.y, ship.y - 10 * ship.scale, eased)
+      );
+      this.you.setScale(this.boardFrom.scale * (1 - eased * 0.75));
+      this.you.setAlpha(1 - eased);
+      this.shipGlow.setAlpha(0.6 + 0.4 * eased);
+      this.shipPlume.setAlpha(eased * 0.35).setScale(ship.scale, ship.scale * 0.35);
+      if (t >= 1) { this.mode = 'liftoff'; this.modeAge = 0; this.you.setVisible(false); }
+      return;
+    }
+
+    if (this.mode === 'liftoff') {
+      var lt = clamp(this.modeAge / LIFTOFF_DURATION, 0, 1);
+      // Accelerating, not linear: a ship that rises at a constant rate
+      // reads as being winched. Cubed, it leaves.
+      var climb = lt * lt * lt;
+      var rise = climb * (ship.y + this.scale.height * 0.35);
+      var shrink = 1 - climb * 0.82;
+      var shipY = ship.y - rise;
+      this.shipSprite.setPosition(ship.x, shipY).setScale(ship.scale * shrink);
+      // Legs fold away over the first moments of the climb.
+      this.shipLegs.setPosition(ship.x, shipY).setScale(ship.scale * shrink)
+        .setAlpha(clamp(1 - lt * 5, 0, 1));
+      // The ground pool hands over to the plume: one is the ship sitting
+      // on the grass, the other is it leaving.
+      this.shipGlow.setPosition(ship.x, ship.y - 6 * ship.scale)
+        .setAlpha(clamp(1 - lt * 3, 0, 1));
+      this.shipPlume.setPosition(ship.x, shipY - 10 * ship.scale * shrink)
+        .setScale(ship.scale * shrink, ship.scale * shrink * (0.5 + climb * 2.2))
+        .setAlpha(clamp(lt * 4, 0, 1) * clamp(1 - climb * 0.5, 0, 1));
+
+      // The fade overlaps the end of the climb rather than following it,
+      // so the page change lands while he is still moving.
+      var fadeStart = LIFTOFF_DURATION - FADE_DURATION;
+      var fade = clamp((this.modeAge - fadeStart) / FADE_DURATION, 0, 1);
+      this.fadeGfx.clear();
+      if (fade > 0) {
+        this.fadeGfx.fillStyle(0x000000, fade);
+        this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
+      }
+      if (lt >= 1) { this.mode = 'gone'; goToGame(); }
+      return;
+    }
+  };
+
+  // ---- Per-frame -------------------------------------------------------
+  MainScene.prototype.update = function (time, delta) {
+    var dt = Math.min(delta / 1000, 0.05);
+    this.modeAge += dt;
+
+    if (this.mode !== 'walk') { this.updateSequence(dt); return; }
+
+    var input = window.__yardInput;
+    var moveX = input.x, moveY = input.y;
+    var magnitude = Math.hypot(moveX, moveY);
+    var walking = magnitude > 0.04;
+
+    if (walking) {
+      this.worldX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
+      this.depth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.12, 1);
+      if (moveX > 0.08) this.flipX = false;
+      else if (moveX < -0.08) this.flipX = true;
+      this.bobPhase += dt * (6 + magnitude * 6);
+      this.idlePhase = 0;
+      document.getElementById('hint').classList.add('hidden');
+    } else {
+      this.idlePhase += dt;
+    }
+
+    var me = this.placeAt(this.worldX, this.depth);
+    var bob = walking ? Math.sin(this.bobPhase) * 3 * me.scale : Math.sin(this.idlePhase * 1.2) * 1;
+    this.you.setPosition(me.x, me.y + bob).setScale(me.scale).setFlipX(this.flipX).setDepth(me.y);
+
+    // Touching the ship IS boarding - no button, no confirm. It is the
+    // one interactive thing in the scene and the player walked at it on
+    // purpose.
+    if (this.atShip()) { this.board(); return; }
+
+    // The house is scenery for now. Saying so beats letting someone walk
+    // into a wall and conclude the scene is broken.
+    this.setPrompt(this.atDoor() ? 'The door is locked. Inside is the story — later.' : null);
+
+    // A little parallax on the ridges, and the ship idling.
+    this.mtnFarGfx.x = -this.worldX * 8;
+    this.mtnMidGfx.x = -this.worldX * 22;
+    this.shipGlow.setAlpha(0.55 + 0.25 * (0.5 + 0.5 * Math.sin(time / 520)));
+
+    this.updateFireflies(dt);
+  };
+
+  MainScene.prototype.setPrompt = function (text) {
+    if (this.prompt === text) return;
+    this.prompt = text;
+    var el = document.getElementById('hint');
+    if (!el) return;
+    if (text) {
+      el.textContent = text;
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  };
+
+  MainScene.prototype.updateFireflies = function (dt) {
+    var W = this.scale.width, self = this;
+    this.firefliesGfx.clear();
+    this.fireflies.forEach(function (f) {
+      f.phase += dt * f.speed;
+      var x = f.xFrac * W + Math.sin(f.phase) * 14;
+      var y = self.depthToScreenY(f.depth) - 20 + Math.cos(f.phase * 1.3) * 8;
+      var a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(f.phase * 3));
+      self.firefliesGfx.fillStyle(0xfff3b0, a * 0.22);
+      self.firefliesGfx.fillCircle(x, y, 6);
+      self.firefliesGfx.fillStyle(0xfff9d6, a);
+      self.firefliesGfx.fillCircle(x, y, 1.6);
+    });
+  };
+
+  MainScene.prototype.exposeDebugHooks = function () {
+    var self = this;
+    window.__yardDebug = {
+      scene: this,
+      nextPage: NEXT_PAGE,
+      // Everything a test needs to know without reading pixels.
+      state: function () {
+        return {
+          mode: self.mode, worldX: self.worldX, depth: self.depth,
+          shipDistance: self.distanceToProp(SHIP),
+          boardRadius: BOARD_RADIUS * self.depthToScale(SHIP.depth),
+          atShip: self.atShip(), atDoor: self.atDoor(),
+          prompt: self.prompt,
+          shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
+          youVisible: self.you.visible
+        };
+      },
+      // Teleport, for tests that are about what happens when you ARRIVE
+      // rather than about the walking.
+      moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
+      board: function () { self.board(); }
+    };
+  };
+
+  // ==================================================================
+  // Input: the analog stick and touch hardening from painted-lands.html
+  // ==================================================================
+  var inputState = { x: 0, y: 0 };
+  window.__yardInput = inputState;
+
+  var touchX = 0, touchY = 0;
+  var kb = { up: false, down: false, left: false, right: false };
+  var kbX = 0, kbY = 0;
+
+  function composeInput() {
+    var x = touchX + kbX, y = touchY + kbY;
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    inputState.x = x;
+    inputState.y = y;
+  }
+
+  function updateKbVector() {
+    var x = (kb.right ? 1 : 0) - (kb.left ? 1 : 0);
+    var y = (kb.down ? 1 : 0) - (kb.up ? 1 : 0);
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    kbX = x; kbY = y;
+    composeInput();
+  }
+
+  var HOLD_WATCHDOG_MS = 12000;
+  var heldZoneResets = [];
+  var STICK_MAX_RADIUS_PX = 44;
+
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
+  function bindThumbstick(el, anchorEl, knobEl) {
+    var activeId = null;
+    var watchdogTimer = null;
+    var anchorX = 0, anchorY = 0;
+
+    suppressCallout(el);
+
+    function applyVector(clientX, clientY) {
+      var dx = clientX - anchorX, dy = clientY - anchorY;
+      var dist = Math.hypot(dx, dy);
+      var clamped = Math.min(dist, STICK_MAX_RADIUS_PX);
+      var kx = dist > 0 ? (dx / dist) * clamped : 0;
+      var ky = dist > 0 ? (dy / dist) * clamped : 0;
+      knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+      touchX = kx / STICK_MAX_RADIUS_PX;
+      touchY = ky / STICK_MAX_RADIUS_PX;
+      composeInput();
+    }
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+      anchorEl.classList.remove('visible');
+      knobEl.classList.remove('visible');
+      knobEl.style.transform = 'translate(0px, 0px)';
+      touchX = 0; touchY = 0;
+      composeInput();
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      Sound.startWind();
+      hardRelease();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      var rect = el.getBoundingClientRect();
+      anchorX = e.clientX;
+      anchorY = e.clientY;
+      var localX = anchorX - rect.left, localY = anchorY - rect.top;
+      anchorEl.style.left = localX + 'px';
+      anchorEl.style.top = localY + 'px';
+      knobEl.style.left = localX + 'px';
+      knobEl.style.top = localY + 'px';
+      knobEl.style.transform = 'translate(0px, 0px)';
+      anchorEl.classList.add('visible');
+      knobEl.classList.add('visible');
+      touchX = 0; touchY = 0;
+      composeInput();
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+
+    el.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== activeId) return;
+      applyVector(e.clientX, e.clientY);
+    });
+
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  }
+
+  bindThumbstick(
+    document.getElementById('stickZone'),
+    document.getElementById('stickAnchor'),
+    document.getElementById('stickKnob')
+  );
+
+  (function bindFlyButton() {
+    var el = document.getElementById('flyBtn');
+    suppressCallout(el);
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      el.classList.add('active');
+      goToGame();
+    });
+    function release() { el.classList.remove('active'); }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+  })();
+
+  function isUpKey(code) { return code === 'ArrowUp' || code === 'KeyW'; }
+  function isDownKey(code) { return code === 'ArrowDown' || code === 'KeyS'; }
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isFlyKey(code) { return code === 'Space' || code === 'Enter' || code === 'KeyE'; }
+
+  document.addEventListener('keydown', function (e) {
+    Sound.ensureAudio();
+    Sound.startWind();
+    if (isUpKey(e.code) || isDownKey(e.code) || isFlyKey(e.code)) e.preventDefault();
+    if (isFlyKey(e.code)) { if (!e.repeat) goToGame(); return; }
+    if (e.repeat) return;
+    if (isUpKey(e.code)) { kb.up = true; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = true; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = true; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = true; updateKbVector(); }
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (isUpKey(e.code)) { kb.up = false; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = false; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = false; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = false; updateKbVector(); }
+  });
+
+  function forceReleaseKeyboard() {
+    if (kb.up || kb.down || kb.left || kb.right) {
+      kb.up = kb.down = kb.left = kb.right = false;
+      updateKbVector();
+    }
+  }
+
+  function forceReleaseAllInput() {
+    heldZoneResets.forEach(function (fn) { fn(); });
+    forceReleaseKeyboard();
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) forceReleaseAllInput();
+  });
+  window.addEventListener('blur', forceReleaseAllInput);
+
+  var controlBar = document.getElementById('controlBar');
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
+
+  // ==================================================================
+  // Prevent / auto-recover from accidental page pinch-zoom
+  // ==================================================================
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var resetTimer = null;
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+    function scheduleZoomCheck() {
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+  })();
+
+  setTimeout(function () {
+    var el = document.getElementById('hint');
+    if (el && mainScene && !mainScene.prompt) el.classList.add('hidden');
+  }, 5000);
+
+  // ==================================================================
+  // Boot
+  // ==================================================================
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'gameRoot',
+    backgroundColor: SKY_TOP,
+    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER },
+    scene: [MainScene],
+    disableContextMenu: true
+  });
+})();
+</script>
+</body>
+</html>

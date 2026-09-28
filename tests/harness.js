@@ -39,12 +39,20 @@ async function launch(chromium) {
 
 var URL = process.env.HEADON_URL || 'http://127.0.0.1:8778/head-on.html';
 
+// Another page on the same server - for the files that test something
+// other than the game itself (the yard, chapter 1's opening scene).
+// Derived from URL rather than hardcoded so HEADON_URL still moves the
+// whole suite to another host in one go.
+function pageUrl(name) {
+  return name ? URL.replace(/[^/]+$/, name) : URL;
+}
+
 // Opens the game with a clean tuning store. A saved blob from a previous
 // session would otherwise mask the defaults a test is asserting against -
 // and it masks them PER KEY, so the failure looks like a logic bug rather
 // than stale state.
-async function openGame(page) {
-  await page.goto(URL);
+async function openGame(page, name) {
+  await page.goto(pageUrl(name));
   await page.evaluate(function () {
     try { localStorage.removeItem('headon-tuning-v1'); } catch (e) {}
   });
@@ -80,7 +88,13 @@ function makeChecker() {
 // The standard shape of a test file: harness.run(async (page, check, ctx) => { ... }).
 // Page errors are collected for you in ctx.errors; the favicon 404 every
 // page logs is filtered out, since it is not the game's doing.
-function run(body) {
+// opts.page names a different file on the same server to open instead of
+// head-on.html. The end-of-file crash check still reads head-on's own
+// runtimeErrors hook, which is absent on other pages and harmless there -
+// and for the yard it is the right check anyway, since that file's whole
+// job is to end up inside head-on.html.
+function run(body, opts) {
+  opts = opts || {};
   var chromium = loadPlaywright().chromium;
   (async function () {
     var browser = await launch(chromium);
@@ -93,10 +107,14 @@ function run(body) {
       }
     });
     var check = makeChecker();
-    await openGame(page);
+    await openGame(page, opts.page);
     var threw = null;
     try {
-      await body(page, check, { errors: errors, runtimeErrors: function () { return runtimeErrors(page); } });
+      await body(page, check, {
+        errors: errors,
+        runtimeErrors: function () { return runtimeErrors(page); },
+        url: function (name) { return pageUrl(name); }
+      });
     } catch (e) {
       // Reported as a failure rather than swallowed by the summary - a
       // file that dies half way through has NOT passed the checks it
@@ -120,4 +138,4 @@ function run(body) {
   });
 }
 
-module.exports = { run: run, URL: URL };
+module.exports = { run: run, URL: URL, pageUrl: pageUrl };
