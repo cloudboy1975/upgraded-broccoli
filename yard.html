@@ -170,9 +170,15 @@
     width: 74px;
     height: 74px;
     border-radius: 50%;
-    border: 2px solid rgba(241, 233, 220, 0.3);
-    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.85), rgba(90, 70, 35, 0.5) 70%);
-    color: #2b1f08;
+    border: 1px solid rgba(241, 233, 220, 0.22);
+    /* Deliberately quiet. It is an escape hatch, not the thing to do -
+       the scene is a few seconds long and most of the time it should be
+       let alone. Translucent enough to sit in the night without
+       competing with the lit house or the ship, and it comes up to full
+       strength under a thumb. */
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.28), rgba(90, 70, 35, 0.16) 70%);
+    color: rgba(241, 233, 220, 0.72);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
     font-family: inherit;
     font-size: 0.6rem;
     font-weight: 800;
@@ -184,16 +190,23 @@
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
-    transition: transform 0.08s, filter 0.1s;
+    transition: transform 0.08s, background 0.15s, border-color 0.15s, color 0.15s;
   }
-  .fly-btn:active, .fly-btn.active { transform: scale(0.93); filter: brightness(1.15); }
+  .fly-btn:active, .fly-btn.active {
+    transform: scale(0.93);
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.85), rgba(90, 70, 35, 0.5) 70%);
+    border-color: rgba(241, 233, 220, 0.5);
+    color: #2b1f08;
+    text-shadow: none;
+  }
   .fly-icon {
     width: 0; height: 0;
     border-left: 8px solid transparent;
     border-right: 8px solid transparent;
-    border-bottom: 14px solid rgba(43, 31, 8, 0.85);
+    border-bottom: 14px solid rgba(241, 233, 220, 0.6);
     pointer-events: none;
   }
+  .fly-btn:active .fly-icon, .fly-btn.active .fly-icon { border-bottom-color: rgba(43, 31, 8, 0.85); }
 </style>
 </head>
 <body>
@@ -284,9 +297,38 @@
   // aesthetic choice: it means "hold right" reaches it. Putting it
   // further back made the first screen of the game a lesson in the depth
   // axis, and the first screen of the game should teach nothing.
+  // Depth is also a LAYOUT constraint, not just a look: the stick and the
+  // Fly button own the bottom ~140px of the screen, so anything standing
+  // near depth 1 is standing under the player's thumbs. The ship and the
+  // player both sit around 0.62 to keep clear of them - and they sit
+  // together, because that near-equal depth is what makes "hold right"
+  // reach the ship.
   var HOUSE = { worldX: -0.62, depth: 0.44 };
-  var SHIP = { worldX: 0.52, depth: 0.74 };
-  var START = { worldX: -0.40, depth: 0.78 };
+  var SHIP = { worldX: 0.48, depth: 0.62 };
+  var START = { worldX: -0.58, depth: 0.64 };
+
+  // The ship's silhouette, written out as the four y values it actually
+  // has rather than derived from a centre line and a radius. Derived,
+  // making the hull taller also pushed its wingtips into the ground and
+  // left the legs nowhere to be - these have to be able to move
+  // independently.
+  //
+  // The proportions follow head-on.html's own shipTex, which is TALLER
+  // than it is wide (1.5r across, 1.7r down). This is the same dart seen
+  // parked and a little foreshortened, not a different, flatter ship.
+  //
+  // Module scope, not inside buildTextures(), because the hull and the
+  // legs are baked separately and must agree exactly, and because the
+  // exhaust plume is positioned from them every frame of the takeoff.
+  var SHIP_W = 132, SHIP_H = 140;
+  var SHIP_NOSE_Y = SHIP_H * 0.10;   // the point
+  var SHIP_NOTCH_Y = SHIP_H * 0.60;  // the tail's inward notch
+  var SHIP_TIP_Y = SHIP_H * 0.76;    // the wingtips, and the hull's lowest edge
+  var SHIP_FOOT_Y = SHIP_H - 6;      // where the feet meet the grass
+  var SHIP_HALF_SPAN = SHIP_W * 0.36;
+  // How far the hull's underside sits above the ground, in texture px -
+  // where the exhaust comes from.
+  var SHIP_EXHAUST_UP = SHIP_H - SHIP_TIP_Y;
 
   // How close counts as reaching the ship, in screen px, scaled by the
   // ship's own perspective scale so it means the same thing wherever the
@@ -522,28 +564,26 @@
     // scene, so the silhouette matches head-on.html's shipTex rather than
     // being a nicer-looking spacecraft.
     (function () {
-      var w = 150, h = 104;
+      var w = SHIP_W, h = SHIP_H;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      var cx = w / 2, baseY = h - 10;
+      var cx = w / 2;
       g.fillStyle(0x000000, 0.32);
-      g.fillEllipse(cx, h - 5, w * 0.72, 13);
-      // Hull: head-on's dart, squashed vertically as if seen from in
-      // front and slightly above.
-      var r = h * 0.44;
+      g.fillEllipse(cx, h - 3, w * 0.66, 11);
       g.fillStyle(0xe2e8f0, 1);
       g.lineStyle(2, 0x94a3b8, 1);
       g.beginPath();
-      g.moveTo(cx, baseY - h * 0.28 - r);
-      g.lineTo(cx + w * 0.44, baseY - h * 0.28 + r * 0.62);
-      g.lineTo(cx, baseY - h * 0.28 + r * 0.24);
-      g.lineTo(cx - w * 0.44, baseY - h * 0.28 + r * 0.62);
+      g.moveTo(cx, SHIP_NOSE_Y);
+      g.lineTo(cx + SHIP_HALF_SPAN, SHIP_TIP_Y);
+      g.lineTo(cx, SHIP_NOTCH_Y);
+      g.lineTo(cx - SHIP_HALF_SPAN, SHIP_TIP_Y);
       g.closePath();
       g.fillPath();
       g.strokePath();
-      g.fillStyle(0x38bdf8, 0.85);                        // canopy
-      g.fillEllipse(cx, baseY - h * 0.28 - r * 0.24, w * 0.17, h * 0.15);
+      var canopyY = SHIP_NOSE_Y + (SHIP_TIP_Y - SHIP_NOSE_Y) * 0.34;
+      g.fillStyle(0x38bdf8, 0.85);
+      g.fillEllipse(cx, canopyY, w * 0.17, h * 0.12);
       g.fillStyle(0xffffff, 0.5);
-      g.fillEllipse(cx - w * 0.03, baseY - h * 0.28 - r * 0.3, w * 0.06, h * 0.05);
+      g.fillEllipse(cx - w * 0.03, canopyY - h * 0.02, w * 0.06, h * 0.04);
       g.generateTexture('shipTex', w, h);
       g.destroy();
     })();
@@ -553,15 +593,21 @@
     // which read less as a spacecraft leaving than as a table being
     // lifted.
     (function () {
-      var w = 150, h = 104;
+      var w = SHIP_W, h = SHIP_H;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      var cx = w / 2, baseY = h - 10;
+      var cx = w / 2;
       g.lineStyle(3, 0x94a3b8, 1);
-      [[-0.3, -0.34], [0.3, 0.34], [0, 0.02]].forEach(function (p) {
+      // Splayed out from under the hull's lowest edge, so they read as
+      // carrying it rather than as lines drawn beneath it.
+      [[-0.45, -0.95], [0.45, 0.95], [0, 0.06]].forEach(function (p) {
         g.beginPath();
-        g.moveTo(cx + w * p[0] * 0.5, baseY - h * 0.28);
-        g.lineTo(cx + w * p[1] * 0.62, baseY);
+        g.moveTo(cx + SHIP_HALF_SPAN * p[0], SHIP_TIP_Y - 2);
+        g.lineTo(cx + SHIP_HALF_SPAN * p[1], SHIP_FOOT_Y);
         g.strokePath();
+      });
+      g.fillStyle(0x94a3b8, 1); // feet
+      [-0.95, 0.95, 0.06].forEach(function (f) {
+        g.fillEllipse(cx + SHIP_HALF_SPAN * f, SHIP_FOOT_Y, 9, 4);
       });
       g.generateTexture('shipLegsTex', w, h);
       g.destroy();
@@ -658,7 +704,7 @@
     this.shipSprite.setPosition(s.x, s.y).setScale(s.scale).setDepth(s.y);
     this.shipLegs.setPosition(s.x, s.y).setScale(s.scale).setDepth(s.y - 0.5);
     this.shipGlow.setPosition(s.x, s.y - 6 * s.scale).setScale(s.scale).setDepth(s.y - 1);
-    this.shipPlume.setPosition(s.x, s.y - 26 * s.scale).setScale(s.scale).setDepth(s.y - 2);
+    this.shipPlume.setPosition(s.x, s.y - SHIP_EXHAUST_UP * s.scale).setScale(s.scale).setDepth(s.y - 2);
   };
 
   MainScene.prototype.mountainHeight = function (layer, xFrac) {
@@ -836,7 +882,7 @@
       // on the grass, the other is it leaving.
       this.shipGlow.setPosition(ship.x, ship.y - 6 * ship.scale)
         .setAlpha(clamp(1 - lt * 3, 0, 1));
-      this.shipPlume.setPosition(ship.x, shipY - 10 * ship.scale * shrink)
+      this.shipPlume.setPosition(ship.x, shipY - SHIP_EXHAUST_UP * ship.scale * shrink)
         .setScale(ship.scale * shrink, ship.scale * shrink * (0.5 + climb * 2.2))
         .setAlpha(clamp(lt * 4, 0, 1) * clamp(1 - climb * 0.5, 0, 1));
 
@@ -944,6 +990,18 @@
           youVisible: self.you.visible
         };
       },
+      // Screen rectangles, for the layout checks: nothing that stands in
+      // the yard may end up underneath the controls.
+      bounds: function () {
+        function box(sprite) {
+          var b = sprite.getBounds();
+          return { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height };
+        }
+        return { you: box(self.you), ship: box(self.shipSprite), house: box(self.houseSprite) };
+      },
+      // The drawn silhouette's own proportions, which is what "short and
+      // fat" was about - the texture's canvas is mostly padding.
+      shipShape: { width: SHIP_HALF_SPAN * 2, height: SHIP_TIP_Y - SHIP_NOSE_Y },
       // Teleport, for tests that are about what happens when you ARRIVE
       // rather than about the walking.
       moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },

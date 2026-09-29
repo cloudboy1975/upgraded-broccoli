@@ -58,6 +58,42 @@ harness.run(async (page, check, ctx) => {
     !start.atShip && start.shipDistance > start.boardRadius * 1.5, start);
   check('nothing is prompting yet', start.prompt === null, start);
 
+  // --- nothing stands under the controls ------------------------------------
+  // Both of these are layout facts with no other guard on them: the
+  // depth axis decides where things land on the screen, and retuning it
+  // for how the scene LOOKS will happily park the player under the
+  // thumbstick or the ship behind the Fly button. Neither shows up in
+  // any behaviour test, because everything still works - it is just
+  // unusable with a hand on it.
+  const layout = await page.evaluate(() => {
+    const b = window.__yardDebug.bounds();
+    function rect(id) {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    }
+    function overlaps(a, c) {
+      return a.left < c.right && a.right > c.left && a.top < c.bottom && a.bottom > c.top;
+    }
+    const stick = rect('stickZone'), fly = rect('flyBtn');
+    return {
+      youOnStick: overlaps(b.you, stick),
+      shipOnFly: overlaps(b.ship, fly),
+      youBottom: Math.round(b.you.bottom), stickTop: Math.round(stick.top),
+      shipBottom: Math.round(b.ship.bottom), shipRight: Math.round(b.ship.right),
+      flyTop: Math.round(fly.top), flyLeft: Math.round(fly.left)
+    };
+  });
+  check('you do not start standing under the thumbstick', !layout.youOnStick, layout);
+  check('and the ship is not parked behind the Fly button', !layout.shipOnFly, layout);
+
+  // --- the ship is a dart, not a pancake ------------------------------------
+  // head-on.html's own ship is taller than it is wide. This one is the
+  // same craft seen parked, so a little foreshortening is right and a lot
+  // is not - it had been drawn at 1.8:1, which read as squat.
+  const shape = await page.evaluate(() => window.__yardDebug.shipShape);
+  check('the parked ship keeps the game ship\'s upright proportions',
+    shape.width / shape.height < 1.25, shape);
+
   // --- the walk ------------------------------------------------------------
   // Holding ONE direction has to be enough. The ground is a trapezoid
   // with a depth axis, and if reaching the ship needs the player to
