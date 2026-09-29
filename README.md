@@ -85,9 +85,12 @@ full-screen layout.
 chapter of a longer game about two-dimensional aliens.
 
 - [Open the shooter](https://cloudboy1975.github.io/upgraded-broccoli/head-on.html) — straight into a run
-- [Start at the house](https://cloudboy1975.github.io/upgraded-broccoli/yard.html) — chapter 1's opening scene:
-  night, your house, your ship parked in the yard. Walk into the ship and
-  it takes off. The bottom-right button skips straight to the game.
+- [Start at the house](https://cloudboy1975.github.io/upgraded-broccoli/yard.html)
+  — chapter 1's opening scene: night, your house, your ship parked in
+  the yard. Walk right into the ship and it takes off; walk left through
+  the front door and you are inside, where the TV and the computer will
+  carry the story and the tutorial. The bottom-right button skips
+  straight to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
   missiles that only hurt their own colour, and falling strips build the

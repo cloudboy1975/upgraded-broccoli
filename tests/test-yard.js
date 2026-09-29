@@ -37,12 +37,30 @@ async function walkUntilBoarded(page, key, budgetMs) {
 // error - so a broken takeoff or a dead skip button reads as "the test
 // is broken" rather than as the failed check it is. Every arrival goes
 // through here instead, and a failure to arrive is just false.
-async function reachedGame(page, timeout) {
+async function reachedPage(page, name, timeout) {
   try {
-    await page.waitForURL('**/head-on.html', { timeout: timeout });
+    await page.waitForURL('**/' + name, { timeout: timeout });
     return true;
   } catch (e) {
     return false;
+  }
+}
+
+function reachedGame(page, timeout) { return reachedPage(page, 'head-on.html', timeout); }
+
+// Every state read has to survive the page NAVIGATING AWAY underneath
+// it. The yard has two auto-triggers on it now - the ship and the
+// doorstep - and either one placed badly enough to cover the spawn
+// point sends the scene somewhere else before a single check runs,
+// killing the file with a test error rather than failing the check that
+// exists to catch precisely that. The sentinel turns it back into a
+// FAIL, and it is asserted positively below for the same reason: an
+// absent state object would sail through any "not true" test.
+async function readState(page) {
+  try {
+    return await page.evaluate(() => window.__yardDebug.state());
+  } catch (e) {
+    return { gone: true, why: String(e).slice(0, 120) };
   }
 }
 
@@ -52,10 +70,12 @@ harness.run(async (page, check, ctx) => {
 
   check('no page errors on load', errors.length === 0, errors);
 
-  const start = await page.evaluate(() => window.__yardDebug.state());
+  const start = await readState(page);
   check('the scene boots into the yard, on foot', start.mode === 'walk', start);
-  check('and you start away from the ship, not on top of it',
-    !start.atShip && start.shipDistance > start.boardRadius * 1.5, start);
+  check('and stays there rather than triggering something on load',
+    start.gone !== true && start.atShip === false && start.atDoor === false, start);
+  check('starting away from the ship, not on top of it',
+    start.shipDistance > start.boardRadius * 1.5, start);
   check('nothing is prompting yet', start.prompt === null, start);
 
   // --- nothing stands under the controls ------------------------------------
@@ -169,44 +189,48 @@ harness.run(async (page, check, ctx) => {
   await page.keyboard.press('Space');
   check('and the space bar does the same', await reachedGame(page, 5000), page.url());
 
-  // --- the house is scenery, and says so ------------------------------------
+  // --- the front door goes inside -------------------------------------------
+  // The scene's whole navigation is two opposite walks: right to the
+  // ship, left to the house. Both are auto-triggers with no button, and
+  // both have to be reachable by ONE held direction from where you
+  // start - the door was not, for the same reason the ship once was
+  // not, and it is worth a standing check on each.
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
-  const atDoor = await page.evaluate(() => {
-    const d = window.__yardDebug;
-    const s0 = d.state();
-    // Stand where the door is. Teleporting is right here - this is about
-    // what happens on arrival, not about the walking, which the walk
-    // checks above already cover.
-    d.scene.worldX = -0.62;
-    d.scene.depth = 0.44;
-    return new Promise(res => setTimeout(() => {
-      const s = d.state();
-      res({ before: s0.prompt, atDoor: s.atDoor, mode: s.mode, prompt: s.prompt,
-            hintHidden: document.getElementById('hint').classList.contains('hidden'),
-            hintText: document.getElementById('hint').textContent });
-    }, 250));
-  });
-  check('standing at the door says the house is for later',
-    atDoor.atDoor && atDoor.prompt !== null && !atDoor.hintHidden, atDoor);
-  check('rather than silently doing nothing, which reads as broken',
-    atDoor.hintText.length > 0, atDoor);
-  check('and the house does NOT launch you', atDoor.mode === 'walk', atDoor);
+  // Read defensively and asserted as an explicit false: a doorstep big
+  // enough to cover the start point sends the scene straight into the
+  // house, and every evaluate after that hits a dead context - which
+  // reads as a broken test file rather than as this failing.
+  const atStart = await readState(page);
+  check('you do not start on the doorstep', atStart.atDoor === false, atStart);
 
-  // Walking off again clears the prompt - a message that sticks after you
-  // have left looks like a stuck label.
-  const awayFromDoor = await page.evaluate(() => {
-    const d = window.__yardDebug;
-    d.scene.worldX = 0.1;
-    d.scene.depth = 0.78;
-    return new Promise(res => setTimeout(() => {
-      const s = d.state();
-      res({ atDoor: s.atDoor, prompt: s.prompt,
-            hintHidden: document.getElementById('hint').classList.contains('hidden') });
-    }, 250));
-  });
-  check('and it clears again once you walk away',
-    !awayFromDoor.atDoor && awayFromDoor.prompt === null && awayFromDoor.hintHidden, awayFromDoor);
+  const doorMs = await walkUntilBoarded(page, 'ArrowLeft', 8000);
+  const entering = await page.evaluate(() => window.__yardDebug.state());
+  check('holding left alone reaches the front door',
+    entering.mode === 'entering', { doorMs, entering });
+  check('and it is as short a walk as the one to the ship', doorMs < 3500, { doorMs });
+
+  check('which takes you inside the house',
+    await reachedPage(page, 'house.html', 6000), page.url());
+
+  // Coming back out must not put you straight back in. The start point
+  // is where you land on the way out, so if it sat inside the doorstep's
+  // zone the two scenes would bounce off each other forever.
+  const inside = await page.evaluate(() => window.__houseDebug.state());
+  check('and the house is a real scene, not a dead end', inside.mode === 'walk', inside);
+
+  await page.evaluate(() => { const d = window.__houseDebug; d.moveTo(d.props.door.worldX, 0.08); });
+  check('whose own door comes back out to the yard',
+    await reachedPage(page, 'yard.html', 6000), page.url());
+  await page.waitForTimeout(BOOT_MS);
+
+  const backOutside = await page.evaluate(() => window.__yardDebug.state());
+  check('landing outside the doorstep, not on it',
+    backOutside.mode === 'walk' && !backOutside.atDoor, backOutside);
+  await page.waitForTimeout(900);
+  const settled = await page.evaluate(() => ({ mode: window.__yardDebug.state().mode, url: location.pathname }));
+  check('so you stay outside instead of bouncing back in',
+    settled.mode === 'walk' && settled.url.indexOf('yard.html') !== -1, settled);
 
   // --- wandering is safe ----------------------------------------------------
   // The boarding radius is generous on purpose. Generous must not mean

@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Head-On &mdash; Inside</title>
+<style>
+  :root {
+    --bg-1: #1a1116;
+    --text: #f1e9dc;
+    --muted: #b9ad98;
+    --accent: #e8c07a;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+  body {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100vw;
+    background: var(--bg-1);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #gameRoot { position: fixed; inset: 0; z-index: 0; }
+  #gameRoot canvas { display: block; }
+
+  .hud-bar {
+    position: fixed;
+    top: env(safe-area-inset-top);
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px max(12px, env(safe-area-inset-left));
+    z-index: 10;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
+  }
+
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    pointer-events: auto;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  .back-link:hover { color: var(--text); }
+
+  .chapter-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: rgba(26, 17, 22, 0.45);
+    border: 1px solid rgba(241, 233, 220, 0.2);
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+
+  /* One line of text, top-centre. Doubles as the opening line and as the
+     proximity prompt for whatever you are standing next to, so there is
+     never more than one thing to read - see setPrompt(). */
+  .hint {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 46px);
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    z-index: 10;
+    pointer-events: none;
+    padding: 0 20px;
+    transition: opacity 0.5s ease;
+  }
+  .hint.hidden { opacity: 0; }
+
+  .control-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    touch-action: none;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .control-bar > * { pointer-events: auto; }
+  .control-bar.gone { opacity: 0; pointer-events: none; }
+
+  /* The analog stick from yard.html, unchanged - wherever the thumb
+     lands becomes that press's neutral centre. */
+  .stick-zone {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: rgba(26, 17, 22, 0.4);
+    border: 1px solid rgba(241, 233, 220, 0.15);
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    overflow: visible;
+  }
+  /* Same invisible hit slop the game's controls got: a thumb arriving
+     from above lands high, and there is nothing above this but room. */
+  .stick-zone::before {
+    content: '';
+    position: absolute;
+    top: -22px;
+    bottom: -10px;
+    left: -12px;
+    right: -12px;
+  }
+  .stick-anchor {
+    position: absolute;
+    top: 0; left: 0;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-anchor.visible { opacity: 1; }
+
+  .stick-knob {
+    position: absolute;
+    top: 0; left: 0;
+    width: 50px;
+    height: 50px;
+    margin-left: -25px;
+    margin-top: -25px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.16);
+    border: 2px solid rgba(241, 233, 220, 0.45);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-knob.visible { opacity: 1; }
+
+  /* Quiet by design, exactly like the yard's Fly button: an escape
+     hatch, not the thing to do. Same shape and position so the two
+     scenes feel like one place. */
+  .out-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    position: relative;
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 1px solid rgba(241, 233, 220, 0.22);
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.28), rgba(90, 70, 35, 0.16) 70%);
+    color: rgba(241, 233, 220, 0.72);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    font-family: inherit;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 0.08s, background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .out-btn::before {
+    content: '';
+    position: absolute;
+    top: -22px;
+    bottom: -10px;
+    left: -12px;
+    right: -12px;
+  }
+  .out-btn:active, .out-btn.active {
+    transform: scale(0.93);
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.85), rgba(90, 70, 35, 0.5) 70%);
+    border-color: rgba(241, 233, 220, 0.5);
+    color: #2b1f08;
+    text-shadow: none;
+  }
+  .out-icon {
+    width: 0; height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-left: 14px solid rgba(241, 233, 220, 0.6);
+    pointer-events: none;
+  }
+  .out-btn:active .out-icon, .out-btn.active .out-icon { border-left-color: rgba(43, 31, 8, 0.85); }
+</style>
+</head>
+<body>
+  <div id="gameRoot"></div>
+
+  <div class="hud-bar">
+    <a class="back-link" href="index.html">&larr; All</a>
+    <div class="chapter-tag">Chapter 1</div>
+  </div>
+
+  <div class="hint" id="hint">Your front room</div>
+
+  <div class="control-bar" id="controlBar">
+    <div class="stick-zone" id="stickZone" aria-label="Walk (press anywhere and drag)">
+      <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
+      <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
+    </div>
+
+    <button type="button" class="out-btn" id="outBtn" aria-label="Go back outside">
+      <span class="out-icon" aria-hidden="true"></span>
+      Out
+    </button>
+  </div>
+
+<script src="phaser.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ==================================================================
+  // Inside the house - chapter 1.
+  //
+  // The same walk-on-a-trapezoid the yard uses, turned indoors: a back
+  // wall instead of a sky, a floor instead of a field, and furniture
+  // standing on it that sorts by depth like everything else.
+  //
+  // Two of the things in here are doors to content that does not exist
+  // yet - the TV will carry a news report about the invaders, and the
+  // computer will carry the flight tutorial. Both say so when you stand
+  // at them rather than doing nothing, because a prominent object that
+  // ignores you reads as broken rather than as unfinished.
+  //
+  // Walking into the front door takes you back out to the yard, with no
+  // button press, the same way walking into the ship out there takes
+  // off. That symmetry is the whole navigation model of the chapter:
+  // walk at the thing you want.
+  // ==================================================================
+
+  var BACK_PAGE = 'yard.html';
+
+  // A lit room at night, and deliberately the warmest thing in the
+  // chapter. Outside is all blues at 0x05061a; stepping in here should
+  // feel like stepping into the lit windows you were just looking at.
+  var WALL_TOP = 0x2b2128;      // up near the ceiling, out of the lamp's reach
+  var WALL_BOTTOM = 0x4a3734;   // down where the light pools
+  var CEILING = 0x1b141a;
+  var BASEBOARD = 0x241a1e;
+  var FLOOR_FAR = 0x513926;
+  var FLOOR_NEAR = 0x2f2018;
+  var FLOORBOARD_LINE = 0x241811;
+  var RUG_COLOR = 0x6b3a3f;
+  var RUG_TRIM = 0x8d5158;
+  var LAMP_LIGHT = 0xffd9a0;
+  var TV_STANDBY = 0x8fd4ff;
+  var SCREEN_DARK = 0x11161f;
+  var NIGHT_THROUGH_WINDOW = 0x0b1030;
+
+  // ==================================================================
+  // Perspective - the yard's model, shallower.
+  //
+  // A room is a box a few metres deep, not a landscape, so the far end
+  // is nowhere near a horizon: MIN_SCALE is much higher than outdoors
+  // and the trapezoid narrows far less. Reusing the outdoor numbers made
+  // the back wall look half a mile away and the furniture against it
+  // toy-sized.
+  // ==================================================================
+  var MOVE_SPEED_X = 0.66;     // worldX units/sec, worldX in [-1, 1]
+  var MOVE_SPEED_DEPTH = 0.50; // depth units/sec, depth in [0 far, 1 near]
+  var MIN_SCALE = 0.72;
+  // One multiplier over the whole room. Every object's proportions
+  // against the figure were already right - measured, not guessed - and
+  // the scene was still a doll's house, because a 1.75m person was 52px
+  // on an 844px screen and the floor in front of him was empty for four
+  // hundred of them. That is a framing problem, not a sizing one, so it
+  // gets a framing lever: this zooms the room in without disturbing a
+  // single ratio inside it.
+  var ROOM_SCALE = 1.9;
+  var FLOOR_FRAC = 0.42;       // where the back wall meets the floor
+  var HALF_WIDTH_FAR = 0.30;   // as a fraction of screen width, at depth 0
+  var HALF_WIDTH_NEAR = 0.54;  // ...and at depth 1
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  // ==================================================================
+  // Where everything stands.
+  //
+  // An open plan, with nothing to walk around: the furniture sorts in
+  // front of and behind you by depth but does not block, because a first
+  // room whose job is "there is a TV and a computer here" gains nothing
+  // from collision and loses a lot to getting stuck on a sofa.
+  //
+  // The two that matter are given the room's best positions - the TV
+  // square on the back wall where you look first, the desk beside it -
+  // and the rest is there to stop them floating in an empty box.
+  // ==================================================================
+  // `size` is a plain multiplier on the baked texture, and every one of
+  // them is well under 1 on purpose: the textures are drawn large and
+  // scaled down (the same bake-big trick the planet and the meteors use
+  // in the game), and the numbers here were set by measuring each object
+  // against the FIGURE rather than against the canvas.
+  //
+  // That measurement is the whole difference between a room and a
+  // doll's house. Drawn at texture size the sofa back stood taller than
+  // the person walking past it, which reads as wrong instantly even
+  // though nothing about it looks obviously broken in a screenshot.
+  // Roughly: the figure is 1.75m, the door 2.0m, the shelf 1.8m, the
+  // lamp 1.6m, the desk and the TV 1.2m, the sofa back 0.85m, the plant
+  // 0.8m. The TV is then given a little extra as the one thing in here
+  // that is supposed to dominate.
+  var PROPS = {
+    shelf:  { worldX: -0.86, depth: 0.10, size: 0.46 },
+    desk:   { worldX: -0.42, depth: 0.15, size: 0.34 },
+    door:   { worldX: 0.04, depth: 0.05, size: 0.49 },
+    tv:     { worldX: 0.58, depth: 0.16, size: 0.42 },
+    lamp:   { worldX: 0.92, depth: 0.30, size: 0.35 },
+    plant:  { worldX: -0.94, depth: 0.44, size: 0.28 },
+    sofa:   { worldX: 0.42, depth: 0.60, size: 0.37 }
+  };
+  var START = { worldX: 0.06, depth: 0.70 };
+
+  // How close counts as reaching something, in screen px, scaled by the
+  // prop's own perspective scale so it means the same wherever it
+  // stands. The door is the one that ACTS on contact, so it gets the
+  // tighter radius - the others only talk.
+  // An ellipse rather than a circle, and a tall one. You stand in FRONT
+  // of furniture, never on it, so the zone has to reach well down the
+  // floor toward the camera - a circle tight enough to stop the TV and
+  // the desk claiming each other was too tight to ever be inside. The
+  // narrow axis is what keeps them apart; the long one is what makes
+  // them reachable at all.
+  // In texture px, since isAt() multiplies these by the prop's own
+  // scale - so they zoom with ROOM_SCALE and stay the same distance in
+  // room terms however the framing is retuned.
+  var REACH_X = 42;
+  var REACH_Y = 84;
+  var DOOR_REACH_X = 30;
+  var DOOR_REACH_Y = 52;
+
+  var LEAVE_FADE = 0.45; // seconds of black before the yard loads
+
+  // ==================================================================
+  // Procedural ambience - a room tone, where the yard had wind.
+  // ==================================================================
+  var Sound = (function () {
+    var ctx = null;
+    var src = null, filter = null, gain = null, on = false;
+    var noiseBuffer = null;
+
+    function ensureAudio() {
+      if (!ctx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+
+    function getNoiseBuffer() {
+      if (noiseBuffer) return noiseBuffer;
+      var len = ctx.sampleRate * 2;
+      noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      var data = noiseBuffer.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return noiseBuffer;
+    }
+
+    // Lower and quieter than the wind outside - the sound of a room with
+    // the windows shut, not of weather.
+    function startRoomTone() {
+      if (!ctx || on) return;
+      on = true;
+      src = ctx.createBufferSource();
+      src.buffer = getNoiseBuffer();
+      src.loop = true;
+      filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(180, ctx.currentTime);
+      gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.022, ctx.currentTime + 1.2);
+      src.connect(filter).connect(gain).connect(ctx.destination);
+      src.start();
+    }
+
+    return { ensureAudio: ensureAudio, startRoomTone: startRoomTone };
+  })();
+
+  // ==================================================================
+  // Scene
+  // ==================================================================
+  var mainScene = null;
+  var navigated = false;
+
+  function goOutside() {
+    if (navigated) return;
+    navigated = true;
+    window.location.href = BACK_PAGE;
+  }
+
+  function MainScene() {
+    Phaser.Scene.call(this, { key: 'Main' });
+  }
+  MainScene.prototype = Object.create(Phaser.Scene.prototype);
+  MainScene.prototype.constructor = MainScene;
+
+  MainScene.prototype.create = function () {
+    mainScene = this;
+
+    this.mode = 'walk'; // 'walk' -> 'leaving'
+    this.modeAge = 0;
+    this.worldX = START.worldX;
+    this.depth = START.depth;
+    this.flipX = false;
+    this.bobPhase = 0;
+    this.idlePhase = Math.random() * 10;
+    this.prompt = null;
+    this.dust = [];
+    for (var i = 0; i < 10; i++) {
+      this.dust.push({
+        // Kept to the lower half. Spread over the whole screen they sit
+        // on the back wall and read as stars, which is exactly the wrong
+        // association for the one room that is meant to feel indoors.
+        xFrac: Math.random(), yFrac: 0.5 + Math.random() * 0.45,
+        phase: Math.random() * Math.PI * 2, speed: 0.15 + Math.random() * 0.25
+      });
+    }
+
+    this.buildTextures();
+    this.buildLayers();
+    this.buildProps();
+    this.redrawAll();
+
+    var self = this;
+    this.scale.on('resize', function () { self.redrawAll(); self.layoutProps(); });
+
+    this.exposeDebugHooks();
+  };
+
+  // ---- Textures ------------------------------------------------------
+  MainScene.prototype.buildTextures = function () {
+    var self = this;
+
+    // The same figure as the yard. Literally the same drawing code -
+    // this is the same person who just walked through the door, and a
+    // different silhouette indoors would read as a different character.
+    (function () {
+      var w = 34, h = 56;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.28);
+      g.fillEllipse(w / 2, h - 3, w * 0.5, 7);
+      g.fillStyle(0x2f3f63, 1);
+      g.fillRect(w * 0.34, h * 0.6, w * 0.13, h * 0.36);
+      g.fillRect(w * 0.53, h * 0.6, w * 0.13, h * 0.36);
+      g.fillStyle(0x7d8fb5, 1);
+      g.fillRoundedRect(w * 0.26, h * 0.3, w * 0.48, h * 0.34, 4);
+      g.fillStyle(0x9fb0d4, 1);
+      g.fillRect(w * 0.18, h * 0.33, w * 0.1, h * 0.26);
+      g.fillRect(w * 0.72, h * 0.33, w * 0.1, h * 0.26);
+      g.fillStyle(0xe6c9a8, 1);
+      g.fillCircle(w / 2, h * 0.2, w * 0.17);
+      g.fillStyle(0x3a2d24, 1);
+      g.fillEllipse(w / 2, h * 0.145, w * 0.36, w * 0.22);
+      g.generateTexture('youTex', w, h);
+      g.destroy();
+    })();
+
+    // The front door, in its frame, with the night showing through the
+    // little window - so the way out is visible as a way out rather than
+    // as a brown rectangle.
+    (function () {
+      var w = 74, h = 132;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x1d151a, 1);
+      g.fillRect(0, 0, w, h);                       // frame
+      g.fillStyle(0x6b4b34, 1);
+      g.fillRect(5, 5, w - 10, h - 5);              // leaf
+      g.fillStyle(0x553a28, 1);
+      [0.18, 0.56].forEach(function (f) {           // recessed panels
+        g.fillRect(w * 0.2, h * f, w * 0.6, h * 0.24);
+      });
+      g.fillStyle(NIGHT_THROUGH_WINDOW, 1);
+      g.fillRect(w * 0.24, h * 0.09, w * 0.52, h * 0.08);
+      g.fillStyle(0xcfd8ff, 0.5);                   // a couple of stars through it
+      g.fillCircle(w * 0.36, h * 0.12, 1.1);
+      g.fillCircle(w * 0.6, h * 0.135, 0.9);
+      g.fillStyle(0xe8c07a, 1);
+      g.fillCircle(w * 0.84, h * 0.5, 3);           // handle
+      g.generateTexture('doorTex', w, h);
+      g.destroy();
+    })();
+
+    // TV on its stand, as one piece. Dark screen for now with a standby
+    // dot - when the news report lands it is this texture that gains a
+    // picture, so the stand and the bezel are drawn to frame one.
+    (function () {
+      var w = 128, h = 116;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var standTop = h * 0.56;
+      g.fillStyle(0x000000, 0.28);
+      g.fillEllipse(w / 2, h - 3, w * 0.8, 9);
+      g.fillStyle(0x3a2a22, 1);                     // stand
+      g.fillRect(w * 0.1, standTop, w * 0.8, h - standTop - 4);
+      g.fillStyle(0x2c2019, 1);
+      g.fillRect(w * 0.14, standTop + h * 0.1, w * 0.72, h * 0.12);
+      g.fillStyle(0x15181f, 1);                     // bezel
+      g.fillRoundedRect(w * 0.06, h * 0.06, w * 0.88, standTop - h * 0.1, 5);
+      g.fillStyle(SCREEN_DARK, 1);                  // screen
+      g.fillRect(w * 0.11, h * 0.11, w * 0.78, standTop - h * 0.2);
+      g.fillStyle(0xffffff, 0.04);                  // a dull reflection
+      g.beginPath();
+      g.moveTo(w * 0.11, h * 0.11);
+      g.lineTo(w * 0.42, h * 0.11);
+      g.lineTo(w * 0.16, standTop - h * 0.09);
+      g.lineTo(w * 0.11, standTop - h * 0.09);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(TV_STANDBY, 0.9);                 // standby light
+      g.fillCircle(w * 0.5, standTop - h * 0.045, 2);
+      g.generateTexture('tvTex', w, h);
+      g.destroy();
+    })();
+
+    // Desk, monitor, keyboard and chair as one piece, facing the room.
+    (function () {
+      var w = 118, h = 118;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var topY = h * 0.52;
+      g.fillStyle(0x000000, 0.28);
+      g.fillEllipse(w / 2, h - 3, w * 0.76, 9);
+      g.fillStyle(0x2a2b3a, 1);                     // chair, behind the desk
+      g.fillRoundedRect(w * 0.36, h * 0.3, w * 0.28, h * 0.3, 4);
+      g.fillStyle(0x5a4230, 1);                     // desk top
+      g.fillRect(w * 0.06, topY, w * 0.88, h * 0.07);
+      g.fillStyle(0x43301f, 1);                     // legs
+      g.fillRect(w * 0.1, topY + h * 0.07, w * 0.06, h * 0.36);
+      g.fillRect(w * 0.84, topY + h * 0.07, w * 0.06, h * 0.36);
+      g.fillStyle(0x1b1f2b, 1);                     // monitor
+      g.fillRect(w * 0.45, topY - h * 0.06, w * 0.08, h * 0.07);
+      g.fillRoundedRect(w * 0.16, h * 0.06, w * 0.66, h * 0.4, 3);
+      g.fillStyle(SCREEN_DARK, 1);
+      g.fillRect(w * 0.19, h * 0.09, w * 0.6, h * 0.34);
+      g.fillStyle(0x4fd08a, 0.75);                  // a cursor, blinking away to nobody
+      g.fillRect(w * 0.23, h * 0.15, w * 0.04, h * 0.03);
+      g.fillStyle(0x4fd08a, 0.3);                   // and a couple of dead prompt lines
+      g.fillRect(w * 0.23, h * 0.22, w * 0.3, h * 0.015);
+      g.fillRect(w * 0.23, h * 0.27, w * 0.22, h * 0.015);
+      g.fillStyle(0x8c8f9c, 1);                     // keyboard
+      g.fillRect(w * 0.3, topY - h * 0.015, w * 0.4, h * 0.02);
+      g.generateTexture('deskTex', w, h);
+      g.destroy();
+    })();
+
+    // Sofa, seen from behind - it faces the TV, which is how you know
+    // which way the room is pointed.
+    (function () {
+      var w = 150, h = 74;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.28);
+      g.fillEllipse(w / 2, h - 3, w * 0.82, 9);
+      g.fillStyle(0x3f4a5e, 1);
+      g.fillRoundedRect(w * 0.04, h * 0.2, w * 0.92, h * 0.6, 8);   // back
+      g.fillStyle(0x4c5a70, 1);
+      g.fillRoundedRect(w * 0.02, h * 0.38, w * 0.16, h * 0.42, 6); // arms
+      g.fillRoundedRect(w * 0.82, h * 0.38, w * 0.16, h * 0.42, 6);
+      g.fillStyle(0x354052, 1);
+      g.fillRect(w * 0.1, h * 0.76, w * 0.8, h * 0.12);             // base shadow
+      g.generateTexture('sofaTex', w, h);
+      g.destroy();
+    })();
+
+    // Bookshelf.
+    (function () {
+      var w = 78, h = 124;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.28);
+      g.fillEllipse(w / 2, h - 3, w * 0.8, 8);
+      g.fillStyle(0x4a3524, 1);
+      g.fillRect(0, 0, w, h - 4);
+      g.fillStyle(0x2c1f14, 1);
+      var shelves = 4;
+      for (var i = 0; i < shelves; i++) {
+        var y = h * 0.06 + i * (h * 0.86 / shelves);
+        g.fillRect(w * 0.06, y + h * 0.18, w * 0.88, 3);
+        // Books, a few per shelf in muddled colours.
+        var cols = [0x8d5158, 0x5b6e4a, 0x6b5a8d, 0xa1793f, 0x4a6b78];
+        var x = w * 0.1;
+        for (var b = 0; b < 5; b++) {
+          var bw = w * (0.07 + (b % 3) * 0.02);
+          g.fillStyle(cols[(i * 3 + b) % cols.length], 1);
+          g.fillRect(x, y + h * 0.04, bw, h * 0.14);
+          x += bw + 1.5;
+          g.fillStyle(0x2c1f14, 1);
+        }
+      }
+      g.generateTexture('shelfTex', w, h);
+      g.destroy();
+    })();
+
+    // Floor lamp - the room's light source, and the reason the wall
+    // warms up toward the bottom.
+    (function () {
+      var w = 56, h = 148;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.25);
+      g.fillEllipse(w / 2, h - 3, w * 0.6, 7);
+      g.fillStyle(0x6d6a63, 1);
+      g.fillRect(w * 0.46, h * 0.2, w * 0.08, h * 0.76);   // stem
+      g.fillEllipse(w / 2, h - 5, w * 0.44, h * 0.045);    // base
+      g.fillStyle(LAMP_LIGHT, 0.16);                        // halo
+      g.fillCircle(w / 2, h * 0.16, w * 0.5);
+      g.fillStyle(0xdcc39a, 1);                             // shade
+      g.beginPath();
+      g.moveTo(w * 0.22, h * 0.22);
+      g.lineTo(w * 0.78, h * 0.22);
+      g.lineTo(w * 0.66, h * 0.05);
+      g.lineTo(w * 0.34, h * 0.05);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(LAMP_LIGHT, 0.9);
+      g.fillRect(w * 0.24, h * 0.21, w * 0.52, 3);
+      g.generateTexture('lampTex', w, h);
+      g.destroy();
+    })();
+
+    // A houseplant, because an open room with four objects in it reads
+    // as a showroom.
+    (function () {
+      var w = 62, h = 92;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.25);
+      g.fillEllipse(w / 2, h - 3, w * 0.56, 7);
+      g.fillStyle(0x7a4a33, 1);                             // pot
+      g.beginPath();
+      g.moveTo(w * 0.3, h * 0.66);
+      g.lineTo(w * 0.7, h * 0.66);
+      g.lineTo(w * 0.64, h - 6);
+      g.lineTo(w * 0.36, h - 6);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x3f6b42, 1);                             // leaves
+      [[-0.22, 0.28, -0.5], [0.2, 0.22, 0.5], [0, 0.1, 0], [-0.12, 0.44, -0.25], [0.14, 0.46, 0.3]]
+        .forEach(function (L) {
+          g.fillEllipse(w * (0.5 + L[0]), h * (0.2 + L[1]), w * 0.26, h * 0.16);
+        });
+      g.generateTexture('plantTex', w, h);
+      g.destroy();
+    })();
+  };
+
+  MainScene.prototype.buildLayers = function () {
+    this.wallGfx = this.add.graphics().setDepth(-20);
+    this.wallDetailGfx = this.add.graphics().setDepth(-19);
+    this.floorGfx = this.add.graphics().setDepth(-15);
+    this.rugGfx = this.add.graphics().setDepth(-14);
+    this.lampPoolGfx = this.add.graphics().setDepth(-13);
+    this.dustGfx = this.add.graphics().setDepth(-5);
+    this.fadeGfx = this.add.graphics().setDepth(100);
+  };
+
+  // Everything standing on the floor is a sprite with its origin at its
+  // feet, sorted by screen Y - so walking in front of the sofa puts you
+  // in front of it, with no z bookkeeping at all. Same rule as the yard.
+  MainScene.prototype.buildProps = function () {
+    this.sprites = {
+      door: this.add.sprite(0, 0, 'doorTex').setOrigin(0.5, 1),
+      shelf: this.add.sprite(0, 0, 'shelfTex').setOrigin(0.5, 1),
+      desk: this.add.sprite(0, 0, 'deskTex').setOrigin(0.5, 1),
+      tv: this.add.sprite(0, 0, 'tvTex').setOrigin(0.5, 1),
+      lamp: this.add.sprite(0, 0, 'lampTex').setOrigin(0.5, 1),
+      plant: this.add.sprite(0, 0, 'plantTex').setOrigin(0.5, 1),
+      sofa: this.add.sprite(0, 0, 'sofaTex').setOrigin(0.5, 1)
+    };
+    this.you = this.add.sprite(0, 0, 'youTex').setOrigin(0.5, 0.94);
+    this.layoutProps();
+  };
+
+  // ---- Geometry ------------------------------------------------------
+  MainScene.prototype.floorY = function () { return this.scale.height * FLOOR_FRAC; };
+  MainScene.prototype.depthToScreenY = function (depth) {
+    return lerp(this.floorY(), this.scale.height, depth);
+  };
+  MainScene.prototype.depthToScale = function (depth) {
+    return ROOM_SCALE * lerp(MIN_SCALE, 1, depth);
+  };
+  MainScene.prototype.depthToHalfWidth = function (depth) {
+    return lerp(this.scale.width * HALF_WIDTH_FAR, this.scale.width * HALF_WIDTH_NEAR, depth);
+  };
+  MainScene.prototype.placeAt = function (worldX, depth) {
+    return {
+      x: this.scale.width / 2 + worldX * this.depthToHalfWidth(depth),
+      y: this.depthToScreenY(depth),
+      scale: this.depthToScale(depth)
+    };
+  };
+
+  MainScene.prototype.layoutProps = function () {
+    var self = this;
+    Object.keys(this.sprites).forEach(function (key) {
+      var prop = PROPS[key];
+      var p = self.placeAt(prop.worldX, prop.depth);
+      self.sprites[key].setPosition(p.x, p.y).setScale(p.scale * prop.size).setDepth(p.y);
+    });
+  };
+
+  // ---- Painting the room ---------------------------------------------
+  MainScene.prototype.redrawAll = function () {
+    var W = this.scale.width, H = this.scale.height;
+    var floorY = this.floorY();
+
+    this.wallGfx.clear();
+    this.wallGfx.fillStyle(CEILING, 1);
+    this.wallGfx.fillRect(0, 0, W, H * 0.07);
+    this.wallGfx.fillGradientStyle(WALL_TOP, WALL_TOP, WALL_BOTTOM, WALL_BOTTOM, 1);
+    this.wallGfx.fillRect(0, H * 0.07, W, floorY - H * 0.07 + 2);
+
+    // Wall detail: a picture rail, a window onto the night that ties the
+    // room to the yard you just left, and the baseboard that lands the
+    // wall on the floor.
+    this.wallDetailGfx.clear();
+    this.wallDetailGfx.fillStyle(0x000000, 0.18);
+    this.wallDetailGfx.fillRect(0, H * 0.13, W, 2);
+
+    var winW = W * 0.23, winH = floorY * 0.22;
+    var winX = W * 0.11, winY = floorY * 0.34;
+    this.wallDetailGfx.fillStyle(NIGHT_THROUGH_WINDOW, 1);
+    this.wallDetailGfx.fillRect(winX, winY, winW, winH);
+    this.wallDetailGfx.fillStyle(0xcfd8ff, 0.55);
+    for (var s = 0; s < 5; s++) {
+      this.wallDetailGfx.fillCircle(winX + (0.15 + 0.7 * ((s * 37) % 100) / 100) * winW,
+                                    winY + (0.12 + 0.7 * ((s * 53) % 100) / 100) * winH,
+                                    0.8 + (s % 2) * 0.5);
+    }
+    this.wallDetailGfx.lineStyle(3, 0x3a2b28, 1);
+    this.wallDetailGfx.strokeRect(winX, winY, winW, winH);
+    this.wallDetailGfx.beginPath();
+    this.wallDetailGfx.moveTo(winX + winW / 2, winY);
+    this.wallDetailGfx.lineTo(winX + winW / 2, winY + winH);
+    this.wallDetailGfx.strokePath();
+
+    // A framed picture on the other side of the wall. The top third of
+    // the room was a bare expanse with one window pushed into a corner,
+    // which reads as an unfinished set rather than as somewhere lived in.
+    var picW = W * 0.17, picH = picW * 0.78;
+    var picX = W * 0.66, picY = floorY * 0.36;
+    this.wallDetailGfx.fillStyle(0x2b1f18, 1);
+    this.wallDetailGfx.fillRect(picX - 3, picY - 3, picW + 6, picH + 6);
+    this.wallDetailGfx.fillGradientStyle(0x3d5a6b, 0x3d5a6b, 0x7a6a52, 0x7a6a52, 1);
+    this.wallDetailGfx.fillRect(picX, picY, picW, picH);
+    this.wallDetailGfx.fillStyle(0x24323a, 1);      // a hill, of sorts
+    this.wallDetailGfx.beginPath();
+    this.wallDetailGfx.moveTo(picX, picY + picH);
+    this.wallDetailGfx.lineTo(picX + picW * 0.42, picY + picH * 0.45);
+    this.wallDetailGfx.lineTo(picX + picW * 0.78, picY + picH);
+    this.wallDetailGfx.closePath();
+    this.wallDetailGfx.fillPath();
+
+    this.wallDetailGfx.fillStyle(BASEBOARD, 1);
+    this.wallDetailGfx.fillRect(0, floorY - H * 0.018, W, H * 0.022);
+
+    // Floor: a gradient, plus boards running away from the viewer. The
+    // boards converge on a vanishing point above the junction, which is
+    // what does the perspective work here - the gradient alone reads as
+    // a flat wall lying down.
+    this.floorGfx.clear();
+    this.floorGfx.fillGradientStyle(FLOOR_FAR, FLOOR_FAR, FLOOR_NEAR, FLOOR_NEAR, 1);
+    this.floorGfx.fillRect(0, floorY, W, H - floorY);
+    this.floorGfx.lineStyle(1.5, FLOORBOARD_LINE, 0.55);
+    var vanishX = W / 2, vanishY = floorY - H * 0.16;
+    for (var b = -7; b <= 7; b++) {
+      var xAtBottom = W / 2 + b * (W * 0.115);
+      this.floorGfx.beginPath();
+      this.floorGfx.moveTo(vanishX + (xAtBottom - vanishX) * 0.34, floorY);
+      this.floorGfx.lineTo(xAtBottom, H);
+      this.floorGfx.strokePath();
+    }
+
+    // A rug in front of the TV, drawn as the same trapezoid the floor
+    // uses so it lies down rather than standing up.
+    this.rugGfx.clear();
+    var rugFar = this.depthToScreenY(0.34), rugNear = this.depthToScreenY(0.78);
+    var rugHalfFar = this.depthToHalfWidth(0.34) * 0.62;
+    var rugHalfNear = this.depthToHalfWidth(0.78) * 0.62;
+    var rugCx = W / 2 + 0.28 * this.depthToHalfWidth(0.56);
+    function rugQuad(gfx, inset) {
+      gfx.beginPath();
+      gfx.moveTo(rugCx - rugHalfFar * inset, rugFar);
+      gfx.lineTo(rugCx + rugHalfFar * inset, rugFar);
+      gfx.lineTo(rugCx + rugHalfNear * inset, rugNear);
+      gfx.lineTo(rugCx - rugHalfNear * inset, rugNear);
+      gfx.closePath();
+      gfx.fillPath();
+    }
+    this.rugGfx.fillStyle(RUG_TRIM, 0.85);
+    rugQuad(this.rugGfx, 1);
+    this.rugGfx.fillStyle(RUG_COLOR, 0.9);
+    rugQuad(this.rugGfx, 0.88);
+
+    // The lamp's pool of light on the wall and floor behind it, so the
+    // lamp looks like it is doing something.
+    var lampPos = this.placeAt(PROPS.lamp.worldX, PROPS.lamp.depth);
+    this.lampPoolGfx.clear();
+    for (var r = 5; r >= 1; r--) {
+      this.lampPoolGfx.fillStyle(LAMP_LIGHT, 0.045 * (6 - r) / 5);
+      this.lampPoolGfx.fillEllipse(lampPos.x, lampPos.y, W * 0.5 * (r / 5), H * 0.16 * (r / 5));
+    }
+
+    this.buildVignette(W, H);
+  };
+
+  MainScene.prototype.buildVignette = function (W, H) {
+    var key = 'vignetteTex';
+    if (this.textures.exists(key)) this.textures.remove(key);
+    var tex = this.textures.createCanvas(key, W, H);
+    var ctx = tex.getContext();
+    var grad = ctx.createRadialGradient(W / 2, H * 0.5, H * 0.16, W / 2, H * 0.5, H * 0.82);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    tex.refresh();
+    if (this.vignetteImg) this.vignetteImg.destroy();
+    this.vignetteImg = this.add.image(0, 0, key).setOrigin(0, 0).setDepth(50)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY);
+  };
+
+  // ---- Reaching things ------------------------------------------------
+  // Screen-space distance from the player's feet to a prop's, the same
+  // rule the yard uses: the floor is a trapezoid, so equal world-space
+  // gaps look very different at different depths, and what should decide
+  // "am I at the TV" is what the player can see.
+  MainScene.prototype.distanceTo = function (key) {
+    var me = this.placeAt(this.worldX, this.depth);
+    var it = this.placeAt(PROPS[key].worldX, PROPS[key].depth);
+    return Math.hypot(me.x - it.x, me.y - it.y);
+  };
+  MainScene.prototype.isAt = function (key, rx, ry) {
+    var me = this.placeAt(this.worldX, this.depth);
+    var it = this.placeAt(PROPS[key].worldX, PROPS[key].depth);
+    var s = this.depthToScale(PROPS[key].depth);
+    var dx = (me.x - it.x) / (rx * s);
+    var dy = (me.y - it.y) / (ry * s);
+    return dx * dx + dy * dy <= 1;
+  };
+  MainScene.prototype.atDoor = function () {
+    return this.isAt('door', DOOR_REACH_X, DOOR_REACH_Y);
+  };
+
+  // What the thing you are standing at has to say. The two that matter
+  // are placeholders on purpose, and they say so - a prominent object
+  // that ignores you reads as broken, where one that says "later" reads
+  // as a promise.
+  MainScene.prototype.nearestPrompt = function () {
+    if (this.isAt('tv', REACH_X, REACH_Y)) return 'The TV. A report on the invaders — later.';
+    if (this.isAt('desk', REACH_X, REACH_Y)) return 'The computer. Flight training — later.';
+    if (this.isAt('shelf', REACH_X, REACH_Y)) return 'Books. Nothing you have not read.';
+    return null;
+  };
+
+  // ---- Leaving ---------------------------------------------------------
+  MainScene.prototype.leave = function () {
+    if (this.mode !== 'walk') return;
+    this.mode = 'leaving';
+    this.modeAge = 0;
+    this.setPrompt(null);
+    document.getElementById('hint').classList.add('hidden');
+    document.getElementById('controlBar').classList.add('gone');
+    forceReleaseAllInput(); // or a held stick keeps walking behind the fade
+  };
+
+  MainScene.prototype.updateLeaving = function () {
+    var t = clamp(this.modeAge / LEAVE_FADE, 0, 1);
+    this.fadeGfx.clear();
+    this.fadeGfx.fillStyle(0x000000, t);
+    this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
+    if (t >= 1) { this.mode = 'gone'; goOutside(); }
+  };
+
+  // ---- Per-frame -------------------------------------------------------
+  MainScene.prototype.update = function (time, delta) {
+    var dt = Math.min(delta / 1000, 0.05);
+    this.modeAge += dt;
+
+    if (this.mode === 'leaving') { this.updateLeaving(); return; }
+    if (this.mode === 'gone') return;
+
+    var input = window.__houseInput;
+    var moveX = input.x, moveY = input.y;
+    var magnitude = Math.hypot(moveX, moveY);
+    var walking = magnitude > 0.04;
+
+    if (walking) {
+      this.worldX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
+      this.depth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.06, 0.92);
+      if (moveX > 0.08) this.flipX = false;
+      else if (moveX < -0.08) this.flipX = true;
+      this.bobPhase += dt * (6 + magnitude * 6);
+      this.idlePhase = 0;
+    } else {
+      this.idlePhase += dt;
+    }
+
+    var me = this.placeAt(this.worldX, this.depth);
+    var bob = walking ? Math.sin(this.bobPhase) * 3 * me.scale : Math.sin(this.idlePhase * 1.2) * 1;
+    this.you.setPosition(me.x, me.y + bob).setScale(me.scale).setFlipX(this.flipX).setDepth(me.y);
+
+    // Walking into the front door leaves, with no button - the same rule
+    // as walking into the ship outside.
+    if (this.atDoor()) { this.leave(); return; }
+
+    this.setPrompt(this.nearestPrompt());
+    this.updateDust(dt);
+  };
+
+  MainScene.prototype.setPrompt = function (text) {
+    if (this.prompt === text) return;
+    this.prompt = text;
+    var el = document.getElementById('hint');
+    if (!el) return;
+    if (text) {
+      el.textContent = text;
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  };
+
+  // Motes drifting in the lamplight. The yard has fireflies; a room with
+  // nothing moving in it at all looks paused rather than quiet.
+  MainScene.prototype.updateDust = function (dt) {
+    var W = this.scale.width, H = this.scale.height, self = this;
+    this.dustGfx.clear();
+    this.dust.forEach(function (d) {
+      d.phase += dt * d.speed;
+      var x = d.xFrac * W + Math.sin(d.phase) * 18;
+      var y = d.yFrac * H + Math.cos(d.phase * 0.8) * 12;
+      var a = 0.1 + 0.16 * (0.5 + 0.5 * Math.sin(d.phase * 2.2));
+      self.dustGfx.fillStyle(LAMP_LIGHT, a);
+      self.dustGfx.fillCircle(x, y, 1.3);
+    });
+  };
+
+  MainScene.prototype.exposeDebugHooks = function () {
+    var self = this;
+    window.__houseDebug = {
+      scene: this,
+      backPage: BACK_PAGE,
+      props: PROPS,
+      state: function () {
+        return {
+          mode: self.mode, worldX: self.worldX, depth: self.depth,
+          atDoor: self.atDoor(), prompt: self.prompt,
+          atTv: self.isAt('tv', REACH_X, REACH_Y),
+          atDesk: self.isAt('desk', REACH_X, REACH_Y),
+          doorDistance: self.distanceTo('door')
+        };
+      },
+      // Screen rectangles, for the layout checks - nothing in the room
+      // may end up under the controls.
+      bounds: function () {
+        var out = {};
+        Object.keys(self.sprites).forEach(function (key) {
+          var b = self.sprites[key].getBounds();
+          out[key] = { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height };
+        });
+        var y = self.you.getBounds();
+        out.you = { left: y.x, top: y.y, right: y.x + y.width, bottom: y.y + y.height };
+        return out;
+      },
+      moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
+      leave: function () { self.leave(); }
+    };
+  };
+
+  // ==================================================================
+  // Input: the analog stick and touch hardening from yard.html
+  // ==================================================================
+  var inputState = { x: 0, y: 0 };
+  window.__houseInput = inputState;
+
+  var touchX = 0, touchY = 0;
+  var kb = { up: false, down: false, left: false, right: false };
+  var kbX = 0, kbY = 0;
+
+  function composeInput() {
+    var x = touchX + kbX, y = touchY + kbY;
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    inputState.x = x;
+    inputState.y = y;
+  }
+
+  function updateKbVector() {
+    var x = (kb.right ? 1 : 0) - (kb.left ? 1 : 0);
+    var y = (kb.down ? 1 : 0) - (kb.up ? 1 : 0);
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    kbX = x; kbY = y;
+    composeInput();
+  }
+
+  var HOLD_WATCHDOG_MS = 12000;
+  var heldZoneResets = [];
+  var STICK_MAX_RADIUS_PX = 44;
+
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
+  function bindThumbstick(el, anchorEl, knobEl) {
+    var activeId = null;
+    var watchdogTimer = null;
+    var anchorX = 0, anchorY = 0;
+
+    suppressCallout(el);
+
+    function applyVector(clientX, clientY) {
+      var dx = clientX - anchorX, dy = clientY - anchorY;
+      var dist = Math.hypot(dx, dy);
+      var clamped = Math.min(dist, STICK_MAX_RADIUS_PX);
+      var kx = dist > 0 ? (dx / dist) * clamped : 0;
+      var ky = dist > 0 ? (dy / dist) * clamped : 0;
+      knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+      touchX = kx / STICK_MAX_RADIUS_PX;
+      touchY = ky / STICK_MAX_RADIUS_PX;
+      composeInput();
+    }
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+      anchorEl.classList.remove('visible');
+      knobEl.classList.remove('visible');
+      knobEl.style.transform = 'translate(0px, 0px)';
+      touchX = 0; touchY = 0;
+      composeInput();
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      Sound.startRoomTone();
+      hardRelease();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      var rect = el.getBoundingClientRect();
+      anchorX = e.clientX;
+      anchorY = e.clientY;
+      var localX = clamp(anchorX - rect.left, 0, rect.width);
+      var localY = clamp(anchorY - rect.top, 0, rect.height);
+      anchorEl.style.left = localX + 'px';
+      anchorEl.style.top = localY + 'px';
+      knobEl.style.left = localX + 'px';
+      knobEl.style.top = localY + 'px';
+      knobEl.style.transform = 'translate(0px, 0px)';
+      anchorEl.classList.add('visible');
+      knobEl.classList.add('visible');
+      touchX = 0; touchY = 0;
+      composeInput();
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+
+    el.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== activeId) return;
+      applyVector(e.clientX, e.clientY);
+    });
+
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  }
+
+  bindThumbstick(
+    document.getElementById('stickZone'),
+    document.getElementById('stickAnchor'),
+    document.getElementById('stickKnob')
+  );
+
+  (function bindOutButton() {
+    var el = document.getElementById('outBtn');
+    suppressCallout(el);
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      el.classList.add('active');
+      if (mainScene) mainScene.leave(); else goOutside();
+    });
+    function release() { el.classList.remove('active'); }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+  })();
+
+  function isUpKey(code) { return code === 'ArrowUp' || code === 'KeyW'; }
+  function isDownKey(code) { return code === 'ArrowDown' || code === 'KeyS'; }
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isOutKey(code) { return code === 'Escape' || code === 'KeyQ'; }
+
+  document.addEventListener('keydown', function (e) {
+    Sound.ensureAudio();
+    Sound.startRoomTone();
+    if (isUpKey(e.code) || isDownKey(e.code)) e.preventDefault();
+    if (isOutKey(e.code)) {
+      if (!e.repeat) { if (mainScene) mainScene.leave(); else goOutside(); }
+      return;
+    }
+    if (e.repeat) return;
+    if (isUpKey(e.code)) { kb.up = true; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = true; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = true; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = true; updateKbVector(); }
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (isUpKey(e.code)) { kb.up = false; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = false; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = false; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = false; updateKbVector(); }
+  });
+
+  function forceReleaseKeyboard() {
+    if (kb.up || kb.down || kb.left || kb.right) {
+      kb.up = kb.down = kb.left = kb.right = false;
+      updateKbVector();
+    }
+  }
+
+  function forceReleaseAllInput() {
+    heldZoneResets.forEach(function (fn) { fn(); });
+    forceReleaseKeyboard();
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) forceReleaseAllInput();
+  });
+  window.addEventListener('blur', forceReleaseAllInput);
+
+  var controlBar = document.getElementById('controlBar');
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
+
+  // ==================================================================
+  // Prevent / auto-recover from accidental page pinch-zoom
+  // ==================================================================
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var resetTimer = null;
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+    function scheduleZoomCheck() {
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+  })();
+
+  setTimeout(function () {
+    var el = document.getElementById('hint');
+    if (el && mainScene && !mainScene.prompt) el.classList.add('hidden');
+  }, 4000);
+
+  // ==================================================================
+  // Boot
+  // ==================================================================
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'gameRoot',
+    backgroundColor: WALL_TOP,
+    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER },
+    scene: [MainScene],
+    disableContextMenu: true
+  });
+})();
+</script>
+</body>
+</html>
