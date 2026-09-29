@@ -213,6 +213,7 @@ harness.run(async (page, check, ctx) => {
   check('which takes you inside the house',
     await reachedPage(page, 'house.html', 6000), page.url());
 
+
   // Coming back out must not put you straight back in. The start point
   // is where you land on the way out, so if it sat inside the doorstep's
   // zone the two scenes would bounce off each other forever.
@@ -231,6 +232,38 @@ harness.run(async (page, check, ctx) => {
   const settled = await page.evaluate(() => ({ mode: window.__yardDebug.state().mode, url: location.pathname }));
   check('so you stay outside instead of bouncing back in',
     settled.mode === 'walk' && settled.url.indexOf('yard.html') !== -1, settled);
+
+  // The way in is the DOOR, not a marker near it. That distinction is
+  // invisible to any test that only walks left until something happens -
+  // a trigger sitting on the lawn a metre to one side passes that just
+  // as well, and looks like teleporting off a paving stone, which is
+  // what it was. So: lined up with the door works, one house-width
+  // aside does not, and it works from anywhere down the garden rather
+  // than only from the depth the player happens to spawn at.
+  const aim = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const house = d.state().house;
+    const door = s.placeAt(house.worldX, house.depth);
+    function worldXOfScreen(x, depth) {
+      return (x - s.scale.width / 2) / s.depthToHalfWidth(depth);
+    }
+    function at(worldX, depth) { s.worldX = worldX; s.depth = depth; return s.atDoor(); }
+    const out = { depths: [], aside: null, behind: null };
+    [0.5, 0.64, 0.8, 0.96].forEach(function (depth) {
+      out.depths.push({ depth: depth, lined: at(worldXOfScreen(door.x, depth), depth) });
+    });
+    // One house-width to the side, at the depth you actually walk at.
+    const houseW = 200 * door.scale * 1.15;
+    out.aside = at(worldXOfScreen(door.x + houseW, 0.64), 0.64);
+    // And up past it, which is round the back.
+    out.behind = at(worldXOfScreen(door.x, 0.2), 0.2);
+    s.worldX = -0.16; s.depth = 0.64;
+    return out;
+  });
+  check('lining up with the door opens it from anywhere down the garden',
+    aim.depths.length === 4 && aim.depths.every(d => d.lined === true), aim);
+  check('standing a house-width to the side does not', aim.aside === false, aim);
+  check('and nor does being round the back of it', aim.behind === false, aim);
 
   // --- wandering is safe ----------------------------------------------------
   // The boarding radius is generous on purpose. Generous must not mean

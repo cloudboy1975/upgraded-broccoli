@@ -311,14 +311,7 @@
   // is a second to the right, the front door a second to the left.
   var START = { worldX: -0.16, depth: 0.64 };
 
-  // The doorstep - the patch of ground at the foot of the house, NOT the
-  // house itself. The building sits back at depth 0.44 where it looks
-  // right, and testing against it meant walking left never arrived: the
-  // 0.2 of depth between it and the player is 95px on screen, far wider
-  // than any radius that would not also swallow the spot you are
-  // standing on. So the thing you walk onto is the step, at your own
-  // depth, exactly as the ship is.
-  var DOORWAY = { worldX: -0.60, depth: 0.60 };
+
 
   // The ship's silhouette, written out as the four y values it actually
   // has rather than derived from a centre line and a radius. Derived,
@@ -349,12 +342,21 @@
   // player's intent is never in doubt - nobody walks INTO their ship by
   // accident on a screen with one ship on it.
   var BOARD_RADIUS = 62;
-  // The doorstep is an ellipse, narrow across and generous in depth: you
-  // approach it sideways along the front of the house, so the x axis is
-  // what decides whether you meant it, while the depth axis only has to
-  // be forgiving about how far out from the wall you happened to walk.
-  var DOOR_REACH_X = 30;
-  var DOOR_REACH_Y = 70;
+
+  // Reaching the front door is not a radius, and trying to make it one
+  // is what produced a stepping stone in the middle of the lawn. The
+  // house sits back at depth 0.44 because that is where it looks right,
+  // and you walk at 0.64 - which is 95px up the screen. No circle
+  // bridges that without also swallowing the spot you are standing on.
+  //
+  // What "at the front door" actually means is simpler than a distance:
+  // LINED UP with the door, and somewhere on the grass in front of it.
+  // So that is what this tests - a column, not a blob. The x axis is the
+  // whole decision; the depth axis only has to be forgiving about how
+  // far down the garden you happened to be walking.
+  var DOOR_HALF_WIDTH = 14; // px either side of the door, at YOUR scale
+  var DOOR_BEHIND = 20;     // how far past its base still counts as in front
+  var DOOR_APPROACH = 300;  // ...and how far down the garden
 
   // The takeoff, in seconds. Kept short enough to sit through on a
   // hundredth replay.
@@ -806,24 +808,23 @@
     // The doorstep. Without it the way into the house is an invisible
     // trigger on blank grass, and the only thing telling you it is there
     // is the sentence at the top of the screen.
-    var step = this.placeAt(DOORWAY.worldX, DOORWAY.depth);
+    // A path running out from the front door toward the viewer. It marks
+    // the column you walk into to go in - it is not the trigger, the
+    // door is; this just makes the approach visible instead of leaving
+    // it to a line of text at the top of the screen.
     var houseAt = this.placeAt(HOUSE.worldX, HOUSE.depth);
-    var stepW = 54 * step.scale, stepH = 15 * step.scale;
-    // A short path from the door down to the step. On its own the step
-    // is a stone lying on grass near a house; joined to the door it is
-    // the way in, which is the only thing it has to communicate.
-    this.yardGfx.fillStyle(0x3b4450, 0.5);
+    var pathTop = houseAt.y - 2;
+    var pathBottom = this.depthToScreenY(0.98);
+    var topHalfW = DOOR_HALF_WIDTH * houseAt.scale * 1.2;
+    var botHalfW = DOOR_HALF_WIDTH * this.depthToScale(0.98) * 1.9;
+    this.yardGfx.fillStyle(0x3b4450, 0.42);
     this.yardGfx.beginPath();
-    this.yardGfx.moveTo(houseAt.x - stepW * 0.26, houseAt.y);
-    this.yardGfx.lineTo(houseAt.x + stepW * 0.26, houseAt.y);
-    this.yardGfx.lineTo(step.x + stepW * 0.46, step.y);
-    this.yardGfx.lineTo(step.x - stepW * 0.46, step.y);
+    this.yardGfx.moveTo(houseAt.x - topHalfW, pathTop);
+    this.yardGfx.lineTo(houseAt.x + topHalfW, pathTop);
+    this.yardGfx.lineTo(houseAt.x + botHalfW, pathBottom);
+    this.yardGfx.lineTo(houseAt.x - botHalfW, pathBottom);
     this.yardGfx.closePath();
     this.yardGfx.fillPath();
-    this.yardGfx.fillStyle(0x3b4450, 0.85);
-    this.yardGfx.fillEllipse(step.x, step.y, stepW, stepH);
-    this.yardGfx.fillStyle(0x4d5866, 0.9);
-    this.yardGfx.fillEllipse(step.x, step.y - stepH * 0.18, stepW * 0.86, stepH * 0.72);
 
     this.buildVignette(W, H);
   };
@@ -876,11 +877,10 @@
   };
   MainScene.prototype.atDoor = function () {
     var me = this.placeAt(this.worldX, this.depth);
-    var it = this.placeAt(DOORWAY.worldX, DOORWAY.depth);
-    var s = this.depthToScale(DOORWAY.depth);
-    var dx = (me.x - it.x) / (DOOR_REACH_X * s);
-    var dy = (me.y - it.y) / (DOOR_REACH_Y * s);
-    return dx * dx + dy * dy <= 1;
+    var door = this.placeAt(HOUSE.worldX, HOUSE.depth);
+    if (me.y < door.y - DOOR_BEHIND) return false;  // round the back
+    if (me.y > door.y + DOOR_APPROACH) return false; // off down the garden
+    return Math.abs(me.x - door.x) < DOOR_HALF_WIDTH * this.depthToScale(this.depth);
   };
 
   // ---- The takeoff ----------------------------------------------------
@@ -1061,7 +1061,7 @@
           shipDistance: self.distanceToProp(SHIP),
           boardRadius: BOARD_RADIUS * self.depthToScale(SHIP.depth),
           atShip: self.atShip(), atDoor: self.atDoor(),
-          doorway: DOORWAY,
+          house: HOUSE,
           prompt: self.prompt,
           shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
           youVisible: self.you.visible
