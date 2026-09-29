@@ -79,6 +79,45 @@ full-screen layout.
   shortcut
 - 3 lives, live score, and a persisted high score (saved locally)
 
+### Head-On
+
+[`head-on.html`](head-on.html) — a Galaga-style shooter, and the first
+chapter of a longer game about two-dimensional aliens.
+
+- [Open the shooter](https://cloudboy1975.github.io/upgraded-broccoli/head-on.html) — straight into a run
+- [Start at the house](https://cloudboy1975.github.io/upgraded-broccoli/yard.html) — chapter 1's opening scene:
+  night, your house, your ship parked in the yard. Walk into the ship and
+  it takes off. The bottom-right button skips straight to the game.
+- **Dive waves, colour-matched missiles and meteor runs** — enemies come
+  in red, green and blue families; banked orbs become slow homing
+  missiles that only hurt their own colour, and falling strips build the
+  colour trails that chip the bricks
+- **A boss at the home world** — after five meteor stages the approach
+  arrives and he rises out of the planet. Three belly cores answer only
+  to matching missiles, tentacle armour only to colour trails, and the
+  hull is untouchable until both are gone
+
+#### Sharing the boss fight
+
+`?boss` drops straight into the boss fight, for handing to somebody
+without making them play five stages first:
+
+- [The fight as designed](https://cloudboy1975.github.io/upgraded-broccoli/head-on.html?boss) — arriving with one
+  of everything, which is meant to be workable but not a walkover
+- [The siege](https://cloudboy1975.github.io/upgraded-broccoli/head-on.html?boss&orbs=0,0,0&fire=0,0,0) — arriving
+  empty-handed, surviving on his spawns until the drops come round
+- [Loaded for bear](https://cloudboy1975.github.io/upgraded-broccoli/head-on.html?boss&orbs=3,3,3&fire=3,3,3)
+
+`orbs` and `fire` are comma lists in red, green, blue order (0–6 each).
+Anything missing or unparseable falls back to the default rather than
+emptying the fight, and Restart comes back to the same fight. `?boss=0`
+turns it off.
+
+There is also a hidden tuning panel — backquote on a keyboard, or triple-tap
+the "Best" readout on a phone — with live sliders for the dive rhythm,
+the boss, the meteor stages and everything else, plus a back door into
+the boss fight with a loadout chooser.
+
 ### Painted Lands (Prototype)
 
 [`painted-lands.html`](painted-lands.html) &mdash; an early prototype for a
@@ -106,7 +145,11 @@ committing to a full game around them:
   each mood shift) via Web Audio, same zero-asset-files approach as the
   other games
 
-All five games share the same color palette and type system; the first
-three additionally share a centered-card page layout, while Asteroids II
-and Painted Lands break out to an edge-to-edge full-screen layout suited
-to their controls. Every screen links back to the games hub.
+All of them share the same color palette and type system; the first three
+additionally share a centered-card page layout, while Asteroids II,
+Head-On and Painted Lands break out to layouts suited to their controls.
+Every screen links back to the games hub.
+
+`head-on.html` and `yard.html` have a browser test suite in
+[`tests/`](tests/) — plain Node scripts driving a real Chromium through
+Playwright. `./tests/run.sh` serves the repo and runs all of them.

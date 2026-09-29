@@ -1055,6 +1055,99 @@ harness.run(async (page, check, ctx) => {
     JSON.stringify(fought.dots) === JSON.stringify(['green', 'green']) &&
     fought.levels.blue === 1 && fought.levels.red === 0 && fought.levels.green === 0, fought);
 
+  // --- a shared link ------------------------------------------------------
+  // The point is handing the fight to somebody who has never played, so
+  // what matters is that the link lands them IN it, carrying enough to
+  // win, with no way for a typo to drop them somewhere unplayable.
+  async function openLink(query) {
+    await page.goto(ctx.url('head-on.html' + query));
+    await page.waitForTimeout(600);
+    return page.evaluate(() => {
+      const s = window.__headOnDebug.scene.state;
+      return {
+        boss: !!s.boss, phase: s.boss && s.boss.phase,
+        dots: s.powerup.dots.map(d => d.colorKey).sort(),
+        levels: Object.assign({}, s.colorLevels),
+        approach: window.__headOnDebug.scene.planetApproach(),
+        lives: s.lives, score: s.score
+      };
+    });
+  }
+
+  const plain = await openLink('');
+  check('an ordinary load is still an ordinary game', plain.boss === false, plain);
+
+  const linked = await openLink('?boss');
+  check('?boss lands straight in the fight', linked.boss && linked.phase === 'rise', linked);
+  check('carrying one of everything, which is the fight as designed',
+    JSON.stringify(linked.dots) === JSON.stringify(['blue', 'green', 'red']) &&
+    linked.levels.red === 1 && linked.levels.green === 1 && linked.levels.blue === 1, linked);
+  check('on a fresh run, not somebody else\'s leftovers',
+    linked.lives === 3 && linked.score === 0, linked);
+  // He rises out of the home world, so the world has to be there. A
+  // forced fight used to leave the approach at zero and hang him in
+  // empty space - which is exactly the picture a shared link opens on.
+  check('with the home world behind him, where arriving would have put it',
+    linked.approach === 1, linked);
+
+  const siege = await openLink('?boss&orbs=0,0,0&fire=0,0,0');
+  check('a link can hand over the empty-handed version too',
+    siege.boss && siege.dots.length === 0 && siege.levels.red === 0, siege);
+
+  const mixed = await openLink('?boss&orbs=2,1,0');
+  check('and a specific loadout, per colour',
+    JSON.stringify(mixed.dots) === JSON.stringify(['green', 'red', 'red']), mixed);
+  check('leaving what the link did not mention at the default',
+    mixed.levels.red === 1 && mixed.levels.blue === 1, mixed);
+
+  const off = await openLink('?boss=0');
+  check('?boss=0 turns it back off, so a link can be disarmed by one character',
+    off.boss === false, off);
+
+  // A link gets pasted, truncated, mangled by a chat client. None of
+  // that may land somebody on an unwinnable fight or a broken page.
+  const junk = await openLink('?boss&orbs=banana&fire=9,9,9');
+  check('a mangled loadout falls back rather than emptying the fight',
+    junk.boss && junk.dots.length === 3, junk);
+  check('and an absurd one is clamped instead of obeyed',
+    junk.levels.red > 0 && junk.levels.red <= 6, junk);
+
+  // Restart has to come back to the boss, or the second attempt at a
+  // shared fight is an ordinary wave-one game with no explanation.
+  const retried = await page.evaluate(`
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    state.lives = 1;
+    scene.shipHit('test');
+    const over = { phase: state.phase, boss: !!state.boss };
+    document.getElementById('overlayRestartBtn').click();
+    ({ over, after: { phase: state.phase, boss: !!state.boss, lives: state.lives,
+                      dots: state.powerup.dots.length } });
+  `);
+  check('running out of lives on a linked fight ends the game',
+    retried.over.phase === 'gameover' && retried.over.boss === false, retried.over);
+  check('and Restart puts you back in the fight, loadout and all',
+    retried.after.boss && retried.after.phase === 'playing' &&
+    retried.after.lives === 3 && retried.after.dots === 3, retried.after);
+
+  const normalRestart = await page.evaluate(`
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    ({ boss: !!state.boss });
+  `);
+  check('sanity: that run really is a boss run', normalRestart.boss, normalRestart);
+
+  await page.goto(ctx.url('head-on.html'));
+  await page.waitForTimeout(600);
+  const plainRestart = await page.evaluate(`
+    const scene = window.__headOnDebug.scene, state = scene.state;
+    state.lives = 1;
+    scene.shipHit('test');
+    document.getElementById('overlayRestartBtn').click();
+    ({ boss: !!state.boss, phase: state.phase, wave: state.wave });
+  `);
+  check('while Restart without a link is still an ordinary wave one',
+    plainRestart.boss === false && plainRestart.phase === 'playing' &&
+    plainRestart.wave === 1, plainRestart);
+
   // --- the fight actually survives being played ---------------------------
   const soak = await page.evaluate(FIGHT(ALL, ALL) + `
     const baseline = scene.children.list.length;

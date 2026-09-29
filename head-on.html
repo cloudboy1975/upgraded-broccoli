@@ -1184,6 +1184,28 @@
   var BOSS_FIRE_INTERVAL_MIN = 0.85; // ...and once stripped bare
   var BOSS_FIRE_BURST = 1;         // shots per volley
 
+  // ---- Shared links ------------------------------------------------------
+  // ?boss drops straight into the fight on load, so it can be handed to
+  // somebody as a link instead of as five challenge stages of
+  // instructions.
+  //
+  // The loadout IS the difficulty of that fight (see applyBossLoadout),
+  // so a link can carry one: &orbs= and &fire= are comma lists in red,
+  // green, blue order.
+  //
+  //   head-on.html?boss                          the intended fight
+  //   head-on.html?boss&orbs=0,0,0&fire=0,0,0    the siege
+  //   head-on.html?boss&orbs=3,3,3&fire=3,3,3    loaded for bear
+  //
+  // The default is one of everything, because that is the fight as
+  // designed - "arrive with all three colours of both power ups and it
+  // should be straightforward but still satisfying" - and a stranger
+  // opening a link should land on that rather than on a siege they
+  // cannot win and will not understand.
+  var BOSS_LINK_DEFAULT_ORBS = 1;
+  var BOSS_LINK_DEFAULT_FIRE = 1;
+  var BOSS_LINK_MAX = 6; // a link asking for 500 dots gets 6
+
   // Zigzag's oscillation - same placement rule as the rest: TUNING is
   // seeded from these, so they have to be declared above it.
   //
@@ -2180,6 +2202,54 @@
   MainScene.prototype = Object.create(Phaser.Scene.prototype);
   MainScene.prototype.constructor = MainScene;
 
+  // What the URL asked for, or null. Read in create() rather than at
+  // load: this parser needs STRIP_COLOR_KEYS, which is declared further
+  // down the file, and a var read above its own assignment is the exact
+  // hoisting trap that has bitten this file before. By create() time
+  // everything is assigned.
+  var launchRequest = null;
+
+  // "2,1,0" -> { red: 2, green: 1, blue: 0 }. Every channel falls back on
+  // its own, so a typo in a shared link still lands on a playable fight
+  // rather than silently on an empty one.
+  function parseLoadoutTriple(text, fallback) {
+    var parts = String(text === undefined ? '' : text).split(',');
+    var out = {};
+    STRIP_COLOR_KEYS.forEach(function (key, i) {
+      var n = parseInt(parts[i], 10);
+      out[key] = (isFinite(n) && n >= 0) ? Math.min(n, BOSS_LINK_MAX) : fallback;
+    });
+    return out;
+  }
+
+  // Hand-rolled rather than URLSearchParams to match the rest of this
+  // file's ES5, and because it is six lines either way.
+  function parseQuery(search) {
+    var params = {};
+    String(search || '').replace(/^\?/, '').split('&').forEach(function (pair) {
+      if (!pair) return;
+      var eq = pair.indexOf('=');
+      var key = eq < 0 ? pair : pair.slice(0, eq);
+      var val = eq < 0 ? '' : pair.slice(eq + 1);
+      try { params[decodeURIComponent(key).toLowerCase()] = decodeURIComponent(val); }
+      catch (e) { /* a mangled escape in a pasted link is not worth dying over */ }
+    });
+    return params;
+  }
+
+  // Returns the loadout a ?boss link asked for, or null for an ordinary
+  // run. ?boss=0 and ?boss=false mean no, so a link can be turned off by
+  // editing one character.
+  function parseLaunch(search) {
+    var params = parseQuery(search);
+    if (!params.hasOwnProperty('boss')) return null;
+    if (params.boss === '0' || params.boss === 'false') return null;
+    return {
+      orbs: parseLoadoutTriple(params.orbs, BOSS_LINK_DEFAULT_ORBS),
+      fire: parseLoadoutTriple(params.fire, BOSS_LINK_DEFAULT_FIRE)
+    };
+  }
+
   MainScene.prototype.create = function () {
     mainScene = this;
     this.buildTextures();
@@ -2187,6 +2257,19 @@
     this.buildWorld();
     this.exposeDebugHooks();
     this.renderHud();
+    launchRequest = parseLaunch(window.location.search);
+    this.resumeLaunch();
+  };
+
+  // Puts the run back where the link asked for it - on load, and again
+  // on Restart, so a shared fight can be retried without re-pasting the
+  // URL. A no-op for an ordinary run, which is why Restart can call it
+  // unconditionally.
+  MainScene.prototype.resumeLaunch = function () {
+    if (!launchRequest) return false;
+    this.applyBossLoadout(launchRequest);
+    this.startBoss();
+    return true;
   };
 
   // Every sprite in the game is drawn once here, at boot, into a texture
@@ -4090,6 +4173,15 @@
 
   MainScene.prototype.startBoss = function () {
     var state = this.state;
+    // He only ever appears once the approach has arrived, so at the
+    // moment a fight starts that is true by definition - state it here
+    // rather than leaving it to whoever started the fight. The honest
+    // path already satisfies it; the forced ones (a shared ?boss link,
+    // the lab's back door) did not, and left him hanging in empty space
+    // with the home world still a speck behind him.
+    state.challengesDone = Math.max(state.challengesDone,
+      Math.max(1, Math.round(TUNING.challengeStagesToArrival)));
+    this.updatePlanet();
     // Same clear-down as a challenge stage, for the same reason: whatever
     // was mid-flight belongs to the wave that just ended, not to this.
     // The exceptions are the ones the fight is ABOUT - banked orbs, fire
@@ -7118,7 +7210,11 @@
   (function bindRestartButtons() {
     var overlayRestartBtn = document.getElementById('overlayRestartBtn');
     var resetBestBtn = document.getElementById('resetBestBtn');
-    overlayRestartBtn.addEventListener('click', function () { if (mainScene) mainScene.resetGame(); });
+    overlayRestartBtn.addEventListener('click', function () {
+      if (!mainScene) return;
+      mainScene.resetGame();
+      mainScene.resumeLaunch(); // a shared boss link restarts INTO the boss
+    });
     resetBestBtn.addEventListener('click', function () { if (mainScene) mainScene.resetBest(); });
   })();
 
