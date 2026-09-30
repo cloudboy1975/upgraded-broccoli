@@ -54,6 +54,29 @@ async function standAt(page, key, depthOffset) {
   return page.evaluate(() => window.__houseDebug.state());
 }
 
+// Put the figure somewhere and hold a direction, the way a player
+// does - teleporting with moveTo() would walk straight through the
+// furniture these checks are about, because nothing is ever asked to
+// move INTO it. Reports where they ended up and whether they were ever
+// standing inside something on the way.
+async function walkHolding(page, from, keys, ms) {
+  await page.evaluate(f => window.__houseDebug.moveTo(f[0], f[1]), from);
+  await page.waitForTimeout(140);
+  for (const k of keys) await page.keyboard.down(k);
+  const started = Date.now();
+  let insideAt = null, left = false;
+  while (Date.now() - started < ms) {
+    const st = await readState(page);
+    if (st.gone) { left = true; break; }
+    if (st.blockedBy) insideAt = st;
+    if (st.mode !== 'walk') break;
+    await page.waitForTimeout(40);
+  }
+  for (const k of keys) await page.keyboard.up(k).catch(() => {});
+  const end = left ? { gone: true } : await readState(page);
+  return { end: end, insideAt: insideAt };
+}
+
 harness.run(async (page, check, ctx) => {
   const errors = ctx.errors;
   await page.waitForTimeout(BOOT_MS);
@@ -159,6 +182,66 @@ harness.run(async (page, check, ctx) => {
   check('the plant is a houseplant, not a tree', scale.plant < 0.6, scale);
   check('and the door is the tallest thing against the wall',
     scale.door > scale.tv && scale.door > scale.desk, scale);
+
+  // --- furniture is solid ---------------------------------------------------
+  // Walking through the sofa is the kind of thing that looks fine in a
+  // screenshot and ruins a room the moment you play it. What makes this
+  // worth its own section is the SHAPE of the fix: a footprint on the
+  // floor rather than the sprite's outline, and one axis resolved at a
+  // time so furniture is something you slide along instead of something
+  // you stick to. Both halves are invisible until someone walks at a
+  // sofa, and neither is covered by anything above.
+  await page.goto(ctx.url('house.html'));
+  await page.waitForTimeout(BOOT_MS);
+
+  const solid = await page.evaluate(() => {
+    const d = window.__houseDebug, s = d.scene;
+    const out = { start: d.state().blockedBy, own: {}, inFront: {} };
+    Object.keys(d.props).forEach(k => {
+      const q = d.props[k];
+      out.own[k] = s.blockedAt(q.worldX, q.depth);
+      out.inFront[k] = s.blockedAt(q.worldX, q.depth + 0.18);
+    });
+    return out;
+  });
+  check('you do not start standing inside the furniture', solid.start === null, solid);
+  check('every piece of furniture is solid',
+    ['shelf', 'desk', 'tv', 'lamp', 'plant', 'sofa'].every(k => solid.own[k] === k), solid);
+  // The one thing in the room you are SUPPOSED to walk into. If it ever
+  // joins the others the house has no exit but the button.
+  check('but the doorway is not', solid.own.door === null, solid);
+  // Footprints that swallow the spot you stand on to use a thing would
+  // lock you out of the TV and the computer without blocking anything.
+  check('and you can still stand in front of all of it',
+    Object.keys(solid.inFront).every(k => solid.inFront[k] === null), solid);
+
+  // Straight at the sofa (worldX 0.42, depth 0.60) from the front of the
+  // room. You should stop in front of it, still outside its footprint.
+  const intoSofa = await walkHolding(page, [0.42, 0.88], ['ArrowUp'], 2600);
+  check('walking into the sofa stops you in front of it',
+    intoSofa.end.depth > 0.63 && intoSofa.end.mode === 'walk', intoSofa);
+  check('and never inside it', intoSofa.insideAt === null, intoSofa);
+
+  // Sideways into it, which is the other axis and a separate check -
+  // resolving only the one you happen to test leaves the room solid in
+  // one direction and open in the other.
+  const alongSofa = await walkHolding(page, [-0.1, 0.60], ['ArrowRight'], 2600);
+  check('and walking sideways into it stops you too',
+    alongSofa.end.worldX < 0.3 && alongSofa.insideAt === null, alongSofa);
+
+  // Diagonally at it: blocked on one axis, free on the other, so you
+  // slide past instead of stopping dead. Without that a player who
+  // holds a diagonal just stops, which reads as the game hanging.
+  const roundSofa = await walkHolding(page, [0.42, 0.88], ['ArrowUp', 'ArrowLeft'], 3500);
+  check('but a diagonal slides you round it rather than sticking',
+    roundSofa.end.depth < 0.45 && roundSofa.insideAt === null, roundSofa);
+
+  // And the way out still works with all of that in the way.
+  const toDoor = await walkHolding(page, [0.06, 0.70], ['ArrowUp'], 4000);
+  check('and the walk to the front door is still clear',
+    toDoor.end.gone === true || toDoor.end.mode !== 'walk', toDoor);
+  await page.goto(ctx.url('house.html'));
+  await page.waitForTimeout(BOOT_MS);
 
   // --- the door is IN the wall ---------------------------------------------
   // It was not: it stood a little way out on the floorboards, which on a

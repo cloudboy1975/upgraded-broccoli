@@ -368,6 +368,34 @@
   // In texture px, since isAt() multiplies these by the prop's own
   // scale - so they zoom with ROOM_SCALE and stay the same distance in
   // room terms however the framing is retuned.
+  // ==================================================================
+  // Furniture you cannot walk through.
+  //
+  // What stops you is a FOOTPRINT ON THE FLOOR, not the sprite's
+  // outline: a bookshelf is a stretch of floorboards whatever its
+  // silhouette is doing above your head, and a lamp is a pole with a
+  // shade the size of your chest that you can walk right under.
+  //
+  // Half-sizes in the prop's own texture px, the same units the reach
+  // zones use - x across the floor, y up it. Shallow for the things
+  // that stand flat to the wall, deep for the sofa you are meant to
+  // walk around. The DOOR is deliberately not in here: walking into
+  // that one is how you leave.
+  // ==================================================================
+  var FOOTPRINTS = {
+    shelf: { x: 17, y: 7 },
+    desk:  { x: 19, y: 8 },
+    tv:    { x: 26, y: 8 },
+    lamp:  { x: 8,  y: 6 },
+    plant: { x: 8,  y: 6 },
+    sofa:  { x: 27, y: 13 }
+  };
+  // Your own footprint, in YOUR texture px at your own scale. Narrower
+  // than the drawing, which is 34px wide with its arms out - what walks
+  // into the sofa is a pair of feet.
+  var YOUR_HALF_X = 8;
+  var YOUR_HALF_Y = 4;
+
   var REACH_X = 42;
   var REACH_Y = 84;
   var DOOR_REACH_X = 30;
@@ -730,6 +758,30 @@
     };
   };
 
+  // What you would be standing in at (worldX, depth), or null. Returns
+  // the prop's NAME rather than a bare true: the thing that stopped you
+  // is what a test - or a puzzled look at the debug state - actually
+  // wants to know.
+  //
+  // Tested in screen space rather than in world coordinates, because
+  // the floor is a trapezoid: the same worldX gap is a much smaller
+  // walk at the back of the room than at the front, and it is what the
+  // player can see that has to decide whether they fit.
+  MainScene.prototype.blockedAt = function (worldX, depth) {
+    var me = this.placeAt(worldX, depth);
+    var myScale = this.depthToScale(depth);
+    var keys = Object.keys(FOOTPRINTS);
+    for (var i = 0; i < keys.length; i++) {
+      var foot = FOOTPRINTS[keys[i]], prop = PROPS[keys[i]];
+      var it = this.placeAt(prop.worldX, prop.depth);
+      var s = this.depthToScale(prop.depth);
+      if (Math.abs(me.x - it.x) >= foot.x * s + YOUR_HALF_X * myScale) continue;
+      if (Math.abs(me.y - it.y) >= foot.y * s + YOUR_HALF_Y * myScale) continue;
+      return keys[i];
+    }
+    return null;
+  };
+
   MainScene.prototype.layoutProps = function () {
     var self = this;
     Object.keys(this.sprites).forEach(function (key) {
@@ -926,8 +978,20 @@
     var walking = magnitude > 0.04;
 
     if (walking) {
-      this.worldX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
-      this.depth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.06, 0.92);
+      // Each axis is tried on its own, which is what turns furniture
+      // into something you SLIDE ALONG rather than something you stick
+      // to: walking diagonally into the sofa still carries you sideways
+      // past it, with no pathfinding and no pushing.
+      //
+      // And if you are somehow already standing inside something - a
+      // resize moves every footprint out from under you - every move is
+      // allowed until you are out. Being stuck in a room with one exit
+      // is worse than clipping a sofa for a step.
+      var stuck = this.blockedAt(this.worldX, this.depth) !== null;
+      var nextX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
+      if (stuck || this.blockedAt(nextX, this.depth) === null) this.worldX = nextX;
+      var nextDepth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.06, 0.92);
+      if (stuck || this.blockedAt(this.worldX, nextDepth) === null) this.depth = nextDepth;
       if (moveX > 0.08) this.flipX = false;
       else if (moveX < -0.08) this.flipX = true;
       this.bobPhase += dt * (6 + magnitude * 6);
@@ -988,7 +1052,8 @@
           atDoor: self.atDoor(), prompt: self.prompt,
           atTv: self.isAt('tv', REACH_X, REACH_Y),
           atDesk: self.isAt('desk', REACH_X, REACH_Y),
-          doorDistance: self.distanceTo('door')
+          doorDistance: self.distanceTo('door'),
+          blockedBy: self.blockedAt(self.worldX, self.depth)
         };
       },
       // Screen rectangles, for the layout checks - nothing in the room
