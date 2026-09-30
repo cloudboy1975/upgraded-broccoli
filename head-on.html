@@ -244,46 +244,58 @@
      deliberately loud and deliberately unconditional - unlike the
      diagnostic overlay it is not behind a setting, because the one time
      it appears is the one time nobody has the lab open. */
-  /* The tutorial's own band, under the HUD. It is a caption over live
-     play - the ship keeps flying underneath it - so it never intercepts
-     a tap; only its two buttons do. */
+  /* The tutorial's caption gets a band of its OWN, between the board and
+     the controls, rather than floating over the play area. Anywhere
+     inside the board is somewhere a brick, a diver or your own ship is
+     going to be, and a line of instructions you have to read past an
+     enemy is worse than one you have to look down for. It costs the
+     board a little height, and only while a lesson is running. */
   .tutor {
     display: none;
-    position: absolute;
-    top: 40px;
-    left: 8px;
-    right: 8px;
-    z-index: 5;
-    pointer-events: none;
-    padding: 8px 10px;
-    border-radius: 10px;
+    width: 100%;
+    max-width: 420px;
+    box-sizing: border-box;
+    padding: 9px 12px 11px;
+    border-radius: 12px;
     border: 1px solid rgba(94, 234, 212, 0.32);
-    background: rgba(6, 20, 27, 0.86);
+    background: rgba(6, 20, 27, 0.92);
     color: #d7fbf3;
-    font-size: 0.72rem;
-    line-height: 1.45;
     -webkit-user-select: none;
     user-select: none;
   }
   .tutor.visible { display: block; }
+  .tutor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
   .tutor-step {
-    font-size: 0.56rem;
+    font-size: 0.68rem;
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: #5eead4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .tutor-say { margin-top: 3px; }
+  /* Read at arm's length on a phone, in a hurry, with something falling
+     at you - so it is the size of body text, not of a footnote. */
+  .tutor-say {
+    margin-top: 5px;
+    font-size: 1rem;
+    line-height: 1.4;
+  }
   .tutor-say.got { color: #86efac; }
-  .tutor-actions { margin-top: 7px; display: flex; gap: 8px; }
+  .tutor-actions { display: flex; gap: 6px; flex: 0 0 auto; }
   .tutor-btn {
-    pointer-events: auto;
-    padding: 4px 11px;
+    padding: 5px 11px;
     border-radius: 8px;
     border: 1px solid rgba(148, 163, 184, 0.5);
     background: rgba(30, 41, 59, 0.92);
     color: #e2e8f0;
     font: inherit;
-    font-size: 0.66rem;
+    font-size: 0.8rem;
     cursor: pointer;
   }
   .tutor-btn:active { background: rgba(51, 65, 85, 0.95); }
@@ -629,17 +641,6 @@
            intercepts a tap (it's purely informational, over live gameplay). -->
       <div class="diag-overlay" id="diagOverlay"></div>
       <div class="crash-banner" id="crashBanner"></div>
-      <!-- The flight tutorial's caption and its two ways out - see
-           startTutorial(). Skip moves on to the next lesson, Exit drops
-           the whole thing and leaves you playing. -->
-      <div class="tutor" id="tutorBar" aria-live="polite">
-        <div class="tutor-step" id="tutorStep"></div>
-        <div class="tutor-say" id="tutorSay"></div>
-        <div class="tutor-actions">
-          <button type="button" class="tutor-btn" id="tutorSkipBtn">Skip this</button>
-          <button type="button" class="tutor-btn" id="tutorExitBtn">Exit tutorial</button>
-        </div>
-      </div>
       <!-- The missile trigger. Lives INSIDE the board panel, anchored to
            its bottom-right - as low and as close to the fire pad as the
            game screen goes. Absolutely positioned, so it costs no layout
@@ -669,6 +670,22 @@
           <button type="button" class="btn secondary" id="resetBestBtn">Reset Best</button>
         </div>
       </div>
+    </div>
+
+    <!-- The flight tutorial's caption and its two ways out - see
+         startTutorial(). It sits between the board and the controls, so
+         it never covers anything you are meant to be watching. Skip
+         moves on to the next lesson; Exit drops the whole thing and
+         leaves you playing. -->
+    <div class="tutor" id="tutorBar" aria-live="polite">
+      <div class="tutor-head">
+        <span class="tutor-step" id="tutorStep"></span>
+        <span class="tutor-actions">
+          <button type="button" class="tutor-btn" id="tutorSkipBtn">Skip lesson</button>
+          <button type="button" class="tutor-btn" id="tutorExitBtn">Exit</button>
+        </span>
+      </div>
+      <div class="tutor-say" id="tutorSay"></div>
     </div>
 
     <div class="control-bar" id="controlBar">
@@ -4885,7 +4902,14 @@
   // is still there - a pod you let fall past is sent again - so no
   // lesson can become unpassable by missing something once.
   // ======================================================================
-  var TUTOR_GOT_BEAT = 1.7;        // seconds the "yes, that" line holds before moving on
+  // Both of these are READING times, not pacing knobs. A line that is
+  // answered the instant it appears - because the pod was already under
+  // the ship, or the player was already holding fire - never gets read
+  // at all, and a lesson nobody read is a lesson nobody had. So a new
+  // line always gets its moment before it can be satisfied, and the
+  // answering line always gets one before the next thing arrives.
+  var TUTOR_MIN_READ = 1.3;        // seconds a fresh instruction stays up before it can be completed
+  var TUTOR_GOT_BEAT = 2.8;        // ...and seconds the "yes, that" line holds before moving on
   var TUTOR_RESTOCK_DELAY = 1.2;   // ...before a missed pod, strip or target is sent again
   var TUTOR_CHALLENGE_VOLLEYS = 2; // a taste of the rock, not a full stage
   var TUTOR_LESSON_COLOR = 'blue'; // the colour the shield lessons hand you
@@ -5024,6 +5048,7 @@
     state.tutorial = {
       lesson: 0,
       beat: 0,
+      beatAge: 0,    // how long the line currently on screen has been up - see TUTOR_MIN_READ
       got: 0,        // > 0 while the confirming line is up and the board is paused on it
       restock: TUTOR_RESTOCK_DELAY,
       notes: {},     // what has happened since this beat armed
@@ -5055,6 +5080,7 @@
     var t = this.state.tutorial, beat = this.tutorBeat();
     if (!beat) return;
     t.notes = {};
+    t.beatAge = 0;
     t.restock = TUTOR_RESTOCK_DELAY;
     beat.arm(this);
     this.renderTutorBanner();
@@ -5090,8 +5116,12 @@
 
     var beat = this.tutorBeat();
     if (!beat) return;
+    t.beatAge += dt;
 
-    if (t.notes[beat.needs]) {
+    // Notes are still recorded while the line is being read (see
+    // tutorNote()) - nothing the player does is thrown away, it is only
+    // acted on once they have had a chance to see what they were asked.
+    if (t.notes[beat.needs] && t.beatAge >= TUTOR_MIN_READ) {
       t.got = TUTOR_GOT_BEAT;
       this.renderTutorBanner();
       traceEvent('tutorial_beat', { lesson: this.tutorLesson().id, beat: t.beat });

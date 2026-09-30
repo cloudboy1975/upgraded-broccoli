@@ -100,6 +100,68 @@ harness.run(async (page, check, ctx) => {
   check('the caption is up, numbered, and carries both ways out',
     banner.visible && /1 \/ \d/.test(banner.step) && banner.skip && banner.exit, banner);
 
+  // --- it can be read ------------------------------------------------------
+  // The first version of this put the caption over the top of the board,
+  // where the bricks are, at a size that suited a footnote. Both halves
+  // of that are geometry rather than taste, so both get a check: the
+  // band may not overlap the play area at all, and the line has to be
+  // at body-text size on the phone viewport these are run at.
+  const legible = await page.evaluate(() => {
+    const bar = document.getElementById('tutorBar').getBoundingClientRect();
+    const board = document.getElementById('canvasWrap').getBoundingClientRect();
+    const say = document.getElementById('tutorSay');
+    return {
+      overlaps: bar.left < board.right && bar.right > board.left &&
+                bar.top < board.bottom && bar.bottom > board.top,
+      px: parseFloat(getComputedStyle(say).fontSize),
+      wide: bar.width > 200
+    };
+  });
+  check('the caption does not sit over the board', legible.overlaps === false, legible);
+  check('and is written at a size you can read while flying',
+    legible.px >= 14 && legible.wide, legible);
+
+  // --- and it cannot go past faster than it can be read --------------------
+  // Measured on the lightning lesson, because that is the one a player
+  // can answer instantly: holding fire pays its first tick a third of a
+  // second in, so without a floor under it the line would appear and be
+  // gone before it could be read. Both dwells are reading time, and
+  // neither throws input away - the note is kept and acted on once the
+  // line has had its moment.
+  for (let i = 0; i < 3; i++) {
+    await page.click('#tutorSkipBtn');
+    await page.waitForTimeout(160);
+  }
+  const atLightning = await tutor(page);
+  await page.keyboard.down('Space'); // only now - the clock below starts here
+  const dwell = await page.evaluate(() => {
+    const d = window.__headOnDebug;
+    const started = performance.now();
+    let sawGot = 0;
+    return new Promise(res => {
+      const tick = setInterval(() => {
+        const t = d.tutorial();
+        if (!t) { clearInterval(tick); res({ gone: true }); return; }
+        if (!sawGot && t.got > 0) sawGot = performance.now();
+        if (sawGot && t.lesson !== 'lightning') {
+          clearInterval(tick);
+          res({ toGot: (sawGot - started) / 1000, held: (performance.now() - sawGot) / 1000 });
+        }
+        if (performance.now() - started > 15000) { clearInterval(tick); res({ timeout: true }); }
+      }, 40);
+    });
+  });
+  await page.keyboard.up('Space');
+  check('the lesson that can be answered instantly is the one to measure',
+    atLightning.lesson === 'lightning', atLightning);
+  check('an instruction stays up long enough to read before it can be answered',
+    dwell.toGot > 1.0, dwell);
+  check('and the answer holds too, instead of flicking past', dwell.held > 2.2, dwell);
+
+  // Back to the top, for the lessons themselves.
+  await page.goto(ctx.url('head-on.html?tutorial'));
+  await page.waitForTimeout(BOOT_MS);
+
   // --- the ordinary game is switched off while it teaches ------------------
   // A lesson about one pod does not survive a wave of divers arriving in
   // the middle of it, and the powerup spawner would quietly hand out the
