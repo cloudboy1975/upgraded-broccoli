@@ -90,6 +90,13 @@
     transition: opacity 0.5s ease;
   }
   .hint.hidden { opacity: 0; }
+  /* The prompt is inert text until you are standing at something that
+     actually does something - then it is the button. */
+  .hint.tappable {
+    pointer-events: auto;
+    cursor: pointer;
+    color: #bdf3e4;
+  }
 
   .control-bar {
     position: fixed;
@@ -268,6 +275,11 @@
   // ==================================================================
 
   var BACK_PAGE = 'yard.html';
+  // The computer's screen. Chapter 1's flight training runs inside the
+  // game itself rather than in here - see startTutorial() over there -
+  // because the only honest way to teach flying is to hand someone the
+  // ship.
+  var TUTORIAL_PAGE = 'head-on.html?tutorial';
 
   // A lit room at night, and deliberately the warmest thing in the
   // chapter. Outside is all blues at 0x05061a; stepping in here should
@@ -456,11 +468,12 @@
   var mainScene = null;
   var navigated = false;
 
-  function goOutside() {
+  function goPage(page) {
     if (navigated) return;
     navigated = true;
-    window.location.href = BACK_PAGE;
+    window.location.href = page || BACK_PAGE;
   }
+  function goOutside() { goPage(BACK_PAGE); }
 
   function MainScene() {
     Phaser.Scene.call(this, { key: 'Main' });
@@ -479,6 +492,8 @@
     this.bobPhase = 0;
     this.idlePhase = Math.random() * 10;
     this.prompt = null;
+    this.action = null;   // the page the thing you are standing at opens, or null
+    this.exitPage = null; // where the fade is heading - see goTo()
     this.dust = [];
     for (var i = 0; i < 10; i++) {
       this.dust.push({
@@ -938,16 +953,35 @@
   // are placeholders on purpose, and they say so - a prominent object
   // that ignores you reads as broken, where one that says "later" reads
   // as a promise.
-  MainScene.prototype.nearestPrompt = function () {
-    if (this.isAt('tv', REACH_X, REACH_Y)) return 'The TV. A report on the invaders — later.';
-    if (this.isAt('desk', REACH_X, REACH_Y)) return 'The computer. Flight training — later.';
-    if (this.isAt('shelf', REACH_X, REACH_Y)) return 'Books. Nothing you have not read.';
+  // What you are standing at: the line to read, and - for the one thing
+  // in here that is finished - where it goes. Everything else in the
+  // room still says "later", which is the promise this one just kept.
+  MainScene.prototype.nearestThing = function () {
+    if (this.isAt('tv', REACH_X, REACH_Y)) return { say: 'The TV. A report on the invaders — later.' };
+    if (this.isAt('desk', REACH_X, REACH_Y)) return { say: 'The computer. Flight training.', go: TUTORIAL_PAGE };
+    if (this.isAt('shelf', REACH_X, REACH_Y)) return { say: 'Books. Nothing you have not read.' };
     return null;
   };
 
+  // Walking at a thing is how you use the door and the ship; a desk is
+  // not something you walk INTO, so the one thing in the room that acts
+  // asks for a deliberate press. The line itself is the button - there
+  // is nowhere on a phone screen to put another one, and a prompt you
+  // can tap is a prompt that explains itself.
+  MainScene.prototype.useThing = function () {
+    if (this.mode !== 'walk' || !this.action) return false;
+    this.goTo(this.action);
+    return true;
+  };
+
   // ---- Leaving ---------------------------------------------------------
-  MainScene.prototype.leave = function () {
+  // Out to the yard. goTo() is the same exit with a different door at
+  // the end of it - one fade, one place that navigates.
+  MainScene.prototype.leave = function () { this.goTo(BACK_PAGE); };
+
+  MainScene.prototype.goTo = function (page) {
     if (this.mode !== 'walk') return;
+    this.exitPage = page || BACK_PAGE;
     this.mode = 'leaving';
     this.modeAge = 0;
     this.setPrompt(null);
@@ -961,7 +995,7 @@
     this.fadeGfx.clear();
     this.fadeGfx.fillStyle(0x000000, t);
     this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
-    if (t >= 1) { this.mode = 'gone'; goOutside(); }
+    if (t >= 1) { this.mode = 'gone'; goPage(this.exitPage); }
   };
 
   // ---- Per-frame -------------------------------------------------------
@@ -1008,14 +1042,17 @@
     // as walking into the ship outside.
     if (this.atDoor()) { this.leave(); return; }
 
-    this.setPrompt(this.nearestPrompt());
+    var thing = this.nearestThing();
+    this.action = thing && thing.go ? thing.go : null;
+    this.setPrompt(thing ? (thing.go ? thing.say + '  ▸ tap' : thing.say) : null);
     this.updateDust(dt);
   };
 
   MainScene.prototype.setPrompt = function (text) {
+    var el = document.getElementById('hint');
+    if (el) el.classList.toggle('tappable', !!this.action);
     if (this.prompt === text) return;
     this.prompt = text;
-    var el = document.getElementById('hint');
     if (!el) return;
     if (text) {
       el.textContent = text;
@@ -1049,7 +1086,7 @@
       state: function () {
         return {
           mode: self.mode, worldX: self.worldX, depth: self.depth,
-          atDoor: self.atDoor(), prompt: self.prompt,
+          atDoor: self.atDoor(), prompt: self.prompt, action: self.action || null,
           atTv: self.isAt('tv', REACH_X, REACH_Y),
           atDesk: self.isAt('desk', REACH_X, REACH_Y),
           doorDistance: self.distanceTo('door'),
@@ -1072,7 +1109,8 @@
         return out;
       },
       moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
-      leave: function () { self.leave(); }
+      leave: function () { self.leave(); },
+      use: function () { return self.useThing(); }
     };
   };
 
@@ -1208,6 +1246,15 @@
   function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
   function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
   function isOutKey(code) { return code === 'Escape' || code === 'KeyQ'; }
+  function isUseKey(code) { return code === 'Enter' || code === 'Space'; }
+
+  // The prompt line doubles as the button for whatever you are standing
+  // at - see useThing().
+  (function bindHintTap() {
+    var hint = document.getElementById('hint');
+    if (!hint) return;
+    hint.addEventListener('click', function () { if (mainScene) mainScene.useThing(); });
+  })();
 
   document.addEventListener('keydown', function (e) {
     Sound.ensureAudio();
@@ -1215,6 +1262,11 @@
     if (isUpKey(e.code) || isDownKey(e.code)) e.preventDefault();
     if (isOutKey(e.code)) {
       if (!e.repeat) { if (mainScene) mainScene.leave(); else goOutside(); }
+      return;
+    }
+    if (isUseKey(e.code)) {
+      e.preventDefault();
+      if (!e.repeat && mainScene) mainScene.useThing();
       return;
     }
     if (e.repeat) return;

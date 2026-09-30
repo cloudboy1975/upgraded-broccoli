@@ -29,7 +29,12 @@ fi
 
 status=0
 for f in test-*.js; do
-  out=$(timeout 300 "$NODE" "$f" 2>&1)
+  # Generous, because one of these files plays the whole flight tutorial
+  # in real time - five lessons, flown. A file that runs over this is
+  # killed mid-run and reports whatever it had got through, which reads
+  # as a pass; the ceiling is here to be far out of reach, not to catch
+  # anything.
+  out=$(timeout 900 "$NODE" "$f" 2>&1)
   pass=$(echo "$out" | grep -c '^PASS')
   fail=$(echo "$out" | grep -c '^FAIL')
   err=""

@@ -183,6 +183,40 @@ harness.run(async (page, check, ctx) => {
   check('and the door is the tallest thing against the wall',
     scale.door > scale.tv && scale.door > scale.desk, scale);
 
+  // --- the computer opens the flight tutorial -------------------------------
+  // The room was built as two promises - a TV and a computer, both
+  // saying "later". This is the first one kept, and it is the only
+  // thing in the house that ACTS: walking into something is how the
+  // door and the ship work, but a desk is not something you walk into,
+  // so the prompt line itself becomes the button.
+  const atComputer = await standAt(page, 'desk');
+  const computerUi = await page.evaluate(() => {
+    const hint = document.getElementById('hint');
+    return { tappable: hint.classList.contains('tappable'), text: hint.textContent };
+  });
+  check('standing at the computer offers something to press',
+    atComputer.action === 'head-on.html?tutorial', atComputer);
+  check('and says so, on the one line the room uses for everything',
+    computerUi.tappable && /tap/i.test(computerUi.text), computerUi);
+
+  // The things that are still promises must stay inert - an object that
+  // LOOKS pressable and does nothing is worse than one that says later.
+  const atTelly = await standAt(page, 'tv');
+  check('the TV is still a promise, not a button', atTelly.action === null, atTelly);
+  const inTheOpen = await page.evaluate(() => {
+    window.__houseDebug.moveTo(0.06, 0.70);
+    return new Promise(res => setTimeout(() => res(window.__houseDebug.use()), 260));
+  });
+  check('and pressing use in the middle of the room does nothing', inTheOpen === false, inTheOpen);
+
+  // The whole point of the thing: it goes there.
+  await standAt(page, 'desk');
+  await page.click('#hint');
+  check('tapping it leaves for the tutorial',
+    await reachedPage(page, 'head-on.html?tutorial', 6000), page.url());
+  await page.goto(ctx.url('house.html'));
+  await page.waitForTimeout(BOOT_MS);
+
   // --- furniture is solid ---------------------------------------------------
   // Walking through the sofa is the kind of thing that looks fine in a
   // screenshot and ruins a room the moment you play it. What makes this

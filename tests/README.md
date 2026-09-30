@@ -20,6 +20,9 @@ server you're already running:
 HEADON_URL=http://127.0.0.1:8778/head-on.html ./tests/run.sh
 ```
 
+`test-tutorial.js` is the slow one: it plays the flight tutorial the way
+a player does, so it runs for a couple of minutes rather than seconds.
+
 A single file:
 
 ```sh

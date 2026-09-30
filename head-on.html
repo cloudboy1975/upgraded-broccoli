@@ -244,6 +244,50 @@
      deliberately loud and deliberately unconditional - unlike the
      diagnostic overlay it is not behind a setting, because the one time
      it appears is the one time nobody has the lab open. */
+  /* The tutorial's own band, under the HUD. It is a caption over live
+     play - the ship keeps flying underneath it - so it never intercepts
+     a tap; only its two buttons do. */
+  .tutor {
+    display: none;
+    position: absolute;
+    top: 40px;
+    left: 8px;
+    right: 8px;
+    z-index: 5;
+    pointer-events: none;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(94, 234, 212, 0.32);
+    background: rgba(6, 20, 27, 0.86);
+    color: #d7fbf3;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .tutor.visible { display: block; }
+  .tutor-step {
+    font-size: 0.56rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #5eead4;
+  }
+  .tutor-say { margin-top: 3px; }
+  .tutor-say.got { color: #86efac; }
+  .tutor-actions { margin-top: 7px; display: flex; gap: 8px; }
+  .tutor-btn {
+    pointer-events: auto;
+    padding: 4px 11px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    background: rgba(30, 41, 59, 0.92);
+    color: #e2e8f0;
+    font: inherit;
+    font-size: 0.66rem;
+    cursor: pointer;
+  }
+  .tutor-btn:active { background: rgba(51, 65, 85, 0.95); }
+
   .crash-banner {
     display: none;
     position: absolute;
@@ -585,6 +629,17 @@
            intercepts a tap (it's purely informational, over live gameplay). -->
       <div class="diag-overlay" id="diagOverlay"></div>
       <div class="crash-banner" id="crashBanner"></div>
+      <!-- The flight tutorial's caption and its two ways out - see
+           startTutorial(). Skip moves on to the next lesson, Exit drops
+           the whole thing and leaves you playing. -->
+      <div class="tutor" id="tutorBar" aria-live="polite">
+        <div class="tutor-step" id="tutorStep"></div>
+        <div class="tutor-say" id="tutorSay"></div>
+        <div class="tutor-actions">
+          <button type="button" class="tutor-btn" id="tutorSkipBtn">Skip this</button>
+          <button type="button" class="tutor-btn" id="tutorExitBtn">Exit tutorial</button>
+        </div>
+      </div>
       <!-- The missile trigger. Lives INSIDE the board panel, anchored to
            its bottom-right - as low and as close to the fire pad as the
            game screen goes. Absolutely positioned, so it costs no layout
@@ -2242,6 +2297,11 @@
   // editing one character.
   function parseLaunch(search) {
     var params = parseQuery(search);
+    // ?tutorial comes first: it is the door the house's computer opens,
+    // and a link carrying both asked for the lesson, not the fight.
+    if (params.hasOwnProperty('tutorial') && params.tutorial !== '0' && params.tutorial !== 'false') {
+      return { tutorial: true };
+    }
     if (!params.hasOwnProperty('boss')) return null;
     if (params.boss === '0' || params.boss === 'false') return null;
     return {
@@ -2267,6 +2327,10 @@
   // unconditionally.
   MainScene.prototype.resumeLaunch = function () {
     if (!launchRequest) return false;
+    if (launchRequest.tutorial) {
+      this.startTutorial();
+      return true;
+    }
     this.applyBossLoadout(launchRequest);
     this.startBoss();
     return true;
@@ -2821,6 +2885,7 @@
       waveClearTimer: 0, // > 0 while waiting to spawn the next formation
       challenge: null,      // the active challenge stage, or null during ordinary combat - see startChallenge()
       boss: null,           // the active boss fight, or null - see startBoss(). Never non-null at the same time as challenge
+      tutorial: null,       // the running flight tutorial, or null - see startTutorial()
       challengesDone: 0,    // completed challenge stages this run; drives how close the home world is
       starSpeedScale: 1,    // starfield speed multiplier - ramps up and back down across a challenge stage
       meteorBag: [],        // shuffle bag of volley pattern ids - see drawMeteorPattern()
@@ -3837,6 +3902,7 @@
   MainScene.prototype.endChallenge = function () {
     var state = this.state;
     this.clearMeteors();
+    this.tutorNote('challengeDone');
     state.challengesDone++;
     state.challenge = null;
     state.starSpeedScale = 1;
@@ -4796,6 +4862,438 @@
     return true;
   };
 
+  // ======================================================================
+  // The flight tutorial
+  //
+  // Reached from the computer in the house, or straight from ?tutorial.
+  //
+  // It is not a slideshow and not a scripted demo. The real game runs,
+  // the player flies the real ship, and each lesson puts exactly one
+  // thing on the board and waits until they DO it. Nothing here
+  // reimplements a mechanic: a lesson arms the same spawners the game
+  // uses and listens for the same events (see tutorNote()), because a
+  // tutorial that teaches its own private copy of the game is a tutorial
+  // that goes quietly out of date the first time the game moves.
+  //
+  // What it leaves out is everything a player already knows before they
+  // arrive - moving, and shooting the things in front of them. What it
+  // covers is the five things THIS game does that the last one didn't.
+  //
+  // Each lesson is a list of BEATS: one line asking for one thing, the
+  // note that says it happened, and the line that confirms it. A beat
+  // also knows how to set its own board up and whether what it put there
+  // is still there - a pod you let fall past is sent again - so no
+  // lesson can become unpassable by missing something once.
+  // ======================================================================
+  var TUTOR_GOT_BEAT = 1.7;        // seconds the "yes, that" line holds before moving on
+  var TUTOR_RESTOCK_DELAY = 1.2;   // ...before a missed pod, strip or target is sent again
+  var TUTOR_CHALLENGE_VOLLEYS = 2; // a taste of the rock, not a full stage
+  var TUTOR_LESSON_COLOR = 'blue'; // the colour the shield lessons hand you
+  var TUTOR_PULSE_COLOR = 'green'; // ...and the one the pulse cannon lesson uses
+
+  // Tops a colour up to `want` banked dots without ever taking any away:
+  // a player arriving with more than the lesson needs keeps them.
+  function tutorTopUp(scene, colorKey, want) {
+    var have = 0;
+    scene.state.powerup.colors.forEach(function (key) { if (key === colorKey) have++; });
+    for (var i = have; i < want; i++) scene.collectColor(colorKey);
+  }
+
+  function tutorCountColor(scene, colorKey) {
+    var n = 0;
+    scene.state.powerup.colors.forEach(function (key) { if (key === colorKey) n++; });
+    return n;
+  }
+
+  function tutorLiveBarsOf(scene, colorKey) {
+    var n = 0;
+    scene.state.colorBars.forEach(function (bar) {
+      if (bar.alive && bar.colorKey === colorKey) n++;
+    });
+    return n;
+  }
+
+  var TUTORIAL_LESSONS = [
+    {
+      id: 'shield',
+      title: 'Shield pods',
+      beats: [
+        {
+          say: 'That pod is a shield. Fly into it.',
+          got: 'Banked. It orbits you now, and it will take one hit for you.',
+          needs: 'orbTouched',
+          arm: function (scene) { scene.tutorClearBoard(); scene.spawnOrb(TUTOR_LESSON_COLOR); },
+          stocked: function (scene) { return scene.state.orbs.length > 0; }
+        },
+        {
+          say: 'Shoot the next one instead. A hit pod comes to you.',
+          got: 'Faster than chasing it - and it banks the same shield.',
+          needs: 'orbShot',
+          arm: function (scene) { scene.spawnOrb(TUTOR_LESSON_COLOR); },
+          stocked: function (scene) {
+            return scene.state.orbs.length + scene.state.orbBullets.length > 0;
+          }
+        }
+      ]
+    },
+    {
+      id: 'missiles',
+      title: 'Missiles',
+      beats: [
+        {
+          say: 'A banked shield is also a missile. Tap MISSILES - each one hunts its own colour.',
+          got: 'It found its match. The other colour was never in danger.',
+          needs: 'orbiterKill',
+          arm: function (scene) {
+            scene.tutorClearBoard();
+            tutorTopUp(scene, 'red', 1);
+            tutorTopUp(scene, 'green', 1);
+            scene.tutorSendEnemies(['red', 'green']);
+          },
+          stocked: function (scene) {
+            var alive = 0;
+            scene.state.formation.forEach(function (slot) { if (slot.alive) alive++; });
+            return alive > 0;
+          }
+        }
+      ]
+    },
+    {
+      id: 'pulse',
+      title: 'Pulse cannon',
+      beats: [
+        {
+          say: 'A falling strip is a gun. Stay under it the whole way down.',
+          got: 'Your shots carry that colour now, and they grow with every strip.',
+          needs: 'stripCaught',
+          arm: function (scene) {
+            scene.tutorClearBoard();
+            scene.tutorShowBricks();
+            scene.spawnStrip(TUTOR_PULSE_COLOR);
+          },
+          stocked: function (scene) { return scene.state.strips.length > 0; }
+        },
+        {
+          say: 'Now fire at the bricks in that colour. The others just swallow it.',
+          got: 'Only its own colour. That is what the strips are for.',
+          needs: 'pulseHit',
+          arm: function (scene) { scene.tutorShowBricks(); },
+          stocked: function (scene) { return tutorLiveBarsOf(scene, TUTOR_PULSE_COLOR) > 0; }
+        }
+      ]
+    },
+    {
+      id: 'lightning',
+      title: 'Lightning',
+      beats: [
+        {
+          say: 'HOLD fire. Every banked shield burns as a second of lightning.',
+          got: 'It spends them to do it - shields out, or lightning now.',
+          needs: 'boltFired',
+          arm: function (scene) {
+            scene.tutorClearBoard();
+            tutorTopUp(scene, TUTOR_LESSON_COLOR, 2);
+          },
+          stocked: function (scene) { return scene.state.powerup.colors.length > 0; }
+        }
+      ]
+    },
+    {
+      id: 'jump',
+      title: 'Speed jump',
+      beats: [
+        {
+          say: 'Speed jump. Dodge the rock - every jump closes on their planet.',
+          got: 'Closer. Enough of those and you arrive, and something is waiting.',
+          needs: 'challengeDone',
+          arm: function (scene) {
+            scene.tutorClearBoard();
+            scene.startChallenge();
+            scene.state.challenge.volleysTotal = TUTOR_CHALLENGE_VOLLEYS;
+          },
+          stocked: function (scene) { return !!scene.state.challenge; }
+        }
+      ]
+    }
+  ];
+
+  // ---- The director ------------------------------------------------------
+
+  MainScene.prototype.startTutorial = function () {
+    var state = this.state;
+    state.tutorial = {
+      lesson: 0,
+      beat: 0,
+      got: 0,        // > 0 while the confirming line is up and the board is paused on it
+      restock: TUTOR_RESTOCK_DELAY,
+      notes: {},     // what has happened since this beat armed
+      finished: false
+    };
+    // A tutorial with a life counter is a tutorial you can fail, and
+    // failing a tutorial teaches nothing the fifth pod would not have.
+    // Hits still land and still fizzle; they just cost nothing (see
+    // shipHit()).
+    state.lives = 3;
+    this.setColorBarsVisible(false);
+    this.tutorArmBeat();
+    traceEvent('tutorial_start', {});
+  };
+
+  MainScene.prototype.tutorLesson = function () {
+    var t = this.state.tutorial;
+    return t && !t.finished ? TUTORIAL_LESSONS[t.lesson] : null;
+  };
+
+  MainScene.prototype.tutorBeat = function () {
+    var lesson = this.tutorLesson();
+    return lesson ? lesson.beats[this.state.tutorial.beat] : null;
+  };
+
+  // The one place a lesson's board is built. Called when a beat starts,
+  // and again by the restock timer when what it put there is gone.
+  MainScene.prototype.tutorArmBeat = function () {
+    var t = this.state.tutorial, beat = this.tutorBeat();
+    if (!beat) return;
+    t.notes = {};
+    t.restock = TUTOR_RESTOCK_DELAY;
+    beat.arm(this);
+    this.renderTutorBanner();
+  };
+
+  // What the game tells the tutorial. Called from inside the mechanics
+  // themselves rather than inferred from state, because "a pod was
+  // collected BY BEING SHOT" is a fact about a path taken, and anything
+  // reconstructing that from the outside would be guessing.
+  MainScene.prototype.tutorNote = function (name) {
+    var t = this.state.tutorial;
+    if (!t || t.finished || t.got > 0) return;
+    t.notes[name] = (t.notes[name] || 0) + 1;
+  };
+
+  MainScene.prototype.updateTutorial = function (dt) {
+    var t = this.state.tutorial;
+    if (!t) return;
+
+    // The closing line gets the same beat of screen time every other
+    // confirmation gets before the board is handed back.
+    if (t.finished) {
+      t.got -= dt;
+      if (t.got <= 0) this.endTutorial();
+      return;
+    }
+
+    if (t.got > 0) {
+      t.got -= dt;
+      if (t.got <= 0) this.tutorAdvance();
+      return;
+    }
+
+    var beat = this.tutorBeat();
+    if (!beat) return;
+
+    if (t.notes[beat.needs]) {
+      t.got = TUTOR_GOT_BEAT;
+      this.renderTutorBanner();
+      traceEvent('tutorial_beat', { lesson: this.tutorLesson().id, beat: t.beat });
+      return;
+    }
+
+    // Nothing to do it WITH any more - a pod fell past, the target got
+    // shot down with the ordinary gun, the bricks are gone. Send more.
+    if (beat.stocked && !beat.stocked(this)) {
+      t.restock -= dt;
+      if (t.restock <= 0) this.tutorArmBeat();
+    } else {
+      t.restock = TUTOR_RESTOCK_DELAY;
+    }
+  };
+
+  MainScene.prototype.tutorAdvance = function () {
+    var t = this.state.tutorial;
+    var lesson = this.tutorLesson();
+    if (!lesson) return;
+    t.got = 0;
+    if (t.beat + 1 < lesson.beats.length) {
+      t.beat++;
+    } else if (t.lesson + 1 < TUTORIAL_LESSONS.length) {
+      t.lesson++;
+      t.beat = 0;
+    } else {
+      this.tutorFinish();
+      return;
+    }
+    this.tutorArmBeat();
+  };
+
+  // Skip is per LESSON, not per beat: someone who already knows how
+  // shields work does not want to be walked through shooting a pod
+  // either. Mid-confirmation it still means "the next lesson".
+  MainScene.prototype.tutorSkip = function () {
+    var t = this.state.tutorial;
+    if (!t || t.finished) return;
+    traceEvent('tutorial_skip', { lesson: this.tutorLesson().id, beat: t.beat });
+    t.got = 0;
+    if (t.lesson + 1 < TUTORIAL_LESSONS.length) {
+      t.lesson++;
+      t.beat = 0;
+      this.tutorArmBeat();
+    } else {
+      this.tutorFinish();
+    }
+  };
+
+  // Cancelling out drops you into an ordinary run from where you stand,
+  // rather than back to a menu: the tutorial is somewhere you leave by
+  // flying away from it.
+  MainScene.prototype.tutorExit = function () {
+    if (!this.state.tutorial) return;
+    traceEvent('tutorial_exit', { lesson: this.tutorLesson() ? this.tutorLesson().id : null });
+    this.endTutorial();
+  };
+
+  MainScene.prototype.tutorFinish = function () {
+    var t = this.state.tutorial;
+    if (!t) return;
+    t.finished = true;
+    t.got = TUTOR_GOT_BEAT;
+    this.tutorClearBoard();
+    this.renderTutorBanner();
+    traceEvent('tutorial_finish', {});
+  };
+
+  // Hands the board back to the ordinary game. The tutorial's own props
+  // go; what the PLAYER earned on the way through - banked shields, fire
+  // power - stays, because taking it away at the door would read as the
+  // lesson having been pretend.
+  MainScene.prototype.endTutorial = function () {
+    var state = this.state;
+    if (!state.tutorial) return;
+    state.tutorial = null;
+    // A ?tutorial link must not re-enter the tutorial on the next
+    // Restart, or Exit would be a loop rather than a door.
+    if (launchRequest && launchRequest.tutorial) launchRequest = null;
+    this.tutorClearBoard();
+    if (state.challenge) { this.clearMeteors(); state.challenge = null; state.starSpeedScale = 1; }
+    this.flameOn = false;
+    this.flameSprite.setVisible(false);
+    this.setColorBarsVisible(true);
+    this.spawnColorBars();
+    state.diveTimer = TUNING.diveIntervalStart;
+    state.powerupSpawnTimer = randomPowerupSpawnInterval();
+    state.score = 0; // whatever the lessons scored was practice - the run starts here
+    this.spawnFormation();
+    this.renderHud();
+    this.renderTutorBanner();
+  };
+
+  // Everything a lesson put on the screen, taken back off it. The ship,
+  // the bank and the bars are not props - they belong to the player and
+  // to the run.
+  MainScene.prototype.tutorClearBoard = function () {
+    var state = this.state;
+    state.formation.forEach(function (slot) { if (slot.sprite) slot.sprite.destroy(); });
+    state.formation = [];
+    if (state.core && state.core.sprite) { state.core.sprite.destroy(); }
+    state.core = null;
+    state.orbs.forEach(function (o) { o.hostSprite.destroy(); });
+    state.orbs = [];
+    state.orbBullets.forEach(function (h) { h.sprite.destroy(); });
+    state.orbBullets = [];
+    state.strips.forEach(function (s) { s.sprite.destroy(); });
+    state.strips = [];
+    state.enemyBullets.forEach(function (b) { b.sprite.destroy(); });
+    state.enemyBullets = [];
+    state.brickShards.forEach(function (sh) { sh.sprite.destroy(); });
+    state.brickShards = [];
+    this.clearOrbiters();
+  };
+
+  // A fresh, full set of bricks, visible - the pulse lesson is the only
+  // one that wants them, and it wants them undamaged and in place rather
+  // than wherever a previous run left them.
+  MainScene.prototype.tutorShowBricks = function () {
+    this.state.colorBarHeight = COLOR_BAR_HEIGHT;
+    this.state.colorBarRows = 1;
+    this.spawnColorBars();
+    this.setColorBarsVisible(true);
+  };
+
+  // Exactly these enemies, one per colour asked for, spread across the
+  // front row and already in place. Built by spawning a real wave and
+  // taking it apart rather than by hand-rolling slots: a slot carries a
+  // dozen fields that four other systems read, and a tutorial's private
+  // copy of that shape would drift the first time one of them gained a
+  // field.
+  MainScene.prototype.tutorSendEnemies = function (colorKeys) {
+    var state = this.state;
+    this.spawnFormation();
+    // The wave's bonus core rides on a randomly chosen member, and that
+    // member is usually one of the ones about to be taken away.
+    if (state.core && state.core.sprite) { state.core.sprite.destroy(); }
+    state.core = null;
+    var keep = [];
+    colorKeys.forEach(function (colorKey) {
+      for (var i = 0; i < state.formation.length; i++) {
+        var slot = state.formation[i];
+        if (slot.colorKey !== colorKey || keep.indexOf(slot) !== -1) continue;
+        keep.push(slot);
+        return;
+      }
+    });
+    for (var i = state.formation.length - 1; i >= 0; i--) {
+      if (keep.indexOf(state.formation[i]) !== -1) continue;
+      state.formation[i].sprite.destroy();
+      state.formation.splice(i, 1);
+    }
+    keep.forEach(function (slot, i) {
+      // Straight to their marks: the lesson is the missiles, and a
+      // fly-in the player has to sit through before they can try
+      // anything is a lesson in waiting.
+      slot.entering = false;
+      slot.baseX = GAME_WIDTH * (i + 1) / (keep.length + 1);
+      slot.baseY = FORMATION_ROW_Y[0];
+      slot.x = slot.baseX;
+      slot.y = slot.baseY;
+      slot.spawnX = slot.baseX;
+      slot.sprite.x = slot.x;
+      slot.sprite.y = slot.y;
+      slot.fireIn = Infinity;         // nothing shoots back during a lesson
+      slot.formationShooter = false;
+      slot.launchIn = 0;
+      slot.sortieId = null;
+    });
+  };
+
+  // A hit during the tutorial: the fizzle plays, a moment of grace
+  // follows so one rock cannot chew through the whole lesson, and
+  // nothing is taken - not a life, not the bank, not the fire power.
+  // Returns true when it swallowed the hit.
+  MainScene.prototype.tutorAbsorbHit = function () {
+    var state = this.state;
+    if (!state.tutorial) return false;
+    this.tutorNote('hit');
+    this.triggerShieldFizzle(state.ship.x, SHIP_Y, 'red');
+    state.ship.invulnerableUntil = performance.now() + RESPAWN_INVULN_MS;
+    return true;
+  };
+
+  MainScene.prototype.renderTutorBanner = function () {
+    var bar = document.getElementById('tutorBar');
+    if (!bar) return;
+    var t = this.state.tutorial;
+    if (!t) { bar.classList.remove('visible'); return; }
+    bar.classList.add('visible');
+    var stepEl = document.getElementById('tutorStep');
+    var sayEl = document.getElementById('tutorSay');
+    var lesson = this.tutorLesson(), beat = this.tutorBeat();
+    var step = t.finished ? 'Done' : (t.lesson + 1) + ' / ' + TUTORIAL_LESSONS.length + '  ' + lesson.title;
+    var say = t.finished ? 'That is the lot. Good luck out there.'
+                         : (t.got > 0 ? beat.got : beat.say);
+    if (stepEl.textContent !== step) stepEl.textContent = step;
+    if (sayEl.textContent !== say) sayEl.textContent = say;
+    sayEl.classList.toggle('got', t.got > 0 || t.finished);
+  };
+
   // ---- Input: composition ------------------------------------------------------
   var touchLeft = false, touchRight = false, touchFire = false;
   var kbLeft = false, kbRight = false, kbFire = false;
@@ -5354,6 +5852,7 @@
   // other colors it still carries (it can still take out a formation enemy
   // above), though trailResolved means those are done with bars for good.
   MainScene.prototype.pulseDamagesSegment = function (b, bar, seg, level) {
+    this.tutorNote('pulseHit');
     seg.hp -= level;
     b.trailLevels[bar.colorKey] = 0;
     if (b.trailSprites[bar.colorKey]) {
@@ -5861,8 +6360,11 @@
     return STRIP_COLOR_KEYS[STRIP_COLOR_KEYS.length - 1]; // float-rounding fallback
   };
 
-  MainScene.prototype.spawnStrip = function () {
-    var colorKey = this.pickPowerupColor();
+  // colorKey is optional - the game lets the weighting pick (see
+  // pickPowerupColor()), and the tutorial asks for the one its lesson is
+  // about.
+  MainScene.prototype.spawnStrip = function (colorKey) {
+    colorKey = colorKey || this.pickPowerupColor();
     var margin = STRIP_WIDTH / 2 + 4;
     var x = margin + Math.random() * (GAME_WIDTH - margin * 2);
     this.state.strips.push({
@@ -5987,6 +6489,7 @@
   // damage per hit. See fireBullet() for where this actually gets read.
   MainScene.prototype.levelUpFirePower = function (colorKey) {
     this.state.colorLevels[colorKey]++;
+    this.tutorNote('stripCaught');
   };
 
   // Dying wipes every color's fire-power level back to zero - see
@@ -6214,6 +6717,7 @@
       if (!circleHit(o.x, o.y, slot.x, slot.y, slot.radius + orbiterRadius())) continue;
       slot.sprite.destroy();
       slot.alive = false;
+      this.tutorNote('orbiterKill');
       this.addScore(slot.score);
       return true;
     }
@@ -6263,8 +6767,9 @@
 
 
   // ---- Orb pods (second powerup type) ------------------------------------------------------
-  MainScene.prototype.spawnOrb = function () {
-    var colorKey = this.pickPowerupColor();
+  // colorKey optional, same as spawnStrip().
+  MainScene.prototype.spawnOrb = function (colorKey) {
+    colorKey = colorKey || this.pickPowerupColor();
     var margin = ORB_RADIUS + 4;
     var x = margin + Math.random() * (GAME_WIDTH - margin * 2);
     this.state.orbs.push({
@@ -6293,6 +6798,7 @@
       // instant of contact, unlike the color strips' whole-pass
       // requirement.
       if (circleHit(orb.x, orb.y, state.ship.x, SHIP_Y, ORB_RADIUS + state.ship.radius)) {
+        this.tutorNote('orbTouched'); // the tutorial's first lesson - see TUTORIAL_LESSONS
         this.collectOrb(orb);
         orb.hostSprite.destroy();
         state.orbs.splice(i, 1);
@@ -6339,6 +6845,10 @@
       // Reaching the ship collects it - not a hit, so this isn't gated on
       // invulnerability like a real hazard would be.
       if (circleHit(h.x, h.y, state.ship.x, SHIP_Y, ORB_BULLET_RADIUS + state.ship.radius)) {
+        // Collected the SHOT pod specifically - a fact about which path
+        // was taken, which is why the tutorial is told here rather than
+        // left to infer it from a bank that grew.
+        this.tutorNote('orbShot');
         this.collectColor(h.colorKey);
         h.sprite.destroy();
         state.orbBullets.splice(i, 1);
@@ -6431,6 +6941,7 @@
   // recomputed every frame.
   MainScene.prototype.spawnPowerupBolt = function (colorKey) {
     var state = this.state;
+    this.tutorNote('boltFired');
     var slot = STRIP_COLOR_KEYS.indexOf(colorKey);
     var xOffset = (slot - (STRIP_COLOR_KEYS.length - 1) / 2) * POWERUP_BOLT_X_GAP;
     var bottomY = SHIP_Y - state.ship.radius;
@@ -6582,6 +7093,11 @@
   MainScene.prototype.addScore = function (n) {
     var state = this.state;
     state.score += n;
+    // Practice is not a run. The number still moves on the HUD, because
+    // a kill with no feedback reads as a miss, but a lesson can never
+    // set the best score - and the score itself is wiped when the
+    // tutorial hands the board back (see endTutorial()).
+    if (state.tutorial) { this.renderHud(); return; }
     if (state.score > state.highScore) {
       state.highScore = state.score;
       saveHighScore(state.highScore);
@@ -6596,6 +7112,10 @@
   // the price of one life.
   MainScene.prototype.shipHit = function (cause, extra, alreadyExploded) {
     var state = this.state;
+    // A tutorial you can fail is a tutorial you can be stuck in, and
+    // nothing in it is worth losing a bank you were told to go and
+    // earn. The contact still shows - see tutorAbsorbHit().
+    if (this.tutorAbsorbHit()) return;
     var inStage = !!state.challenge;
     this.clearPowerup(); // dying resets whatever orb colors were banked - no carrying progress through a death
     this.clearFirePower(); // and the ship's strip-earned fire power, same rule
@@ -6848,6 +7368,8 @@
     this.clearMeteors();
     this.clearOrbiters();
     this.clearBoss();
+    state.tutorial = null; // a Restart out of a lesson is a plain new run - resumeLaunch() re-enters if the link asked for one
+    this.renderTutorBanner();
     state.challenge = null;
     state.challengesDone = 0;
     state.starSpeedScale = 1;
@@ -7035,6 +7557,27 @@
         self.updateOrbiters(dt);
         self.updatePowerupBolts(dt);
       },
+      // The flight tutorial, from the outside: what it is asking for
+      // right now, and the two controls, so a test drives the same
+      // doors a thumb does.
+      tutorial: function () {
+        var t = self.state.tutorial;
+        if (!t) return null;
+        var lesson = self.tutorLesson(), beat = self.tutorBeat();
+        return {
+          lesson: lesson ? lesson.id : null,
+          index: t.lesson,
+          beat: t.beat,
+          needs: beat ? beat.needs : null,
+          say: beat ? beat.say : null,
+          got: t.got,
+          finished: t.finished,
+          notes: t.notes
+        };
+      },
+      startTutorial: function () { self.startTutorial(); },
+      tutorSkip: function () { self.tutorSkip(); },
+      tutorExit: function () { self.tutorExit(); },
       // Skips the boss's entrance - for tests and playtests that are
       // about the fight rather than the arrival.
       skipBossRise: function () {
@@ -7146,6 +7689,10 @@
       this.updateFiring(dt);
       if (boss) {
         this.updateBoss(dt);
+      } else if (state.tutorial) {
+        // A lesson owns the board outright: no sorties, no bars marching
+        // down, no shards. Whatever it wants on screen it puts there
+        // itself and takes back off again - see startTutorial().
       } else {
         this.tryTriggerDive(dt);
         this.updateColorBars(dt);
@@ -7167,7 +7714,7 @@
       this.updateCore(dt);
       this.updateStarburstFx(dt);
       this.updateShipBreakFx(dt);
-      this.updatePowerupSpawns(dt);
+      if (!state.tutorial) this.updatePowerupSpawns(dt); // a lesson hands out its own pods and strips, on purpose
       this.updateStrips(dt);
       this.updateShipFill(dt);
       this.updatePowerupDots(dt);
@@ -7179,11 +7726,14 @@
       // clear (endBoss() spawns the next formation itself), and the fight
       // is a set piece rather than free escalation - the same rule the
       // challenge stage follows.
-      if (!state.boss) {
+      if (!state.boss && !state.tutorial) {
         this.checkWaveClear(dt);
         state.difficulty.elapsed += dt;
       }
       } // end of the ordinary combat branch - see the challenge branch above
+      // Outside both branches on purpose: the last lesson IS a challenge
+      // stage, so the director has to keep watching through one.
+      if (state.tutorial) this.updateTutorial(dt);
       this.updateDiagOverlay();
       this.updateTraceTier();
       this.updateTraceSample();
@@ -7203,6 +7753,16 @@
     // a stuck sprite, not as thrust.
     this.flameSprite.setVisible(!!this.flameOn && shipVisible);
   };
+
+  // The tutorial's two ways out. Skip moves to the next lesson; Exit
+  // drops the tutorial and leaves you flying an ordinary run.
+  (function bindTutorialButtons() {
+    var skip = document.getElementById('tutorSkipBtn');
+    var exit = document.getElementById('tutorExitBtn');
+    if (!skip || !exit) return;
+    skip.addEventListener('click', function () { if (mainScene) mainScene.tutorSkip(); });
+    exit.addEventListener('click', function () { if (mainScene) mainScene.tutorExit(); });
+  })();
 
   // Restart/Reset Best only live in the game-over overlay now - no
   // persistent buttons during active play, so the canvas gets that

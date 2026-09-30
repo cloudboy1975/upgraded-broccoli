@@ -87,10 +87,11 @@ chapter of a longer game about two-dimensional aliens.
 - [Open the shooter](https://cloudboy1975.github.io/upgraded-broccoli/head-on.html) — straight into a run
 - [Start at the house](https://cloudboy1975.github.io/upgraded-broccoli/yard.html)
   — chapter 1's opening scene: night, your house, your ship parked in
-  the yard. Walk right into the ship and it takes off; walk left through
-  the front door and you are inside, where the TV and the computer will
-  carry the story and the tutorial. The bottom-right button skips
-  straight to the game.
+  the yard. Walk right into the ship and it takes off; walk left into
+  the front door — it opens as you come up the path, with the light
+  spilling onto the grass — and you are inside, where the computer runs
+  the flight tutorial and the TV will carry the story. The bottom-right
+  button skips straight to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
   missiles that only hurt their own colour, and falling strips build the
@@ -99,6 +100,26 @@ chapter of a longer game about two-dimensional aliens.
   arrives and he rises out of the planet. Three belly cores answer only
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
+
+#### The flight tutorial
+
+[`head-on.html?tutorial`](https://cloudboy1975.github.io/upgraded-broccoli/head-on.html?tutorial)
+— or the computer in the front room, which is where it is meant to be
+found. Five lessons, and you fly the real ship through every one of
+them: nothing advances until you have actually done the thing.
+
+1. **Shield pods** — fly into one, then shoot the next and catch what it
+   becomes
+2. **Missiles** — a banked shield fired at the colour it matches, with
+   another colour on screen ignoring it
+3. **Pulse cannon** — ride a falling strip the whole way down, then break
+   the bricks in that colour
+4. **Lightning** — hold fire, and watch it spend the shields to do it
+5. **Speed jump** — dodge the rock, and see the planet come closer
+
+Moving and shooting are left out on purpose. **Skip this** moves to the
+next lesson, **Exit tutorial** drops the whole thing and leaves you
+playing. Nothing in there can cost you a life or a high score.
 
 #### Sharing the boss fight
 
@@ -153,6 +174,6 @@ additionally share a centered-card page layout, while Asteroids II,
 Head-On and Painted Lands break out to layouts suited to their controls.
 Every screen links back to the games hub.
 
-`head-on.html` and `yard.html` have a browser test suite in
+`head-on.html`, `yard.html` and `house.html` have a browser test suite in
 [`tests/`](tests/) — plain Node scripts driving a real Chromium through
 Playwright. `./tests/run.sh` serves the repo and runs all of them.
