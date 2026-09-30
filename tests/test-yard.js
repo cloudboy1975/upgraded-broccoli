@@ -21,15 +21,16 @@ const BOOT_MS = 700;
 // that took. Driven by real key events rather than by teleporting,
 // because "can you reach the ship by holding right" is the whole
 // question and a teleport cannot answer it.
-async function walkUntilBoarded(page, key, budgetMs) {
+async function walkUntilBoarded(page, keys, budgetMs) {
+  const held = [].concat(keys);
   const started = Date.now();
-  await page.keyboard.down(key);
+  for (const k of held) await page.keyboard.down(k);
   while (Date.now() - started < budgetMs) {
     const mode = await page.evaluate(() => window.__yardDebug.state().mode);
     if (mode !== 'walk') break;
     await page.waitForTimeout(60);
   }
-  await page.keyboard.up(key);
+  for (const k of held) await page.keyboard.up(k);
   return Date.now() - started;
 }
 
@@ -204,9 +205,13 @@ harness.run(async (page, check, ctx) => {
   const atStart = await readState(page);
   check('you do not start on the doorstep', atStart.atDoor === false, atStart);
 
-  const doorMs = await walkUntilBoarded(page, 'ArrowLeft', 8000);
+  // Up the path and in, which is one diagonal push of the stick. The
+  // ship is one held direction because it is the thing you came for;
+  // the house asks for a deliberate walk to its door, which is what the
+  // path on the grass is there to teach.
+  const doorMs = await walkUntilBoarded(page, ['ArrowLeft', 'ArrowUp'], 8000);
   const entering = await page.evaluate(() => window.__yardDebug.state());
-  check('holding left alone reaches the front door',
+  check('walking up the path and into the doorway goes in',
     entering.mode === 'entering', { doorMs, entering });
   check('and it is as short a walk as the one to the ship', doorMs < 3500, { doorMs });
 
@@ -233,37 +238,207 @@ harness.run(async (page, check, ctx) => {
   check('so you stay outside instead of bouncing back in',
     settled.mode === 'walk' && settled.url.indexOf('yard.html') !== -1, settled);
 
-  // The way in is the DOOR, not a marker near it. That distinction is
-  // invisible to any test that only walks left until something happens -
-  // a trigger sitting on the lawn a metre to one side passes that just
-  // as well, and looks like teleporting off a paving stone, which is
-  // what it was. So: lined up with the door works, one house-width
-  // aside does not, and it works from anywhere down the garden rather
-  // than only from the depth the player happens to spawn at.
+  // The way in is the DOORWAY - standing IN it, not merely pointing at
+  // it from the lawn. Every one of these is a spot that used to let you
+  // in and now must not: the trigger has been a stepping stone and a
+  // whole column of grass, and both looked fine until somebody walked
+  // it. The door's position is solved for rather than hardcoded, so a
+  // trigger that drifts thirty pixels off it still fails here.
   const aim = await page.evaluate(() => {
     const d = window.__yardDebug, s = d.scene;
-    const house = d.state().house;
-    const door = s.placeAt(house.worldX, house.depth);
+    const door = d.state().doorRect;
     function worldXOfScreen(x, depth) {
       return (x - s.scale.width / 2) / s.depthToHalfWidth(depth);
     }
     function at(worldX, depth) { s.worldX = worldX; s.depth = depth; return s.atDoor(); }
-    const out = { depths: [], aside: null, behind: null };
-    [0.5, 0.64, 0.8, 0.96].forEach(function (depth) {
-      out.depths.push({ depth: depth, lined: at(worldXOfScreen(door.x, depth), depth) });
-    });
-    // One house-width to the side, at the depth you actually walk at.
-    const houseW = 200 * door.scale * 1.15;
-    out.aside = at(worldXOfScreen(door.x + houseW, 0.64), 0.64);
-    // And up past it, which is round the back.
-    out.behind = at(worldXOfScreen(door.x, 0.2), 0.2);
+    // The threshold's own depth, solved from the door's screen position.
+    const sill = (door.bottom - s.horizonY()) / (s.scale.height - s.horizonY());
+    const out = {
+      sill: +sill.toFixed(2),
+      inDoorway: at(worldXOfScreen(door.cx, sill), sill),
+      onPath: at(worldXOfScreen(door.cx, 0.72), 0.72),
+      atSpawnDepth: at(worldXOfScreen(door.cx, 0.64), 0.64),
+      frontOfYard: at(worldXOfScreen(door.cx, 0.96), 0.96),
+      aside: at(worldXOfScreen(door.cx + 200 * door.scale * 0.6, sill), sill),
+      behind: at(worldXOfScreen(door.cx, 0.2), 0.2)
+    };
     s.worldX = -0.16; s.depth = 0.64;
     return out;
   });
-  check('lining up with the door opens it from anywhere down the garden',
-    aim.depths.length === 4 && aim.depths.every(d => d.lined === true), aim);
-  check('standing a house-width to the side does not', aim.aside === false, aim);
-  check('and nor does being round the back of it', aim.behind === false, aim);
+  check('standing in the doorway is the way in', aim.inDoorway === true, aim);
+  check('pointing at it from the path is not', aim.onPath === false, aim);
+  check('nor from where you spawned', aim.atSpawnDepth === false, aim);
+  check('nor from the front of the yard', aim.frontOfYard === false, aim);
+  check('standing beside the door does not let you in', aim.aside === false, aim);
+  check('and nor does being round the back of the house', aim.behind === false, aim);
+
+  // --- the door opens as you come up the path -----------------------------
+  // The light spilling out is the only thing on screen telling a
+  // first-timer the house can be entered at all, and it is pure
+  // decoration - nothing breaks if it stops working, which is exactly
+  // why it needs a test.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const swing = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    function worldXOfScreen(x, depth) {
+      return (x - s.scale.width / 2) / s.depthToHalfWidth(depth);
+    }
+    const door = d.state().doorRect;
+    function settle(worldX, depth, ms) {
+      d.moveTo(worldX, depth);
+      return new Promise(res => setTimeout(() => res(d.state().doorOpen), ms));
+    }
+    return (async () => {
+      const shutAtSpawn = d.state().doorOpen;
+      const onPath = await settle(worldXOfScreen(door.cx, 0.62), 0.62, 700);
+      const walkedOff = await settle(0.5, 0.8, 900);
+      const backAgain = await settle(worldXOfScreen(door.cx, 0.62), 0.62, 700);
+      // Level with the door but well off to one side. The zone is tall
+      // so it reaches down the path, and nothing else here would notice
+      // if it got equally wide and started opening the door for anyone
+      // crossing the front of the house. Kept back at the house's own
+      // depth, clear of the ship - out on the path this spot boards.
+      const aside = await settle(worldXOfScreen(door.cx + 150 * door.scale, 0.45), 0.45, 900);
+      return { shutAtSpawn, onPath: +onPath.toFixed(2),
+               walkedOff: +walkedOff.toFixed(2), backAgain: +backAgain.toFixed(2),
+               aside: +aside.toFixed(2) };
+    })();
+  });
+  check('the door is shut when the scene opens', swing.shutAtSpawn === 0, swing);
+  check('and swings open as you come up the path', swing.onPath > 0.9, swing);
+  check('shutting again when you wander off', swing.walkedOff < 0.1, swing);
+  check('and opening again when you come back', swing.backAgain > 0.9, swing);
+  check('but not for someone crossing the front of the house', swing.aside < 0.1, swing);
+
+  // ...and the light has to reach the screen. Everything above reads the
+  // swing's state, and a door that "opens" while nothing gets drawn
+  // passes all of it - so this one reads pixels back off the canvas. The
+  // figure is parked away in the corner for both samples, with the
+  // proximity test stubbed out, so the only difference between the two
+  // reads is the light: the doorway itself, and the grass just outside
+  // it where the spill lands.
+  const litPixels = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const door = d.state().doorRect;
+    function brightness(x, y, w, h) {
+      return new Promise(res => {
+        s.game.renderer.snapshotArea(Math.round(x), Math.round(y),
+          Math.round(w), Math.round(h), img => {
+            const c = document.createElement('canvas');
+            c.width = img.width; c.height = img.height;
+            c.getContext('2d').drawImage(img, 0, 0);
+            const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            let sum = 0;
+            for (let i = 0; i < px.length; i += 4) sum += px[i] + px[i + 1] + px[i + 2];
+            res(+(sum / (px.length / 4) / 3).toFixed(2));
+          });
+      });
+    }
+    const doorway = () => brightness(door.left, door.top, door.width, door.bottom - door.top);
+    const grass = () => brightness(door.cx - 55, door.bottom + 4, 110, 46);
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    return (async () => {
+      d.moveTo(0.55, 0.9);
+      await wait(900);
+      const out = { shutDoorway: await doorway(), shutGrass: await grass() };
+      s.nearDoor = function () { return true; };
+      await wait(800);
+      out.open = d.state().doorOpen;
+      out.litDoorway = await doorway();
+      out.litGrass = await grass();
+      delete s.nearDoor;
+      return out;
+    })();
+  });
+  check('the open doorway is lit on screen, not just in the state',
+    litPixels.open === 1 && litPixels.litDoorway > litPixels.shutDoorway * 1.8, litPixels);
+  check('and the light spills out onto the grass in front of it',
+    litPixels.litGrass > litPixels.shutGrass * 1.12, litPixels);
+
+  // Stepping through arrives with the leaf a hair short of wide, so the
+  // swing has to keep running under the fade - freezing it there reads
+  // as the door catching on something at the last moment. Started
+  // deliberately half open, because the real walk-in gets to 0.96 and a
+  // check that starts there proves nothing.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const throughFade = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const door = d.state().doorRect;
+    const sill = (door.bottom - s.horizonY()) / (s.scale.height - s.horizonY());
+    // Deliberately off to one side of the opening, the way the real
+    // walk-in arrives: the doorstep is wider than the door.
+    d.moveTo((door.cx + door.width * 0.8 - s.scale.width / 2) / s.depthToHalfWidth(sill), sill);
+    s.doorOpen = 0.6;
+    return new Promise(res => {
+      const started = Date.now();
+      let atEntry = null, peak = 0, offAtEntry = null, closest = Infinity, overLight = false;
+      const off = () => Math.abs(s.you.x - door.cx);
+      // Watched against the SCENE's clock rather than a wall-time
+      // delay. The fade runs on that clock - at wall speed on a real
+      // machine and at half of it on a headless one - and the page
+      // navigates the moment the fade ends, so a probe still reading
+      // then dies as a broken test file instead of a failing check.
+      // Letting go three-quarters of the way through is a whole frame
+      // clear of that, on either machine.
+      const tick = setInterval(() => {
+        const st = d.state();
+        const done = mode => {
+          clearInterval(tick);
+          res({ atEntry: atEntry === null ? null : +atEntry.toFixed(2),
+                peak: +peak.toFixed(2), mode: mode,
+                offAtEntry: offAtEntry === null ? null : Math.round(offAtEntry),
+                closest: closest === Infinity ? null : Math.round(closest),
+                overLight: overLight });
+        };
+        if (!st) { done('gone'); return; }
+        if (st.mode === 'entering') {
+          if (atEntry === null) { atEntry = st.doorOpen; offAtEntry = off(); }
+          peak = Math.max(peak, st.doorOpen);
+          closest = Math.min(closest, off());
+          overLight = s.you.depth > s.doorGfx.depth;
+          if (peak > 0.95 && closest < 3) done(st.mode);
+          else if (st.modeAge > st.enterFade * 0.75) done(st.mode);
+        } else if (atEntry !== null || Date.now() - started > 2500) {
+          done(st.mode);
+        }
+      }, 16);
+    });
+  });
+  check('the door keeps swinging open behind the entering fade',
+    throughFade.atEntry < 0.7 && throughFade.peak > 0.95, throughFade);
+  // Triggering the doorstep from one side must not end the scene with
+  // the figure disappearing into the wall next to the door.
+  check('and you step across into the opening rather than into the wall',
+    throughFade.offAtEntry > 10 && throughFade.closest < 3, throughFade);
+  // ...and in front of the light, not behind it. The doorway is painted
+  // over the house and the figure standing in it shares the house's
+  // foot, so the two sort on a tie - which the light won, swallowing
+  // him whole on the last frame of the scene.
+  check('standing in the lit doorway rather than behind the light',
+    throughFade.overLight === true, throughFade);
+
+  // That last one walked into the house, so back to the yard.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+
+  // Setting off toward the ship must not open it - the notice zone
+  // reaches a long way down the path, and the ship is down the path too.
+  // Out on the right-hand side of the yard, and deliberately NOT at the
+  // ship: the first version of this check stood close enough to board,
+  // which froze the door open mid-takeoff and then left the scene in
+  // liftoff for every check after it.
+  const towardShip = await page.evaluate(() => {
+    const d = window.__yardDebug;
+    d.moveTo(0.1, 0.85);
+    return new Promise(res => setTimeout(() => {
+      const s = d.state();
+      res({ open: s.doorOpen, mode: s.mode, atShip: s.atShip });
+    }, 800));
+  });
+  check('heading for the ship leaves the door alone',
+    towardShip.open < 0.1 && towardShip.mode === 'walk', towardShip);
 
   // --- wandering is safe ----------------------------------------------------
   // The boarding radius is generous on purpose. Generous must not mean

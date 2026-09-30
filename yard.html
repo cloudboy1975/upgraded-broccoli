@@ -350,13 +350,48 @@
   // bridges that without also swallowing the spot you are standing on.
   //
   // What "at the front door" actually means is simpler than a distance:
-  // LINED UP with the door, and somewhere on the grass in front of it.
-  // So that is what this tests - a column, not a blob. The x axis is the
-  // whole decision; the depth axis only has to be forgiving about how
-  // far down the garden you happened to be walking.
-  var DOOR_HALF_WIDTH = 14; // px either side of the door, at YOUR scale
-  var DOOR_BEHIND = 20;     // how far past its base still counts as in front
-  var DOOR_APPROACH = 300;  // ...and how far down the garden
+  // LINED UP with the door, and standing in its threshold - a band, not
+  // a blob. You have to walk INTO the doorway, not merely stand on the
+  // path pointing at it from down the garden. The light spilling out is
+  // what makes that fair: it says "this one, keep coming" long before
+  // you arrive, which is the thing the scene was missing when the only
+  // workable trigger was a whole column of grass.
+  //
+  // Wider than the door looks, because you arrive DIAGONALLY. Pushing a
+  // stick up-and-left crosses the door's column and the door's depth at
+  // different moments, and a zone only as wide as the doorway threads
+  // neatly between them - measured, it missed by four pixels and walked
+  // straight past the house.
+  var DOOR_HALF_WIDTH = 34; // px either side of the door, at YOUR scale
+  var DOOR_BEHIND = 24;     // how far past the threshold still counts
+  var DOOR_APPROACH = 40;   // ...and how far short of it
+
+  // The door opens as you come up the path and closes behind you. The
+  // zone that triggers it is far looser than the one that lets you in:
+  // its whole job is to say "this one, keep coming" while you are still
+  // deciding, which it cannot do if it waits until you have arrived.
+  // Tall and narrow: it has to reach all the way down the path so the
+  // door reacts while you are still walking past the front of the
+  // house, without reaching sideways far enough to open every time you
+  // set off toward the ship.
+  var DOOR_NOTICE_X = 50;
+  var DOOR_NOTICE_Y = 200;
+  var DOOR_SWING_RATE = 3.6;   // how fast it opens and closes, per second
+  var DOOR_SPILL_LENGTH = 118; // px of light thrown down the path, at the house's scale
+  var COLOR_DOOR_LIGHT = 0xffca6e;
+
+  // The house's own texture, and where the door sits on it - as
+  // fractions, so the bake and the scene cannot disagree about where the
+  // doorway is. They did disagree while this was two sets of numbers,
+  // and a door that opens somewhere other than where the door is drawn
+  // is a hard thing to un-see.
+  var HOUSE_TEX_W = 200;
+  var HOUSE_TEX_H = 168;
+  var HOUSE_SIZE = 1.15;          // extra scale the sprite is drawn at
+  var HOUSE_DOOR_X = 0.44;        // left edge, as a fraction of the width
+  var HOUSE_DOOR_W = 0.13;
+  var HOUSE_DOOR_TOP = 0.66;      // as a fraction of the height
+  var HOUSE_DOOR_BOTTOM = 1 - 6 / 168; // the walls' foot
 
   // The takeoff, in seconds. Kept short enough to sit through on a
   // hundredth replay.
@@ -481,6 +516,7 @@
     this.bobPhase = 0;
     this.idlePhase = Math.random() * 10;
     this.prompt = null;
+    this.doorOpen = 0; // 0 shut, 1 wide - see updateDoorSwing()
 
     this.mountainLayers = {
       far: { amp1: 0.05, amp2: 0.03, freq1: 1.3, freq2: 2.7, phase1: 1.1, phase2: 4.2 },
@@ -539,9 +575,9 @@
     // blue screen, which is what makes the yard feel like somewhere you
     // live rather than a field with a shape in it.
     (function () {
-      var w = 200, h = 168;
+      var w = HOUSE_TEX_W, h = HOUSE_TEX_H;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      var bodyTop = h * 0.42, bodyBottom = h - 6;
+      var bodyTop = h * 0.42, bodyBottom = h * HOUSE_DOOR_BOTTOM;
       g.fillStyle(0x000000, 0.3);
       g.fillEllipse(w / 2, h - 4, w * 0.8, 12);
       g.fillStyle(0x2a2438, 1);                           // walls
@@ -571,7 +607,8 @@
       });
       // Door, with a porch light over it - this is where the story and
       // the tutorial go once there is an inside to walk into.
-      var dx = w * 0.44, dy = h * 0.66, dw = w * 0.13, dh = bodyBottom - dy;
+      var dx = w * HOUSE_DOOR_X, dy = h * HOUSE_DOOR_TOP;
+      var dw = w * HOUSE_DOOR_W, dh = bodyBottom - dy;
       g.fillStyle(0xffca6e, 0.13);
       g.fillCircle(dx + dw / 2, dy - h * 0.03, w * 0.11);
       g.fillStyle(0x3d3252, 1);
@@ -689,6 +726,11 @@
     this.groundGfx = this.add.graphics().setDepth(-10);
     this.yardGfx = this.add.graphics().setDepth(-9);
     this.firefliesGfx = this.add.graphics().setDepth(-5);
+    // The light on the grass goes UNDER the house (and so under anything
+    // standing in front of it, including you); the opening and the leaf
+    // go OVER it, since they are part of the building's face.
+    this.doorSpillGfx = this.add.graphics();
+    this.doorGfx = this.add.graphics();
     this.fadeGfx = this.add.graphics().setDepth(100);
   };
 
@@ -724,7 +766,9 @@
 
   MainScene.prototype.layoutProps = function () {
     var h = this.placeAt(HOUSE.worldX, HOUSE.depth);
-    this.houseSprite.setPosition(h.x, h.y).setScale(h.scale * 1.15).setDepth(h.y);
+    this.houseSprite.setPosition(h.x, h.y).setScale(h.scale * HOUSE_SIZE).setDepth(h.y);
+    this.doorSpillGfx.setDepth(h.y - 1);
+    this.doorGfx.setDepth(h.y + 0.5);
 
     var s = this.placeAt(SHIP.worldX, SHIP.depth);
     this.shipSprite.setPosition(s.x, s.y).setScale(s.scale).setDepth(s.y);
@@ -875,12 +919,41 @@
   MainScene.prototype.atShip = function () {
     return this.distanceToProp(SHIP) < BOARD_RADIUS * this.depthToScale(SHIP.depth);
   };
+  // Where the front door actually is on screen, worked back through the
+  // house sprite's own transform rather than guessed at. Everything that
+  // cares about the door - the trigger, the light, the swinging leaf -
+  // reads this, so they cannot drift apart.
+  MainScene.prototype.doorRect = function () {
+    var h = this.placeAt(HOUSE.worldX, HOUSE.depth);
+    var S = h.scale * HOUSE_SIZE;
+    var left = h.x + (HOUSE_TEX_W * HOUSE_DOOR_X - HOUSE_TEX_W / 2) * S;
+    var width = HOUSE_TEX_W * HOUSE_DOOR_W * S;
+    return {
+      left: left, right: left + width, width: width,
+      cx: left + width / 2,
+      top: h.y + (HOUSE_TEX_H * HOUSE_DOOR_TOP - HOUSE_TEX_H) * S,
+      bottom: h.y + (HOUSE_TEX_H * HOUSE_DOOR_BOTTOM - HOUSE_TEX_H) * S,
+      scale: S
+    };
+  };
+
   MainScene.prototype.atDoor = function () {
     var me = this.placeAt(this.worldX, this.depth);
-    var door = this.placeAt(HOUSE.worldX, HOUSE.depth);
-    if (me.y < door.y - DOOR_BEHIND) return false;  // round the back
-    if (me.y > door.y + DOOR_APPROACH) return false; // off down the garden
-    return Math.abs(me.x - door.x) < DOOR_HALF_WIDTH * this.depthToScale(this.depth);
+    var door = this.doorRect();
+    if (me.y < door.bottom - DOOR_BEHIND) return false;   // past the threshold
+    if (me.y > door.bottom + DOOR_APPROACH) return false; // still out on the path
+    return Math.abs(me.x - door.cx) < DOOR_HALF_WIDTH * this.depthToScale(this.depth);
+  };
+
+  // Loose enough to fire while you are still walking up. Scaled by the
+  // house's own perspective so it means the same thing at any framing.
+  MainScene.prototype.nearDoor = function () {
+    var me = this.placeAt(this.worldX, this.depth);
+    var door = this.doorRect();
+    var s = this.depthToScale(HOUSE.depth);
+    var dx = (me.x - door.cx) / (DOOR_NOTICE_X * s);
+    var dy = (me.y - door.bottom) / (DOOR_NOTICE_Y * s);
+    return dx * dx + dy * dy <= 1;
   };
 
   // ---- The takeoff ----------------------------------------------------
@@ -904,6 +977,7 @@
     if (this.mode !== 'walk') return;
     this.mode = 'entering';
     this.modeAge = 0;
+    this.enterFrom = this.placeAt(this.worldX, this.depth);
     this.setPrompt(null);
     document.getElementById('hint').classList.add('hidden');
     document.getElementById('controlBar').classList.add('gone');
@@ -912,6 +986,27 @@
 
   MainScene.prototype.updateSequence = function (dt) {
     if (this.mode === 'entering') {
+      this.updateDoorSwing(dt); // finishes the swing behind the fade
+
+      // The doorstep is wider than the door has to be - a 19px target
+      // on a phone would be a fiddle - so you usually trigger it a
+      // little to one side of the opening. Step across into the middle
+      // of it while the screen fades, or the last thing the scene shows
+      // is a man walking into the wall beside his own front door.
+      var sill = this.doorRect();
+      var st = clamp(this.modeAge / (ENTER_FADE * 0.6), 0, 1);
+      var stepped = st * st * (3 - 2 * st);
+      this.you.setPosition(
+        lerp(this.enterFrom.x, sill.cx, stepped),
+        lerp(this.enterFrom.y, sill.bottom - 1, stepped)
+      );
+      this.you.setScale(this.enterFrom.scale * (1 - 0.12 * stepped));
+
+      // The lit doorway is painted over the house, and a figure standing
+      // in that doorway is at the house's own foot - a tie the light
+      // wins, so he blinks out on the threshold instead of standing in
+      // it. Lift him over the light for the length of the fade.
+      this.you.setDepth(this.doorGfx.depth + 1);
       var et = clamp(this.modeAge / ENTER_FADE, 0, 1);
       this.fadeGfx.clear();
       this.fadeGfx.fillStyle(0x000000, et);
@@ -1018,7 +1113,73 @@
     this.mtnMidGfx.x = -this.worldX * 22;
     this.shipGlow.setAlpha(0.55 + 0.25 * (0.5 + 0.5 * Math.sin(time / 520)));
 
+    this.updateDoorSwing(dt);
     this.updateFireflies(dt);
+  };
+
+  // Eases toward open while you are near and shut once you leave. It
+  // keeps running through the entering fade, where the figure is still
+  // standing in its own doorway and so still counts as near: you arrive
+  // with the leaf a hair short of wide, and it finishes the swing while
+  // the screen goes black rather than freezing halfway.
+  MainScene.prototype.updateDoorSwing = function (dt) {
+    var want = this.nearDoor() ? 1 : 0;
+    var step = DOOR_SWING_RATE * dt;
+    if (this.doorOpen < want) this.doorOpen = Math.min(want, this.doorOpen + step);
+    else if (this.doorOpen > want) this.doorOpen = Math.max(want, this.doorOpen - step);
+    this.renderDoor();
+  };
+
+  MainScene.prototype.renderDoor = function () {
+    var open = this.doorOpen;
+    this.doorGfx.clear();
+    this.doorSpillGfx.clear();
+    if (open <= 0.001) return;
+
+    var d = this.doorRect();
+    var h = d.bottom - d.top;
+
+    // The lit hallway behind the door. Brightest at the foot, where the
+    // floor is catching the light, which is what stops a warm rectangle
+    // reading as a poster.
+    this.doorGfx.fillGradientStyle(COLOR_DOOR_LIGHT, COLOR_DOOR_LIGHT,
+                                   0xfff0cf, 0xfff0cf, open * 0.55, open * 0.55, open, open);
+    this.doorGfx.fillRect(d.left, d.top, d.width, h);
+
+    // The leaf, swinging inward: its face narrows toward the hinge as it
+    // turns away, and the edge nearest us catches the inside light.
+    var leafW = d.width * (1 - open * 0.88);
+    if (leafW > 0.6) {
+      var skew = h * 0.05 * open;
+      this.doorGfx.fillStyle(0x2d2440, 1);
+      this.doorGfx.beginPath();
+      this.doorGfx.moveTo(d.left, d.top);
+      this.doorGfx.lineTo(d.left + leafW, d.top + skew);
+      this.doorGfx.lineTo(d.left + leafW, d.bottom - skew);
+      this.doorGfx.lineTo(d.left, d.bottom);
+      this.doorGfx.closePath();
+      this.doorGfx.fillPath();
+      this.doorGfx.fillStyle(COLOR_DOOR_LIGHT, 0.75 * open);
+      this.doorGfx.fillRect(d.left + leafW - 1.2, d.top + skew, 1.6, h - skew * 2);
+    }
+
+    // And the light thrown out down the path. Three nested quads rather
+    // than one, so it falls off with distance instead of ending in a
+    // hard line across the grass.
+    var reach = DOOR_SPILL_LENGTH * d.scale * open;
+    for (var i = 3; i >= 1; i--) {
+      var f = i / 3;
+      var halfTop = d.width * 0.5 * (0.7 + 0.3 * f);
+      var halfBot = d.width * (0.75 + 0.9 * f);
+      this.doorSpillGfx.fillStyle(COLOR_DOOR_LIGHT, 0.09 * open * (1.1 - f * 0.5));
+      this.doorSpillGfx.beginPath();
+      this.doorSpillGfx.moveTo(d.cx - halfTop, d.bottom);
+      this.doorSpillGfx.lineTo(d.cx + halfTop, d.bottom);
+      this.doorSpillGfx.lineTo(d.cx + halfBot, d.bottom + reach * f);
+      this.doorSpillGfx.lineTo(d.cx - halfBot, d.bottom + reach * f);
+      this.doorSpillGfx.closePath();
+      this.doorSpillGfx.fillPath();
+    }
   };
 
   MainScene.prototype.setPrompt = function (text) {
@@ -1058,9 +1219,15 @@
       state: function () {
         return {
           mode: self.mode, worldX: self.worldX, depth: self.depth,
+          // The scene's own clock, and the deadline the entering fade
+          // runs to. A test watching the fade has to measure in this
+          // rather than in wall time: the page navigates when the two
+          // meet, and a probe still reading when that happens dies.
+          modeAge: self.modeAge, enterFade: ENTER_FADE,
           shipDistance: self.distanceToProp(SHIP),
           boardRadius: BOARD_RADIUS * self.depthToScale(SHIP.depth),
-          atShip: self.atShip(), atDoor: self.atDoor(),
+          atShip: self.atShip(), atDoor: self.atDoor(), nearDoor: self.nearDoor(),
+          doorOpen: self.doorOpen, doorRect: self.doorRect(),
           house: HOUSE,
           prompt: self.prompt,
           shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
