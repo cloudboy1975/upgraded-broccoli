@@ -160,6 +160,21 @@ harness.run(async (page, check, ctx) => {
   check('and the door is the tallest thing against the wall',
     scale.door > scale.tv && scale.door > scale.desk, scale);
 
+  // --- the door is IN the wall ---------------------------------------------
+  // It was not: it stood a little way out on the floorboards, which on a
+  // flat trapezoid reads as a door slab propped up in the middle of the
+  // room. Furniture stands out in front of the wall on purpose - that is
+  // what makes it furniture - but a door is part of the wall, and the
+  // only thing on screen saying so is where its foot lands. Asserted
+  // against the junction itself rather than a pixel value, so retuning
+  // the framing moves both together.
+  const junction = await page.evaluate(() => {
+    const b = window.__houseDebug.bounds();
+    return { floorY: +b.floorY.toFixed(1), doorBottom: +b.door.bottom.toFixed(1) };
+  });
+  check('the front door stands in the wall, not out on the floor',
+    Math.abs(junction.doorBottom - junction.floorY) <= 2, junction);
+
   // Nothing may stand under the thumb controls - the same layout trap
   // the yard had, and the same standing check for it.
   const layout = await page.evaluate(() => {
