@@ -614,8 +614,23 @@
   .btn.secondary { background: var(--bg-2); color: var(--text); }
   .btn:hover { filter: brightness(1.1); }
 
+  /* Fixed height, deliberately. The board above it is the flexible row
+     in this column, so it swallows whatever the rows below it give
+     back - and a two-line footer becoming a one-line one handed it 12px,
+     which the letterboxed canvas re-centred into 6px of extra gap
+     between the ship and the thumb it is flown with. That is a control
+     feel changed by an edit to a line of credits, in a commit about
+     something else entirely. Two lines' worth, so the text can grow
+     back without moving the game again - and clipped rather than allowed
+     to grow, because a footer that outgrows its box would move the game
+     by exactly the same mechanism in the other direction. */
   footer {
     margin-top: 4px;
+    height: 24px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: var(--muted);
     font-size: 0.72rem;
     text-align: center;

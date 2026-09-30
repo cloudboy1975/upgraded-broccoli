@@ -71,6 +71,46 @@ harness.run(async (page, check, ctx) => {
   check('sitting where they always did, below the board',
     box.slide.top > box.missile.bottom && box.mid.top > box.missile.bottom, box);
 
+  // --- and so does the ship ------------------------------------------------
+  // How far the ship sits above the thumb is a control feel, tuned by
+  // playing. It is also, structurally, whatever is left over: the board
+  // is the flexible row in this column, so it swallows any height the
+  // rows below it give back, and the canvas - letterboxed inside it -
+  // re-centres, moving the play area by half of it.
+  //
+  // That is not hypothetical. Shortening the footer from two lines to
+  // one, in a commit about listing the game on the hub, handed the board
+  // 12px and moved the ship 6px further from the thumb. Nothing failed,
+  // nothing looked wrong, and it was noticed by feel three weeks later.
+  const flightDeck = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene;
+    const canvas = document.querySelector('canvas').getBoundingClientRect();
+    const bar = document.getElementById('controlBar').getBoundingClientRect();
+    const shipPageY = canvas.y + scene.shipSprite.y * (canvas.height / scene.scale.height);
+    return { gap: +(bar.y - shipPageY).toFixed(1), footer: +document.querySelector('footer').getBoundingClientRect().height.toFixed(1) };
+  });
+  check('the ship sits its usual reach above the controls',
+    Math.abs(flightDeck.gap - 178.3) < 2, flightDeck);
+
+  // The mechanism, not just the number: whatever the footer says, the
+  // game may not move. Checked by rewriting it at runtime, which is the
+  // same thing an edit to that line does.
+  const afterFooterEdit = await page.evaluate(() => {
+    const scene = window.__headOnDebug.scene;
+    const foot = document.querySelector('footer');
+    const was = foot.innerHTML;
+    foot.textContent = 'Prototype - not linked from the games hub yet, and carrying a build stamp, ' +
+                       'and a second sentence besides, which is exactly the kind of line this used to be';
+    foot.getBoundingClientRect(); // force layout
+    const canvas = document.querySelector('canvas').getBoundingClientRect();
+    const bar = document.getElementById('controlBar').getBoundingClientRect();
+    const gap = bar.y - (canvas.y + scene.shipSprite.y * (canvas.height / scene.scale.height));
+    foot.innerHTML = was;
+    return { gap: +gap.toFixed(1), footer: +foot.getBoundingClientRect().height.toFixed(1) };
+  });
+  check('and nothing written under the board can move it',
+    Math.abs(afterFooterEdit.gap - flightDeck.gap) < 0.5, { flightDeck, afterFooterEdit });
+
   // --- the missile button ---------------------------------------------------
   const face = await page.evaluate(ARM + `state.orbiters.length`);
   check('a fresh arm starts with nothing in flight', face === 0, face);
