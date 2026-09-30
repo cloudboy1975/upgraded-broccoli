@@ -176,6 +176,18 @@ harness.run(async (page, check, ctx) => {
   // Deliberately through shipHit() itself rather than by arranging a
   // collision: this is about what a HIT does, and every hazard in the
   // game funnels through that one door.
+  // The board is cleared and the ship parked away from where the pod
+  // was first: a beat mid-confirmation ignores notes by design (see
+  // tutorNote()), so a pod landing on the ship a frame before the
+  // scripted hit below would swallow it and fail this for the wrong
+  // reason. Settled, then hit.
+  await page.evaluate(() => {
+    const s = window.__headOnDebugState;
+    s.orbs.forEach(o => o.hostSprite.destroy());
+    s.orbs = [];
+    s.ship.x = 40;
+  });
+  await until(page, s => s && s.got === 0, 6000);
   await page.evaluate(() => { window.__headOnDebug.giveOrbs('red', 1); });
   const beforeHit = await board(page);
   await page.evaluate(() => { window.__headOnDebug.scene.shipHit('test'); });

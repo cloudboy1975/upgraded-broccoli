@@ -46,6 +46,56 @@ async function rects(page) {
   });
 }
 
+// Reads the page's OWN pixels around the board panel - Playwright takes
+// the shot, the page decodes it back through a canvas. Everything else
+// in this file can be answered from geometry; the panel's corners
+// cannot, because the question is not "is there a border-radius" but
+// "can you see it", and that depends on what is painted over the top of
+// it.
+async function panelPixels(page) {
+  const box = await page.evaluate(() => {
+    const b = document.getElementById('canvasWrap').getBoundingClientRect();
+    return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
+  });
+  const pad = 6, band = 60;
+  const top = (await page.screenshot({
+    clip: { x: box.x - pad, y: box.y - pad, width: box.w + pad * 2, height: band }
+  })).toString('base64');
+  const bottom = (await page.screenshot({
+    clip: { x: box.x - pad, y: box.y + box.h - (band - pad), width: box.w + pad * 2, height: band }
+  })).toString('base64');
+  return page.evaluate(async (args) => {
+    const read = src => new Promise(res => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        res({ data: g.getImageData(0, 0, c.width, c.height).data, w: c.width });
+      };
+      img.src = src;
+    });
+    const at = (im, x, y) => {
+      const i = (y * im.w + x) * 4;
+      return [im.data[i], im.data[i + 1], im.data[i + 2]];
+    };
+    const t = await read('data:image/png;base64,' + args.top);
+    const b = await read('data:image/png;base64,' + args.bottom);
+    const pad = args.pad, w = args.w, band = args.band;
+    return {
+      pageBg: at(t, 1, 1),
+      topLeftOutside: at(t, pad + 2, pad + 2),
+      topRightOutside: at(t, pad + w - 3, pad + 2),
+      topMiddle: at(t, pad + Math.round(w / 2), pad + 3),
+      botMiddle: at(b, pad + Math.round(w / 2), band - pad - 4)
+    };
+  }, { top, bottom, pad, band, w: box.w });
+}
+
+const colorGap = (a, b) => Math.round(Math.sqrt(
+  Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2) + Math.pow(a[2] - b[2], 2)));
+
 // Orbiters in flight is the cleanest read of "the missile button fired":
 // one press launches one per loaded gun, and nothing else in a settled
 // scene creates them.
@@ -110,6 +160,27 @@ harness.run(async (page, check, ctx) => {
   });
   check('and nothing written under the board can move it',
     Math.abs(afterFooterEdit.gap - flightDeck.gap) < 0.5, { flightDeck, afterFooterEdit });
+
+  // --- the board is one panel ----------------------------------------------
+  // The top corners looked square for months. They were not - the radius
+  // was always there and the clip always worked - but the HUD strip was
+  // painted over them in a darker navy almost exactly the page
+  // background's own value, so the curve had nothing to show against and
+  // the hard line under the strip read as the top edge instead.
+  //
+  // Which makes this a question about PIXELS rather than about CSS: a
+  // check for a border-radius would have passed the whole time. So the
+  // top edge is read off the screen and compared with the bottom one,
+  // which never had anything painted over it.
+  const skin = await panelPixels(page);
+  check('the top of the board is the same colour as the bottom of it',
+    colorGap(skin.topMiddle, skin.botMiddle) < 6, skin);
+  // ...and the corner is genuinely cut out of it: what is there belongs
+  // to the page behind, not to the panel.
+  check('and its top corners are cut, not filled in',
+    colorGap(skin.topLeftOutside, skin.pageBg) < colorGap(skin.topLeftOutside, skin.topMiddle) &&
+    colorGap(skin.topRightOutside, skin.pageBg) < colorGap(skin.topRightOutside, skin.topMiddle),
+    skin);
 
   // --- the missile button ---------------------------------------------------
   const face = await page.evaluate(ARM + `state.orbiters.length`);

@@ -655,10 +655,17 @@ harness.run(async (page, check, ctx) => {
       }
       const wasLast = state.challenge.beat === 'depart' &&
                       state.challenge.age >= 0.88;
+      // Counted ENTERING the frame, not leaving it. The bullet the loop
+      // keeps alive climbs off the top of the screen every ~0.55s and is
+      // replaced on the next iteration, so counting afterwards reads 0
+      // whenever the stage happens to end on the frame that retired one -
+      // which made this flake while proving nothing either way. What the
+      // check is about is a bullet being ALIVE while that frame runs.
+      const bulletsEntering = state.bullets.length;
       try { window.__headOnDebug.stepChallenge(0.016); }
       catch (e) { threw = String(e); break; }
       steps++;
-      if (wasLast && !state.challenge) bulletsAtEnd = state.bullets.length;
+      if (wasLast && !state.challenge) bulletsAtEnd = bulletsEntering;
     }
     ({ threw, steps, bulletsAtEnd, ended: state.challenge === null,
        formation: state.formation.filter(f => f.alive).length });

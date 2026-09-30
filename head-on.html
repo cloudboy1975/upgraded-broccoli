@@ -71,7 +71,24 @@
     justify-content: space-between;
     gap: 10px;
     padding: 8px 12px;
-    background: rgba(15, 23, 42, 0.55);
+    /* The scrim is the BOARD's own colour, fading out downward, rather
+       than a darker navy laid over the top of it.
+       Two reasons, and the second is the one that shows. The board is
+       #1e293b and so is the game's background, which is what makes the
+       letterboxing invisible - so a scrim in that colour reads as more
+       board, and the HUD text keeps exactly the contrast it has against
+       the playfield underneath on the short screens where the canvas
+       does slide up under it.
+       And the board is rounded 20px at the top, which is inside this
+       strip. A darker scrim filled those 31px with something almost
+       exactly the page background's own value: the curve vanished, the
+       hard line under the strip became the apparent top edge, and the
+       board read as square-cornered at the top and round at the
+       bottom. */
+    background: linear-gradient(to bottom,
+                                rgba(30, 41, 59, 0.96) 0%,
+                                rgba(30, 41, 59, 0.88) 60%,
+                                rgba(30, 41, 59, 0) 100%);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     -webkit-user-select: none;
