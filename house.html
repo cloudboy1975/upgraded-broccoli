@@ -94,12 +94,18 @@
      actually does something - then it is the button. */
   /* The broadcast's captions, under the picture rather than over it,
      and big enough to read from the sofa. Only up while the TV is on. */
+  /* Pinned under the picture rather than to the bottom of the screen.
+     On a tall screen - an iPad especially - a caption at the foot of
+     the page is half a metre of eye travel away from the mouth that is
+     saying it, and you end up reading one or watching the other. Its
+     box is positioned from the TV's own rect every time that is
+     measured, so the two stay together at any size. */
   .tv {
     display: none;
     position: fixed;
     left: 12px;
-    right: 12px;
-    bottom: calc(env(safe-area-inset-bottom) + 14px);
+    width: calc(100% - 24px);
+    box-sizing: border-box;
     z-index: 20;
     padding: 10px 12px 12px;
     border-radius: 12px;
@@ -113,7 +119,10 @@
   .tv-caption {
     min-height: 2.8em;
     color: #f8fafc;
-    font-size: 1rem;
+    /* Grows with the set. On a tablet the picture is three times the
+       size it is on a phone, and a fixed 16px line under it reads as a
+       footnote to it rather than as what is being said. */
+    font-size: clamp(1rem, 2.1vw, 1.5rem);
     line-height: 1.4;
   }
   .tv-btn {
@@ -578,7 +587,11 @@
     this.redrawAll();
 
     var self = this;
-    this.scale.on('resize', function () { self.redrawAll(); self.layoutProps(); });
+    this.scale.on('resize', function () {
+      self.redrawAll();
+      self.layoutProps();
+      self.layoutTvCaption(); // the caption rides with the set - see layoutTvCaption()
+    });
 
     this.exposeDebugHooks();
   };
@@ -1114,6 +1127,17 @@
 
   // ---- Watching it ---------------------------------------------------
 
+  // Puts the caption band directly under the set, and the same width
+  // as it, so it reads as part of the broadcast.
+  MainScene.prototype.layoutTvCaption = function () {
+    var el = document.getElementById('tvBar');
+    if (!el) return;
+    var r = this.tvRect();
+    el.style.top = Math.round(r.y + r.h + 14) + 'px';
+    el.style.left = Math.round(r.x) + 'px';
+    el.style.width = Math.round(r.w) + 'px';
+  };
+
   MainScene.prototype.watchTv = function () {
     if (this.mode !== 'walk') return false;
     this.mode = 'watching';
@@ -1123,6 +1147,7 @@
     document.getElementById('hint').classList.add('hidden');
     document.getElementById('controlBar').classList.add('gone');
     document.getElementById('tvBar').classList.add('visible');
+    this.layoutTvCaption();
     forceReleaseAllInput(); // or a held stick walks you off while you watch
     Sound.ensureAudio();
     this.sayLine();

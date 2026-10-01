@@ -243,6 +243,29 @@ harness.run(async (page, check, ctx) => {
   check('and the caption is the line the shot is actually on',
     on.tv.caption === on.tv.say, on.tv);
 
+  // Directly under the set, and the same width as it. On a tall screen
+  // a caption pinned to the foot of the page is a long way from the
+  // mouth saying it, and you end up reading one or watching the other.
+  const captionBox = await page.evaluate(() => {
+    // Wiped and reopened first, so this proves the band is placed AS IT
+    // IS SHOWN rather than that boot happened to leave it in the right
+    // spot - the resize that fires at startup does the same arithmetic,
+    // and would cover for a show path that never placed it at all.
+    const el = document.getElementById('tvBar');
+    el.style.top = ''; el.style.left = ''; el.style.width = '';
+    window.__houseDebug.closeTv();
+    window.__houseDebug.watchTv();
+    const s = window.__houseDebug.scene, r = s.tvRect();
+    const b = document.getElementById('tvBar').getBoundingClientRect();
+    return { gap: Math.round(b.y - (r.y + r.h)), dx: Math.round(b.x - r.x),
+             dw: Math.round(b.width - r.w), viewport: window.innerHeight,
+             barBottom: Math.round(b.bottom) };
+  });
+  check('the captions sit right under the picture, not at the foot of the screen',
+    captionBox.gap >= 0 && captionBox.gap < 40, captionBox);
+  check('and line up with the set rather than with the page',
+    Math.abs(captionBox.dx) < 3 && Math.abs(captionBox.dw) < 3, captionBox);
+
   // You cannot wander off mid-sentence.
   await page.keyboard.down('ArrowLeft');
   await page.waitForTimeout(500);
