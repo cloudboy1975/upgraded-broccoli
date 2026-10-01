@@ -317,6 +317,20 @@
   }
   .tutor-btn:active { background: rgba(51, 65, 85, 0.95); }
 
+  /* Used once, on the way out of a lesson: the room the player sat down
+     in is another page, and arriving there on a cut reads as a glitch
+     rather than as standing up. */
+  .blackout {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .blackout.visible { opacity: 1; pointer-events: auto; }
+
   .crash-banner {
     display: none;
     position: absolute;
@@ -732,6 +746,8 @@
 
     <footer>Prototype &middot; <a href="index.html">More games</a></footer>
   </div>
+
+  <div class="blackout" id="blackout" aria-hidden="true"></div>
 
   <!-- The lab's contents are built at boot from the same SORTIE_PATTERNS
        and TUNING tables the game itself reads, so a pattern or knob added
@@ -4940,6 +4956,14 @@
   // at all, and a lesson nobody read is a lesson nobody had. So a new
   // line always gets its moment before it can be satisfied, and the
   // answering line always gets one before the next thing arrives.
+  // Where a lesson lets you out. You sat down at a computer in your own
+  // front room to start it, so that is where you get up - at the desk
+  // you got up from, not in the middle of the floor. The game is two
+  // walks away through the door and the yard, and the yard's Fly button
+  // is one tap for anyone who only wants to play.
+  var TUTORIAL_EXIT_PAGE = 'house.html?at=desk';
+  var TUTORIAL_EXIT_FADE_MS = 420; // matches .blackout's own transition
+
   var TUTOR_MIN_READ = 1.3;        // seconds a fresh instruction stays up before it can be completed
   var TUTOR_GOT_BEAT = 2.8;        // ...and seconds the "yes, that" line holds before moving on
   var TUTOR_RESTOCK_DELAY = 1.2;   // ...before a missed pod, strip or target is sent again
@@ -5204,9 +5228,10 @@
     }
   };
 
-  // Cancelling out drops you into an ordinary run from where you stand,
-  // rather than back to a menu: the tutorial is somewhere you leave by
-  // flying away from it.
+  // Cancelling out goes through the same door finishing does - see
+  // endTutorial(). "Ended" is ended, and a tutorial that dropped you
+  // somewhere else depending on HOW you left it would be two different
+  // places to have been.
   MainScene.prototype.tutorExit = function () {
     if (!this.state.tutorial) return;
     traceEvent('tutorial_exit', { lesson: this.tutorLesson() ? this.tutorLesson().id : null });
@@ -5223,29 +5248,32 @@
     traceEvent('tutorial_finish', {});
   };
 
-  // Hands the board back to the ordinary game. The tutorial's own props
-  // go; what the PLAYER earned on the way through - banked shields, fire
-  // power - stays, because taking it away at the door would read as the
-  // lesson having been pretend.
+  // Takes the lesson off the board and walks the player back to the
+  // room. Both endings come through here: finishing it, and cancelling
+  // out of it.
   MainScene.prototype.endTutorial = function () {
     var state = this.state;
     if (!state.tutorial) return;
     state.tutorial = null;
-    // A ?tutorial link must not re-enter the tutorial on the next
-    // Restart, or Exit would be a loop rather than a door.
-    if (launchRequest && launchRequest.tutorial) launchRequest = null;
     this.tutorClearBoard();
     if (state.challenge) { this.clearMeteors(); state.challenge = null; state.starSpeedScale = 1; }
     this.flameOn = false;
     this.flameSprite.setVisible(false);
-    this.setColorBarsVisible(true);
-    this.spawnColorBars();
-    state.diveTimer = TUNING.diveIntervalStart;
-    state.powerupSpawnTimer = randomPowerupSpawnInterval();
-    state.score = 0; // whatever the lessons scored was practice - the run starts here
-    this.spawnFormation();
-    this.renderHud();
     this.renderTutorBanner();
+    this.leaveForRoom();
+  };
+
+  // One place navigates, once - a second call during the fade (a last
+  // tap on Exit, a beat resolving underneath it) would otherwise reload
+  // the room from the top.
+  var leftForRoom = false;
+  MainScene.prototype.leaveForRoom = function () {
+    if (leftForRoom) return;
+    leftForRoom = true;
+    var el = document.getElementById('blackout');
+    if (el) el.classList.add('visible');
+    window.setTimeout(function () { window.location.href = TUTORIAL_EXIT_PAGE; },
+                      TUTORIAL_EXIT_FADE_MS);
   };
 
   // Everything a lesson put on the screen, taken back off it. The ship,

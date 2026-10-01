@@ -24,6 +24,18 @@ const harness = require('./harness');
 
 const BOOT_MS = 900;
 
+// Both ways out of a lesson leave the page, so the file needs to be
+// able to say "it went there" as a check rather than as a timeout -
+// waitForURL throws, and a broken door would read as a broken test file.
+async function reachedPage(page, name, timeout) {
+  try {
+    await page.waitForURL('**/' + name, { timeout: timeout });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 const tutor = page => page.evaluate(() => window.__headOnDebug.tutorial());
 
 const board = page => page.evaluate(() => {
@@ -274,15 +286,33 @@ harness.run(async (page, check, ctx) => {
   const survived = await until(page, s => s && s.finished, 45000);
   check('and the stage runs itself out and finishes the tutorial', survived.ok, survived);
 
-  // --- and hands the game back --------------------------------------------
-  const handedBack = await until(page, s => s === null, 8000);
-  check('which then hands the board back to an ordinary run', handedBack.ok, handedBack);
-  const playing = await board(page);
-  check('with a real wave flying in', playing.enemies > 0, playing);
+  // Read while the closing line is still up - after this the page is
+  // gone, and the thing worth knowing is that an hour of practice never
+  // touched the number the player cares about.
+  const scoreboard = await board(page);
   check('and nothing the lessons scored counted toward your best',
-    playing.best === 0 && playing.score === 0, playing);
-  check('the caption is gone with it', await page.evaluate(
-    () => !document.getElementById('tutorBar').classList.contains('visible')), null);
+    scoreboard.best === 0, scoreboard);
+
+  // --- and it puts you back in the room ------------------------------------
+  // You sat down at a computer in your own front room to start this.
+  // Getting up from it is the whole of the continuity, and it is also
+  // the only navigation in the chapter that is not a walk - so it is
+  // the only one nothing else would catch.
+  check('finishing walks you back to the room',
+    await reachedPage(page, 'house.html?at=desk', 9000), page.url());
+  await page.waitForTimeout(900);
+  const atDesk = await page.evaluate(() => {
+    const d = window.__houseDebug, s = d.state();
+    return { worldX: +s.worldX.toFixed(2), deskX: d.props.desk.worldX,
+             depth: +s.depth.toFixed(2), deskDepth: d.props.desk.depth,
+             prompt: s.prompt, action: s.action, blockedBy: s.blockedBy };
+  });
+  check('standing at the computer you got up from',
+    Math.abs(atDesk.worldX - atDesk.deskX) < 0.05 && atDesk.depth > atDesk.deskDepth,
+    atDesk);
+  check('and not inside it', atDesk.blockedBy === null, atDesk);
+  check('with the computer offering the lesson again, for a second pass',
+    atDesk.action === 'head-on.html?tutorial', atDesk);
 
   // --- Skip is per lesson --------------------------------------------------
   // "Skip this" has to mean the whole thing you already know, not the
@@ -306,30 +336,22 @@ harness.run(async (page, check, ctx) => {
     await page.click('#tutorSkipBtn').catch(() => {});
     await page.waitForTimeout(150);
   }
-  const skippedOut = await until(page, s => s === null, 8000);
-  check('skipping past the last lesson ends the tutorial', skippedOut.ok, skippedOut);
+  check('skipping past the last lesson ends the tutorial, and goes the same way',
+    await reachedPage(page, 'house.html?at=desk', 9000), page.url());
 
-  // --- Exit drops it entirely ---------------------------------------------
+  // --- Exit goes out the same door ----------------------------------------
+  // Cancelling out of a lesson is still ending it. Two destinations
+  // depending on HOW you left would be two different places to have
+  // been, and the player cannot be expected to remember which button
+  // leads where.
   await page.goto(ctx.url('head-on.html?tutorial'));
   await page.waitForTimeout(BOOT_MS);
   await page.click('#tutorExitBtn');
-  await page.waitForTimeout(400);
-  const exited = await tutor(page);
-  const exitBoard = await board(page);
-  check('Exit leaves the tutorial at once', exited === null, exited);
-  check('and leaves you in a running game, not a dead screen',
-    exitBoard.enemies > 0 && exitBoard.phase === 'playing', exitBoard);
-
-  // A ?tutorial link that re-armed itself on Restart would make Exit a
-  // loop rather than a door.
-  await page.evaluate(() => {
-    const s = window.__headOnDebug.scene;
-    s.resetGame();
-    s.resumeLaunch();
-  });
-  await page.waitForTimeout(300);
-  check('and a Restart after Exit is an ordinary run, not the tutorial again',
-    (await tutor(page)) === null, await board(page));
+  const exitMs = Date.now();
+  check('Exit takes you back to the room too',
+    await reachedPage(page, 'house.html?at=desk', 9000), page.url());
+  check('and does it at once, rather than playing the lesson out',
+    Date.now() - exitMs < 3000, { waited: Date.now() - exitMs });
 
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'head-on.html?tutorial' });

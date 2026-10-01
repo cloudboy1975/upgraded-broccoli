@@ -217,6 +217,36 @@ harness.run(async (page, check, ctx) => {
   await page.goto(ctx.url('house.html'));
   await page.waitForTimeout(BOOT_MS);
 
+  // --- coming back to something --------------------------------------------
+  // A page can ask to start you AT a thing rather than in the middle of
+  // the floor (?at=desk), which is how the flight tutorial hands you
+  // back: you sat down at that computer, so you get up from it. The
+  // door is deliberately NOT one of those spots - landing on the
+  // doorstep would walk you straight back out to the yard before you
+  // saw the room - and neither is anything the URL made up.
+  await page.goto(ctx.url('house.html?at=sofa'));
+  await page.waitForTimeout(BOOT_MS);
+  const atSofa = await readState(page);
+  check('?at= puts you in front of the thing it names',
+    Math.abs(atSofa.worldX - 0.42) < 0.05 && atSofa.depth > 0.6 && atSofa.blockedBy === null,
+    atSofa);
+
+  await page.goto(ctx.url('house.html?at=door'));
+  await page.waitForTimeout(BOOT_MS);
+  const atTheDoor = await readState(page);
+  check('but never on the doorstep, which would bounce you straight out',
+    atTheDoor.gone !== true && atTheDoor.mode === 'walk' && atTheDoor.atDoor === false, atTheDoor);
+
+  await page.goto(ctx.url('house.html?at=nonsense'));
+  await page.waitForTimeout(BOOT_MS);
+  const atNonsense = await readState(page);
+  check('and a spot that is not a thing lands you where you always start',
+    Math.abs(atNonsense.worldX - 0.06) < 0.01 && Math.abs(atNonsense.depth - 0.70) < 0.01,
+    atNonsense);
+
+  await page.goto(ctx.url('house.html'));
+  await page.waitForTimeout(BOOT_MS);
+
   // --- furniture is solid ---------------------------------------------------
   // Walking through the sofa is the kind of thing that looks fine in a
   // screenshot and ruins a room the moment you play it. What makes this

@@ -367,6 +367,25 @@
   };
   var START = { worldX: 0.06, depth: 0.70 };
 
+  // Where you come back to. A page can ask to start you AT something -
+  // ?at=desk - instead of in the middle of the room, which is how the
+  // flight tutorial hands you back: you sat down at that computer, so
+  // you get up from it rather than materialising by the sofa. Standing
+  // distance in front, the same place walking up to it leaves you.
+  // Standing distance in front, which is also what keeps this safe for
+  // the DOOR: dropped exactly on it you would walk straight back out to
+  // the yard without seeing the room, and it is this offset that stops
+  // that rather than a list of things you may not arrive at.
+  var RETURN_DEPTH = 0.2;
+  function startSpot() {
+    var m = /(?:^|[?&])at=([^&]*)/.exec(window.location.search || '');
+    var key = m ? decodeURIComponent(m[1]) : '';
+    if (PROPS.hasOwnProperty(key)) {
+      return { worldX: PROPS[key].worldX, depth: clamp(PROPS[key].depth + RETURN_DEPTH, 0.06, 0.92) };
+    }
+    return START;
+  }
+
   // How close counts as reaching something, in screen px, scaled by the
   // prop's own perspective scale so it means the same wherever it
   // stands. The door is the one that ACTS on contact, so it gets the
@@ -486,8 +505,9 @@
 
     this.mode = 'walk'; // 'walk' -> 'leaving'
     this.modeAge = 0;
-    this.worldX = START.worldX;
-    this.depth = START.depth;
+    var spot = startSpot();
+    this.worldX = spot.worldX;
+    this.depth = spot.depth;
     this.flipX = false;
     this.bobPhase = 0;
     this.idlePhase = Math.random() * 10;

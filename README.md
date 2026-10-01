@@ -117,9 +117,10 @@ them: nothing advances until you have actually done the thing.
 4. **Lightning** — hold fire, and watch it spend the shields to do it
 5. **Speed jump** — dodge the rock, and see the planet come closer
 
-Moving and shooting are left out on purpose. **Skip this** moves to the
-next lesson, **Exit tutorial** drops the whole thing and leaves you
-playing. Nothing in there can cost you a life or a high score.
+Moving and shooting are left out on purpose. **Skip lesson** moves to
+the next one and **Exit** stops there; either way you end up back in the
+front room, standing at the computer you got up from. Nothing in there
+can cost you a life or a high score.
 
 #### Sharing the boss fight
 
