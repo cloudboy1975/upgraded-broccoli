@@ -221,6 +221,20 @@
   /* Quiet by design, exactly like the yard's Fly button: an escape
      hatch, not the thing to do. Same shape and position so the two
      scenes feel like one place. */
+  /* The way IN. Leaving is drawn inside the scene; arriving cannot be,
+     because there is no scene yet when the page first paints - so the
+     page starts black and clears itself once the first frame is up. */
+  .blackout {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  .blackout.visible { opacity: 1; }
+
   .out-btn {
     display: flex;
     flex-direction: column;
@@ -256,6 +270,14 @@
     left: -12px;
     right: -12px;
   }
+  /* Lit differently when it is an action rather than the exit, so the
+     change is visible from the corner of the eye and not only readable. */
+  .out-btn.acts {
+    border-color: rgba(125, 211, 252, 0.5);
+    background: radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.3), rgba(30, 64, 94, 0.2) 70%);
+    color: rgba(226, 246, 255, 0.92);
+  }
+  .out-btn.acts .out-icon { border-left-color: rgba(190, 233, 255, 0.85); }
   .out-btn:active, .out-btn.active {
     transform: scale(0.93);
     background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.85), rgba(90, 70, 35, 0.5) 70%);
@@ -275,6 +297,7 @@
 </head>
 <body>
   <div id="gameRoot"></div>
+  <div class="blackout visible" id="blackout"></div>
 
   <div class="hud-bar">
     <a class="back-link" href="index.html">&larr; All</a>
@@ -296,9 +319,13 @@
       <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
     </div>
 
+    <!-- One button, two jobs. In the open it is the way out; standing
+         at something that acts, it becomes that thing - see
+         syncActionButton(). The prompt line names what you are at, the
+         button says what pressing it will do. -->
     <button type="button" class="out-btn" id="outBtn" aria-label="Go back outside">
       <span class="out-icon" aria-hidden="true"></span>
-      Out
+      <span id="outLabel">Out</span>
     </button>
   </div>
 
@@ -549,6 +576,15 @@
   }
   function goOutside() { goPage(BACK_PAGE); }
 
+  // Clears the arrival fade once there is a frame to look at. Named and
+  // shared so every scene lifts it the same way - and so a page that
+  // forgets to is a page that stays black, which is not a failure
+  // anybody could miss.
+  function clearArrivalFade() {
+    var el = document.getElementById('blackout');
+    if (el) el.classList.remove('visible');
+  }
+
   function MainScene() {
     Phaser.Scene.call(this, { key: 'Main' });
   }
@@ -570,6 +606,7 @@
     this.action = null;   // the page the thing you are standing at opens, or null
     this.exitPage = null; // where the fade is heading - see goTo()
     this.tv = null;       // the running broadcast, or null - see watchTv()
+    this.buttonVerb = null; // what the corner button currently says - see syncActionButton()
     this.dust = [];
     for (var i = 0; i < 10; i++) {
       this.dust.push({
@@ -594,6 +631,7 @@
     });
 
     this.exposeDebugHooks();
+    clearArrivalFade();
   };
 
   // ---- Textures ------------------------------------------------------
@@ -1054,8 +1092,8 @@
   // in here that is finished - where it goes. Everything else in the
   // room still says "later", which is the promise this one just kept.
   MainScene.prototype.nearestThing = function () {
-    if (this.isAt('tv', REACH_X, REACH_Y)) return { say: 'The TV. There is a news report on.', watch: true };
-    if (this.isAt('desk', REACH_X, REACH_Y)) return { say: 'The computer. Flight training.', go: TUTORIAL_PAGE };
+    if (this.isAt('tv', REACH_X, REACH_Y)) return { say: 'The TV. There is a news report on.', watch: true, verb: 'Watch' };
+    if (this.isAt('desk', REACH_X, REACH_Y)) return { say: 'The computer. Flight training.', go: TUTORIAL_PAGE, verb: 'Use' };
     if (this.isAt('shelf', REACH_X, REACH_Y)) return { say: 'Books. Nothing you have not read.' };
     return null;
   };
@@ -1122,6 +1160,7 @@
   var COLOR_TV_GLOW = 0x9fd8ff;
 
   // The slice, in seconds into the footage shot it belongs to.
+  var NEWS_FADE = 0.28;         // seconds the set takes to come up, and to go back down
   var NEWS_SWIPE_AT = 0.85;
   var NEWS_SPLIT_AT = 1.0;
 
@@ -1142,7 +1181,7 @@
     if (this.mode !== 'walk') return false;
     this.mode = 'watching';
     this.modeAge = 0;
-    this.tv = { shot: 0, age: 0, tickerX: 0 };
+    this.tv = { shot: 0, age: 0, tickerX: 0, fade: 0, closing: false };
     this.setPrompt(null);
     document.getElementById('hint').classList.add('hidden');
     document.getElementById('controlBar').classList.add('gone');
@@ -1162,13 +1201,22 @@
     if (el) el.textContent = this.tv ? NEWS_SHOTS[this.tv.shot].say : '';
   };
 
+  // Turning it off starts the set fading down; the room comes back when
+  // it has. Mode stays 'watching' until then, which also keeps the stick
+  // out of it while the picture is still on screen.
   MainScene.prototype.closeTv = function () {
-    if (this.mode !== 'watching') return false;
+    if (this.mode !== 'watching' || !this.tv) return false;
+    this.tv.closing = true;
+    return true;
+  };
+
+  MainScene.prototype.finishCloseTv = function () {
     this.mode = 'walk';
     this.tv = null;
     this.tvGfx.clear();
     this.tvTexts.forEach(function (t) { t.setVisible(false); });
     this.sayLine();
+    document.getElementById('tvBar').style.opacity = '';
     document.getElementById('tvBar').classList.remove('visible');
     document.getElementById('controlBar').classList.remove('gone');
     document.getElementById('hint').classList.remove('hidden');
@@ -1178,11 +1226,21 @@
   MainScene.prototype.updateBroadcast = function (dt) {
     var tv = this.tv;
     if (!tv) return;
+
+    // Up, or down, and the picture holds while it does either.
+    if (tv.closing) {
+      tv.fade -= dt / NEWS_FADE;
+      if (tv.fade <= 0) { this.finishCloseTv(); return; }
+      this.renderBroadcast();
+      return;
+    }
+    if (tv.fade < 1) tv.fade = Math.min(1, tv.fade + dt / NEWS_FADE);
+
     tv.age += dt;
     tv.tickerX -= NEWS_TICKER_SPEED * dt;
     var shot = NEWS_SHOTS[tv.shot];
     if (tv.age >= shot.secs) {
-      if (tv.shot + 1 >= NEWS_SHOTS.length) { this.closeTv(); return; }
+      if (tv.shot + 1 >= NEWS_SHOTS.length) { tv.closing = true; this.renderBroadcast(); return; }
       tv.shot++;
       tv.age = 0;
       this.sayLine();
@@ -1222,6 +1280,13 @@
     var W = this.scale.width, H = this.scale.height;
     g.clear();
     if (!tv) return;
+
+    // One alpha over the whole set, so coming up and going down is a
+    // fade rather than a cut - including the captions, which are DOM.
+    var fade = clamp(tv.fade, 0, 1);
+    g.setAlpha(fade);
+    this.tvTexts.forEach(function (t) { t.setAlpha(fade); });
+    document.getElementById('tvBar').style.opacity = fade;
 
     var shot = NEWS_SHOTS[tv.shot];
 
@@ -1559,8 +1624,22 @@
 
     var thing = this.nearestThing();
     this.action = thing ? (thing.watch ? WATCH_TV : (thing.go || null)) : null;
-    this.setPrompt(thing ? (this.action ? thing.say + '  ▸ tap' : thing.say) : null);
+    this.setPrompt(thing ? thing.say : null);
+    this.syncActionButton(thing && this.action ? thing.verb : null);
     this.updateDust(dt);
+  };
+
+  // The corner button, relabelled for whatever is in reach. Only
+  // touched when it actually changes - this runs every frame.
+  MainScene.prototype.syncActionButton = function (verb) {
+    if (this.buttonVerb === verb) return;
+    this.buttonVerb = verb;
+    var btn = document.getElementById('outBtn');
+    var label = document.getElementById('outLabel');
+    if (!btn || !label) return;
+    label.textContent = verb || 'Out';
+    btn.classList.toggle('acts', !!verb);
+    btn.setAttribute('aria-label', verb ? verb + ' ' + 'this' : 'Go back outside');
   };
 
   MainScene.prototype.setPrompt = function (text) {
@@ -1763,7 +1842,9 @@
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault();
       el.classList.add('active');
-      if (mainScene) mainScene.leave(); else goOutside();
+      if (!mainScene) { goOutside(); return; }
+      // Whatever it currently says it does - see syncActionButton().
+      if (mainScene.action) mainScene.useThing(); else mainScene.leave();
     });
     function release() { el.classList.remove('active'); }
     el.addEventListener('pointerup', release);

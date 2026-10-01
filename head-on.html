@@ -329,7 +329,7 @@
     pointer-events: none;
     transition: opacity 0.4s ease;
   }
-  .blackout.visible { opacity: 1; pointer-events: auto; }
+  .blackout.visible { opacity: 1; }
 
   .crash-banner {
     display: none;
@@ -747,7 +747,7 @@
     <footer>Prototype &middot; <a href="index.html">More games</a></footer>
   </div>
 
-  <div class="blackout" id="blackout" aria-hidden="true"></div>
+  <div class="blackout visible" id="blackout" aria-hidden="true"></div>
 
   <!-- The lab's contents are built at boot from the same SORTIE_PATTERNS
        and TUNING tables the game itself reads, so a pattern or knob added
@@ -2384,6 +2384,10 @@
     this.renderHud();
     launchRequest = parseLaunch(window.location.search);
     this.resumeLaunch();
+    // The arrival fade, lifted now there is something to look at. The
+    // way OUT of a lesson uses the same overlay - see leaveForRoom().
+    var arrival = document.getElementById('blackout');
+    if (arrival) arrival.classList.remove('visible');
   };
 
   // Puts the run back where the link asked for it - on load, and again

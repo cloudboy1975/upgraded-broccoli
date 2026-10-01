@@ -174,6 +174,30 @@ harness.run(async (page, check, ctx) => {
   await page.goto(ctx.url('head-on.html?tutorial'));
   await page.waitForTimeout(BOOT_MS);
 
+  // --- it arrives out of black --------------------------------------------
+  // The house fades out on the way here; arriving on a hard cut wastes
+  // half of that. The page cannot draw its own arrival - Phaser has not
+  // booted when it first paints - so an overlay starts opaque and is
+  // lifted once there is a frame behind it.
+  const arrival = await (async () => {
+    await page.goto(ctx.url('head-on.html?tutorial'));
+    const early = await page.evaluate(() => {
+      const el = document.getElementById('blackout');
+      return { exists: !!el, opacity: el ? +getComputedStyle(el).opacity : null };
+    });
+    await page.waitForTimeout(1400);
+    const late = await page.evaluate(() => {
+      const el = document.getElementById('blackout');
+      return { visible: el.classList.contains('visible'), opacity: +getComputedStyle(el).opacity };
+    });
+    return { early: early, late: late };
+  })();
+  check('the lesson arrives out of black, the way the room left it',
+    arrival.early.exists && arrival.early.opacity > 0.3, arrival);
+  check('and clears once the game is up',
+    arrival.late.visible === false && arrival.late.opacity === 0, arrival);
+  await page.waitForTimeout(BOOT_MS);
+
   // --- the ordinary game is switched off while it teaches ------------------
   // A lesson about one pod does not survive a wave of divers arriving in
   // the middle of it, and the powerup spawner would quietly hand out the

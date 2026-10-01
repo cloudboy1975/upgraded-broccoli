@@ -207,10 +207,25 @@
     pointer-events: none;
   }
   .fly-btn:active .fly-icon, .fly-btn.active .fly-icon { border-bottom-color: rgba(43, 31, 8, 0.85); }
+  /* The way IN. Leaving is drawn inside the scene; arriving cannot be,
+     because there is no scene yet when the page first paints - so the
+     page starts black and clears itself once the first frame is up. */
+  .blackout {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  .blackout.visible { opacity: 1; }
+
 </style>
 </head>
 <body>
   <div id="gameRoot"></div>
+  <div class="blackout visible" id="blackout"></div>
 
   <div class="hud-bar">
     <a class="back-link" href="index.html">&larr; All</a>
@@ -498,6 +513,15 @@
     window.location.href = HOUSE_PAGE;
   }
 
+  // Clears the arrival fade once there is a frame to look at. Named and
+  // shared so every scene lifts it the same way - and so a page that
+  // forgets to is a page that stays black, which is not a failure
+  // anybody could miss.
+  function clearArrivalFade() {
+    var el = document.getElementById('blackout');
+    if (el) el.classList.remove('visible');
+  }
+
   function MainScene() {
     Phaser.Scene.call(this, { key: 'Main' });
   }
@@ -539,6 +563,7 @@
     this.scale.on('resize', function () { self.redrawAll(); self.layoutProps(); });
 
     this.exposeDebugHooks();
+    clearArrivalFade();
   };
 
   // ---- Textures ------------------------------------------------------

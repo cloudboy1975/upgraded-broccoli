@@ -103,7 +103,8 @@ chapter of a longer game about two-dimensional aliens.
 
 #### The six o'clock news
 
-Stand at the TV in the front room and tap. A cartoon anchor reports the
+Stand at the TV in the front room; the button in the corner becomes
+**Watch**. A cartoon anchor reports the
 invasion in eight shots, with the dialogue in captions under the picture
 and a mouth that moves while a line is up — including the bit of phone
 footage the network cannot stop replaying. It is a **first draft**: the

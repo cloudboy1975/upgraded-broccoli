@@ -190,14 +190,50 @@ harness.run(async (page, check, ctx) => {
   // door and the ship work, but a desk is not something you walk into,
   // so the prompt line itself becomes the button.
   const atComputer = await standAt(page, 'desk');
-  const computerUi = await page.evaluate(() => {
-    const hint = document.getElementById('hint');
-    return { tappable: hint.classList.contains('tappable'), text: hint.textContent };
-  });
+  const computerUi = await page.evaluate(() => ({
+    label: document.getElementById('outLabel').textContent,
+    lit: document.getElementById('outBtn').classList.contains('acts'),
+    hint: document.getElementById('hint').textContent
+  }));
   check('standing at the computer offers something to press',
     atComputer.action === 'head-on.html?tutorial', atComputer);
-  check('and says so, on the one line the room uses for everything',
-    computerUi.tappable && /tap/i.test(computerUi.text), computerUi);
+  // The prompt line names the thing; the BUTTON says what pressing it
+  // will do. The first draft had it the other way round - the only way
+  // in was a word on the prompt line, at the top of a tablet screen,
+  // nowhere near the thumb that had just walked you there.
+  check('and the corner button has become that thing',
+    computerUi.label === 'Use' && computerUi.lit === true, computerUi);
+  check('while the prompt line just says what you are standing at',
+    /computer/i.test(computerUi.hint) && !/tap/i.test(computerUi.hint), computerUi);
+
+  // One button, three jobs, decided by where you are standing.
+  const corner = {};
+  for (const spot of ['tv', 'desk', 'shelf']) {
+    await standAt(page, spot);
+    corner[spot] = await page.evaluate(() => ({
+      label: document.getElementById('outLabel').textContent,
+      lit: document.getElementById('outBtn').classList.contains('acts')
+    }));
+  }
+  await page.evaluate(() => window.__houseDebug.moveTo(0.06, 0.70));
+  await page.waitForTimeout(240);
+  corner.open = await page.evaluate(() => ({
+    label: document.getElementById('outLabel').textContent,
+    lit: document.getElementById('outBtn').classList.contains('acts')
+  }));
+  check('the corner button says what is in reach',
+    corner.tv.label === 'Watch' && corner.desk.label === 'Use', corner);
+  check('and goes back to being the way out when nothing is',
+    corner.open.label === 'Out' && corner.open.lit === false &&
+    corner.shelf.label === 'Out' && corner.shelf.lit === false, corner);
+
+  // Pressing it where it is the way out must still be the way out - the
+  // exit cannot be the thing that gets lost in repurposing the button.
+  await page.click('#outBtn');
+  check('and pressing it in the open still goes outside',
+    await reachedPage(page, 'yard.html', 6000), page.url());
+  await page.goto(ctx.url('house.html'));
+  await page.waitForTimeout(BOOT_MS);
 
   // Anything that does NOT act must stay inert, and must not offer a
   // press - an object that looks pressable and does nothing is worse
@@ -213,10 +249,12 @@ harness.run(async (page, check, ctx) => {
   });
   check('and pressing use in the middle of the room does nothing', inTheOpen === false, inTheOpen);
 
-  // The whole point of the thing: it goes there.
+  // The whole point of the thing: pressing the corner button where it
+  // says Use goes there. Pressed rather than called, because what broke
+  // before was the route from a thumb to the action, not the action.
   await standAt(page, 'desk');
-  await page.click('#hint');
-  check('tapping it leaves for the tutorial',
+  await page.click('#outBtn');
+  check('pressing Use at the computer leaves for the tutorial',
     await reachedPage(page, 'head-on.html?tutorial', 6000), page.url());
   await page.goto(ctx.url('house.html'));
   await page.waitForTimeout(BOOT_MS);
@@ -230,9 +268,12 @@ harness.run(async (page, check, ctx) => {
   // back however it ends.
   const tvSpot = await standAt(page, 'tv');
   check('the TV offers the news', tvSpot.action === 'watch:tv', tvSpot);
+  // Pressed, not called: the corner button is the only way in that a
+  // player has, and it is a different piece of code from watchTv().
+  await page.click('#outBtn');
+  await page.waitForTimeout(260);
   const on = await page.evaluate(() => {
     const d = window.__houseDebug;
-    d.watchTv();
     return { mode: d.state().mode, tv: d.tv(),
              bar: document.getElementById('tvBar').classList.contains('visible'),
              controls: document.getElementById('controlBar').classList.contains('gone') };
@@ -246,16 +287,23 @@ harness.run(async (page, check, ctx) => {
   // Directly under the set, and the same width as it. On a tall screen
   // a caption pinned to the foot of the page is a long way from the
   // mouth saying it, and you end up reading one or watching the other.
-  const captionBox = await page.evaluate(() => {
+  const captionBox = await page.evaluate(async () => {
     // Wiped and reopened first, so this proves the band is placed AS IT
     // IS SHOWN rather than that boot happened to leave it in the right
     // spot - the resize that fires at startup does the same arithmetic,
     // and would cover for a show path that never placed it at all.
+    // Turning it off is a fade now, so the reopen waits for the set to
+    // actually be off rather than assuming it went at once.
+    const d = window.__houseDebug;
     const el = document.getElementById('tvBar');
     el.style.top = ''; el.style.left = ''; el.style.width = '';
-    window.__houseDebug.closeTv();
-    window.__houseDebug.watchTv();
-    const s = window.__houseDebug.scene, r = s.tvRect();
+    d.closeTv();
+    await new Promise(res => {
+      const tick = setInterval(() => { if (!d.tv()) { clearInterval(tick); res(); } }, 30);
+      setTimeout(() => { clearInterval(tick); res(); }, 3000);
+    });
+    d.watchTv();
+    const s = d.scene, r = s.tvRect();
     const b = document.getElementById('tvBar').getBoundingClientRect();
     return { gap: Math.round(b.y - (r.y + r.h)), dx: Math.round(b.x - r.x),
              dw: Math.round(b.width - r.w), viewport: window.innerHeight,
@@ -357,10 +405,62 @@ harness.run(async (page, check, ctx) => {
     after.mode === 'walk' && after.tv === null && after.bar === false && after.controls === false,
     after);
 
+  // --- it fades up and down, rather than cutting ---------------------------
+  // A cut between a lit room and a lit television is a jolt; the point
+  // of a quarter of a second is that your eye follows it instead of
+  // being told. Sampled rather than trusted: both ends read the SET's
+  // own fade, which is what every layer of it is drawn at.
+  const fadeUp = await page.evaluate(async () => {
+    const d = window.__houseDebug;
+    d.watchTv();
+    const first = d.scene.tv.fade;
+    await new Promise(r => setTimeout(r, 600));
+    return { first: first, settled: d.scene.tv ? d.scene.tv.fade : null };
+  });
+  check('the set fades up rather than snapping on',
+    fadeUp.first < 0.4 && fadeUp.settled === 1, fadeUp);
+
+  const fadeDown = await page.evaluate(async () => {
+    const d = window.__houseDebug;
+    d.closeTv();
+    await new Promise(r => setTimeout(r, 90));
+    const mid = d.scene.tv ? d.scene.tv.fade : null;
+    const stillWatching = d.state().mode;
+    await new Promise(r => setTimeout(r, 700));
+    return { mid: mid, stillWatching: stillWatching, after: d.state().mode, tv: d.tv() };
+  });
+  check('and fades back down before the room returns',
+    fadeDown.mid !== null && fadeDown.mid > 0 && fadeDown.mid < 1 &&
+    fadeDown.stillWatching === 'watching' && fadeDown.after === 'walk', fadeDown);
+
+  // --- and the room itself arrives out of black ----------------------------
+  // The page cannot draw its own arrival - there is no scene yet when it
+  // first paints - so an overlay starts opaque and is lifted once there
+  // is a frame behind it. Read twice: dark a moment in, clear after.
+  const arrival = await (async () => {
+    await page.goto(ctx.url('house.html'));
+    const early = await page.evaluate(() => {
+      const el = document.getElementById('blackout');
+      return { exists: !!el, visible: el ? el.classList.contains('visible') : false,
+               opacity: el ? +getComputedStyle(el).opacity : null };
+    });
+    await page.waitForTimeout(1200);
+    const late = await page.evaluate(() => {
+      const el = document.getElementById('blackout');
+      return { visible: el.classList.contains('visible'), opacity: +getComputedStyle(el).opacity };
+    });
+    return { early: early, late: late };
+  })();
+  check('the room arrives out of black rather than snapping on',
+    arrival.early.exists && arrival.early.opacity > 0.3, arrival);
+  check('and clears once there is something behind it',
+    arrival.late.visible === false && arrival.late.opacity === 0, arrival);
+  await page.waitForTimeout(BOOT_MS);
+
   // And the two ways to stop watching it early.
   await page.evaluate(() => window.__houseDebug.watchTv());
   await page.click('#tvCloseBtn');
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(700); // it fades down rather than cutting - see NEWS_FADE
   const offByButton = await page.evaluate(() => ({
     mode: window.__houseDebug.state().mode, tv: window.__houseDebug.tv()
   }));
@@ -369,7 +469,7 @@ harness.run(async (page, check, ctx) => {
 
   await page.evaluate(() => window.__houseDebug.watchTv());
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(700);
   const offByEscape = await page.evaluate(() => ({
     mode: window.__houseDebug.state().mode, url: window.location.pathname
   }));
