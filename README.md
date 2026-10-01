@@ -90,7 +90,7 @@ chapter of a longer game about two-dimensional aliens.
   the yard. Walk right into the ship and it takes off; walk left into
   the front door — it opens as you come up the path, with the light
   spilling onto the grass — and you are inside, where the computer runs
-  the flight tutorial and the TV will carry the story. The bottom-right
+  the flight tutorial and the TV is showing the news. The bottom-right
   button skips straight to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
@@ -100,6 +100,15 @@ chapter of a longer game about two-dimensional aliens.
   arrives and he rises out of the planet. Three belly cores answer only
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
+
+#### The six o'clock news
+
+Stand at the TV in the front room and tap. A cartoon anchor reports the
+invasion in eight shots, with the dialogue in captions under the picture
+and a mouth that moves while a line is up — including the bit of phone
+footage the network cannot stop replaying. It is a **first draft**: the
+script is one array near the top of `house.html`, so rewriting it is
+editing a list of lines and how long each one is on screen.
 
 #### The flight tutorial
 

@@ -731,7 +731,11 @@
     // go OVER it, since they are part of the building's face.
     this.doorSpillGfx = this.add.graphics();
     this.doorGfx = this.add.graphics();
-    this.fadeGfx = this.add.graphics().setDepth(100);
+    // Above EVERYTHING. Props sort by their own screen y, which runs
+    // to the height of the screen, so a fade at any depth in that
+    // range darkens the ground and leaves the furniture - and the
+    // player - sitting brightly on top of it.
+    this.fadeGfx = this.add.graphics().setDepth(10000);
   };
 
   // Everything that stands on the ground is a sprite with its origin at

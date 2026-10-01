@@ -92,6 +92,42 @@
   .hint.hidden { opacity: 0; }
   /* The prompt is inert text until you are standing at something that
      actually does something - then it is the button. */
+  /* The broadcast's captions, under the picture rather than over it,
+     and big enough to read from the sofa. Only up while the TV is on. */
+  .tv {
+    display: none;
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(env(safe-area-inset-bottom) + 14px);
+    z-index: 20;
+    padding: 10px 12px 12px;
+    border-radius: 12px;
+    background: rgba(5, 8, 14, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    text-align: center;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .tv.visible { display: block; }
+  .tv-caption {
+    min-height: 2.8em;
+    color: #f8fafc;
+    font-size: 1rem;
+    line-height: 1.4;
+  }
+  .tv-btn {
+    margin-top: 8px;
+    padding: 5px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    background: rgba(30, 41, 59, 0.92);
+    color: #e2e8f0;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
   .hint.tappable {
     pointer-events: auto;
     cursor: pointer;
@@ -238,6 +274,13 @@
 
   <div class="hint" id="hint">Your front room</div>
 
+  <!-- The six o'clock news: captions under the picture, and the one way
+       to turn it off - see watchTv(). -->
+  <div class="tv" id="tvBar" aria-live="polite">
+    <div class="tv-caption" id="tvCaption"></div>
+    <button type="button" class="tv-btn" id="tvCloseBtn">Turn it off</button>
+  </div>
+
   <div class="control-bar" id="controlBar">
     <div class="stick-zone" id="stickZone" aria-label="Walk (press anywhere and drag)">
       <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
@@ -280,6 +323,9 @@
   // because the only honest way to teach flying is to hand someone the
   // ship.
   var TUTORIAL_PAGE = 'head-on.html?tutorial';
+  // Not a page: the television plays in here. Carried in the same slot
+  // as a page so one prompt, one tap and one key cover both.
+  var WATCH_TV = 'watch:tv';
 
   // A lit room at night, and deliberately the warmest thing in the
   // chapter. Outside is all blues at 0x05061a; stepping in here should
@@ -503,7 +549,7 @@
   MainScene.prototype.create = function () {
     mainScene = this;
 
-    this.mode = 'walk'; // 'walk' -> 'leaving'
+    this.mode = 'walk'; // 'walk' -> 'watching' -> 'walk', or 'walk' -> 'leaving'
     this.modeAge = 0;
     var spot = startSpot();
     this.worldX = spot.worldX;
@@ -514,6 +560,7 @@
     this.prompt = null;
     this.action = null;   // the page the thing you are standing at opens, or null
     this.exitPage = null; // where the fade is heading - see goTo()
+    this.tv = null;       // the running broadcast, or null - see watchTv()
     this.dust = [];
     for (var i = 0; i < 10; i++) {
       this.dust.push({
@@ -754,7 +801,24 @@
     this.rugGfx = this.add.graphics().setDepth(-14);
     this.lampPoolGfx = this.add.graphics().setDepth(-13);
     this.dustGfx = this.add.graphics().setDepth(-5);
-    this.fadeGfx = this.add.graphics().setDepth(100);
+    // Above EVERYTHING. Props sort by their own screen y, which runs
+    // to the height of the screen, so a fade at any depth in that
+    // range darkens the ground and leaves the furniture - and the
+    // player - sitting brightly on top of it.
+    this.fadeGfx = this.add.graphics().setDepth(10000);
+
+    // The television, and the three lines of type on it. Text objects
+    // rather than drawings because they are type - monospace, so the
+    // ticker can be scrolled a character at a time.
+    this.tvGfx = this.add.graphics().setDepth(9000);
+    var tvFont = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#f8fafc' };
+    this.tvTexts = [
+      this.add.text(0, 0, '', tvFont).setDepth(9002).setVisible(false),
+      this.add.text(0, 0, '', tvFont).setDepth(9002).setVisible(false),
+      this.add.text(0, 0, '', { fontFamily: tvFont.fontFamily, color: '#cbd5f5' })
+          .setDepth(9002).setVisible(false),
+      this.add.text(0, 0, '', tvFont).setDepth(9002).setVisible(false) // REPLAY and friends
+    ];
   };
 
   // Everything standing on the floor is a sprite with its origin at its
@@ -977,7 +1041,7 @@
   // in here that is finished - where it goes. Everything else in the
   // room still says "later", which is the promise this one just kept.
   MainScene.prototype.nearestThing = function () {
-    if (this.isAt('tv', REACH_X, REACH_Y)) return { say: 'The TV. A report on the invaders — later.' };
+    if (this.isAt('tv', REACH_X, REACH_Y)) return { say: 'The TV. There is a news report on.', watch: true };
     if (this.isAt('desk', REACH_X, REACH_Y)) return { say: 'The computer. Flight training.', go: TUTORIAL_PAGE };
     if (this.isAt('shelf', REACH_X, REACH_Y)) return { say: 'Books. Nothing you have not read.' };
     return null;
@@ -990,8 +1054,412 @@
   // can tap is a prompt that explains itself.
   MainScene.prototype.useThing = function () {
     if (this.mode !== 'walk' || !this.action) return false;
+    if (this.action === WATCH_TV) return this.watchTv();
     this.goTo(this.action);
     return true;
+  };
+
+  // ==================================================================
+  // The six o'clock news
+  //
+  // The TV was a placeholder that said "later". This is later: a
+  // cartoon broadcast about the invasion, watched from the sofa side of
+  // the room, which is where the chapter's story is supposed to come
+  // from rather than from a wall of text.
+  //
+  // It is a DRAFT. The dialogue is improvised and expected to be
+  // rewritten; what is built to last is the shape around it - a list of
+  // shots, each with a line and a length, a mouth that moves while a
+  // line is up, and captions under the picture. Rewriting the script is
+  // editing one array.
+  //
+  // The gag in the middle is cartoon slapstick and deliberately
+  // bloodless: these are TWO-DIMENSIONAL aliens, so what the swipe does
+  // to a bystander is take a dimension off him. He comes apart in two
+  // flat halves, like a cardboard cutout, and topples. No red, no
+  // detail, nobody's day ruined.
+  // ==================================================================
+  var NEWS_SHOTS = [
+    { shot: 'anchor',  secs: 3.4,
+      say: "Good evening. They are flat, they are fast, and as of four o'clock, they are here." },
+    { shot: 'anchor',  secs: 3.6,
+      say: 'Officials are calling them the Two-Dimensional Invaders. We are calling them a lot of things.' },
+    { shot: 'footage', secs: 2.6,
+      say: 'This footage was taken by a man who had every opportunity to run.' },
+    // The same two seconds again, at a third of the speed, with a badge
+    // on it. Every local news channel that has ever existed would.
+    { shot: 'footage', secs: 3.6, from: 0.55, rate: 0.34, badge: 'REPLAY',
+      say: 'Here it is again, slowly, for reasons this network cannot defend.' },
+    { shot: 'anchor',  secs: 3.4,
+      say: 'The victim is in stable condition and, doctors stress, still technically a volume.' },
+    { shot: 'anchor',  secs: 3.8,
+      say: 'Authorities advise staying indoors, standing face-on, and avoiding all filing cabinets.' },
+    { shot: 'anchor',  secs: 3.8,
+      say: 'Meanwhile one local man has a ship in his back garden. We have asked him to go and do something about it.' },
+    { shot: 'anchor',  secs: 2.6,
+      say: "That is the news. Good luck, and don't turn sideways." }
+  ];
+
+  var NEWS_TICKER = 'INVASION DAY 1  ·  MAYOR URGES CALM, THEN LEAVES  ·  PAPER MILLS REPORT RECORD DEMAND  ' +
+                    '·  "DO NOT ENGAGE THEM EDGE-ON" SAYS SCIENCE  ·  LOCAL MAN STILL HAS NOT LEFT THE HOUSE  ·  ';
+  var NEWS_CHYRON = 'FLAT THINGS, LIVE';
+  var NEWS_STATION = 'ACTION 2';
+  var NEWS_TICKER_SPEED = 46;   // px/sec
+  var NEWS_MOUTH_SPEED = 17;    // radians/sec - fast enough to read as talking, slow enough to see
+  var COLOR_TV_GLOW = 0x9fd8ff;
+
+  // The slice, in seconds into the footage shot it belongs to.
+  var NEWS_SWIPE_AT = 0.85;
+  var NEWS_SPLIT_AT = 1.0;
+
+  // ---- Watching it ---------------------------------------------------
+
+  MainScene.prototype.watchTv = function () {
+    if (this.mode !== 'walk') return false;
+    this.mode = 'watching';
+    this.modeAge = 0;
+    this.tv = { shot: 0, age: 0, tickerX: 0 };
+    this.setPrompt(null);
+    document.getElementById('hint').classList.add('hidden');
+    document.getElementById('controlBar').classList.add('gone');
+    document.getElementById('tvBar').classList.add('visible');
+    forceReleaseAllInput(); // or a held stick walks you off while you watch
+    Sound.ensureAudio();
+    this.sayLine();
+    this.renderBroadcast();
+    return true;
+  };
+
+  // The line under the picture. One place writes it, so what the mouth
+  // is moving to and what the caption says cannot drift apart.
+  MainScene.prototype.sayLine = function () {
+    var el = document.getElementById('tvCaption');
+    if (el) el.textContent = this.tv ? NEWS_SHOTS[this.tv.shot].say : '';
+  };
+
+  MainScene.prototype.closeTv = function () {
+    if (this.mode !== 'watching') return false;
+    this.mode = 'walk';
+    this.tv = null;
+    this.tvGfx.clear();
+    this.tvTexts.forEach(function (t) { t.setVisible(false); });
+    this.sayLine();
+    document.getElementById('tvBar').classList.remove('visible');
+    document.getElementById('controlBar').classList.remove('gone');
+    document.getElementById('hint').classList.remove('hidden');
+    return true;
+  };
+
+  MainScene.prototype.updateBroadcast = function (dt) {
+    var tv = this.tv;
+    if (!tv) return;
+    tv.age += dt;
+    tv.tickerX -= NEWS_TICKER_SPEED * dt;
+    var shot = NEWS_SHOTS[tv.shot];
+    if (tv.age >= shot.secs) {
+      if (tv.shot + 1 >= NEWS_SHOTS.length) { this.closeTv(); return; }
+      tv.shot++;
+      tv.age = 0;
+      this.sayLine();
+    }
+    this.renderBroadcast();
+  };
+
+  // Where the picture sits: a 4:3 screen, as big as the room allows,
+  // with the captions under it rather than over it - the same rule the
+  // game's own tutorial follows, for the same reason.
+  MainScene.prototype.tvRect = function () {
+    var W = this.scale.width, H = this.scale.height;
+    var h = Math.min(H * 0.46, (W - 28) * 0.75);
+    var w = h / 0.75;
+    return { x: (W - w) / 2, y: H * 0.14, w: w, h: h };
+  };
+
+  // A rectangle rotated about its own centre, for the two halves of a
+  // man toppling over. Graphics has no transform of its own, so the
+  // corners are turned by hand.
+  function quadAt(g, cx, cy, hw, hh, angle) {
+    var c = Math.cos(angle), s = Math.sin(angle);
+    var pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+    g.beginPath();
+    for (var i = 0; i < 4; i++) {
+      var x = cx + pts[i][0] * c - pts[i][1] * s;
+      var y = cy + pts[i][0] * s + pts[i][1] * c;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.closePath();
+    g.fillPath();
+  }
+
+  MainScene.prototype.renderBroadcast = function () {
+    var tv = this.tv;
+    var g = this.tvGfx;
+    var W = this.scale.width, H = this.scale.height;
+    g.clear();
+    if (!tv) return;
+
+    var shot = NEWS_SHOTS[tv.shot];
+
+    // The room goes dark around the set, the way a room does.
+    g.fillStyle(0x000000, 0.82);
+    g.fillRect(0, 0, W, H);
+
+    var r = this.tvRect();
+    // Cabinet and bezel.
+    g.fillStyle(0x15161d, 1);
+    g.fillRoundedRect(r.x - 10, r.y - 10, r.w + 20, r.h + 20, 14);
+    g.fillStyle(0x0a1a24, 1);
+    g.fillRoundedRect(r.x, r.y, r.w, r.h, 8);
+
+    // Footage shots can carry on from where the last one stopped, and
+    // can run at their own speed - which is what lets the second one be
+    // the replay of the first rather than the whole thing happening
+    // twice to the same man.
+    if (shot.shot === 'footage') {
+      var ft = (shot.from || 0) + tv.age * (shot.rate === undefined ? 1 : shot.rate);
+      this.drawFootage(g, r, ft, shot);
+    } else {
+      this.drawAnchor(g, r, tv.age);
+    }
+
+    this.drawChyron(g, r, tv);
+
+    // Scanlines and a soft bloom, over everything, which is most of what
+    // makes a flat drawing read as a screen.
+    g.fillStyle(0x000000, 0.14);
+    for (var y = r.y + 2; y < r.y + r.h; y += 4) g.fillRect(r.x, y, r.w, 1.4);
+    g.fillStyle(COLOR_TV_GLOW, 0.05);
+    g.fillRoundedRect(r.x, r.y, r.w, r.h * 0.5, 8);
+  };
+
+  // Both shots are laid out in PERCENTAGES OF THE SCREEN - u across,
+  // v down - rather than in percentages of its width for both. The
+  // first draft used width for both, so on a 4:3 picture everything
+  // vertical landed a third too low: the anchor's desk and the whole
+  // street were behind the chyron, which is a lot of drawing nobody
+  // could see.
+  MainScene.prototype.drawAnchor = function (g, r, t) {
+    var u = r.w / 100, v = r.h / 100;
+    var cx = r.x + 38 * u, headY = r.y + 34 * v, headR = 13 * v;
+
+    g.fillGradientStyle(0x14314a, 0x14314a, 0x0c2032, 0x0c2032, 1);
+    g.fillRect(r.x, r.y, r.w, r.h);
+    g.fillStyle(0x1d4a68, 0.55);                      // the hot pool behind him
+    g.fillEllipse(cx, r.y + 44 * v, 62 * u, 56 * v);
+
+    // Over-the-shoulder box: a flat alien, which from here is barely a
+    // line - the joke the whole chapter runs on.
+    var bx = r.x + 62 * u, by = r.y + 9 * v, bw = 30 * u, bh = 30 * v;
+    g.fillStyle(0x0b2130, 1);
+    g.fillRoundedRect(bx, by, bw, bh, 3);
+    g.lineStyle(1.2, 0x7fd4ff, 0.8);
+    g.strokeRoundedRect(bx, by, bw, bh, 3);
+    g.fillStyle(0x34d399, 1);
+    g.fillTriangle(bx + bw * 0.5, by + bh * 0.2,
+                   bx + bw * 0.5 + 2.6 * u, by + bh * 0.82,
+                   bx + bw * 0.5 - 2.6 * u, by + bh * 0.82);
+    g.fillStyle(0x062e26, 1);
+    g.fillCircle(bx + bw * 0.5 - 1 * u, by + bh * 0.42, 0.6 * u);
+    g.fillCircle(bx + bw * 0.5 + 1 * u, by + bh * 0.42, 0.6 * u);
+
+    // Anchor: big head, small body, and a desk he is not going to move
+    // from. Drawn bottom-up so each piece covers the one behind it.
+    var deskY = r.y + 62 * v;
+    g.fillStyle(0x2b2f4a, 1);                          // shoulders
+    g.fillTriangle(cx - 22 * u, deskY, cx + 22 * u, deskY, cx, headY + headR * 0.4);
+    g.fillStyle(0xf1f5f9, 1);                          // collar
+    g.fillTriangle(cx - 5 * u, headY + headR * 0.75, cx + 5 * u, headY + headR * 0.75,
+                   cx, headY + headR * 2.1);
+    g.fillStyle(0xd94f5c, 1);                          // tie
+    g.fillTriangle(cx - 2 * u, headY + headR * 1.15, cx + 2 * u, headY + headR * 1.15,
+                   cx, deskY - 1 * v);
+
+    g.fillStyle(0x24445c, 1);                          // desk
+    g.fillRect(r.x, deskY, r.w, r.h - (deskY - r.y));
+    g.fillStyle(0x2f5676, 1);
+    g.fillRect(r.x, deskY, r.w, 2 * v);
+
+    g.fillStyle(0xf0c9a4, 1);                          // head
+    g.fillCircle(cx, headY, headR);
+    g.fillEllipse(cx + headR * 0.95, headY + 1 * v, 3 * u, 4.5 * v);
+    g.fillEllipse(cx - headR * 0.95, headY + 1 * v, 3 * u, 4.5 * v);
+    g.fillStyle(0x3b3024, 1);                          // hair, parted, immovable
+    g.fillEllipse(cx, headY - headR * 0.62, headR * 2.05, headR * 0.95);
+    g.fillRect(cx - headR, headY - headR * 0.72, headR * 2, headR * 0.3);
+
+    var blinking = (t % 3.1) < 0.12;
+    if (blinking) {
+      g.fillStyle(0x3b3024, 1);
+      g.fillRect(cx - headR * 0.62, headY - 1 * v, headR * 0.44, 1 * v);
+      g.fillRect(cx + headR * 0.18, headY - 1 * v, headR * 0.44, 1 * v);
+    } else {
+      g.fillStyle(0xffffff, 1);
+      g.fillEllipse(cx - headR * 0.4, headY - 0.5 * v, headR * 0.46, headR * 0.56);
+      g.fillEllipse(cx + headR * 0.4, headY - 0.5 * v, headR * 0.46, headR * 0.56);
+      g.fillStyle(0x1e293b, 1);
+      g.fillCircle(cx - headR * 0.37, headY - 0.2 * v, headR * 0.14);
+      g.fillCircle(cx + headR * 0.43, headY - 0.2 * v, headR * 0.14);
+    }
+    g.fillStyle(0x3b3024, 1);                          // brows, which never move
+    g.fillRect(cx - headR * 0.68, headY - headR * 0.4, headR * 0.5, 1.1 * v);
+    g.fillRect(cx + headR * 0.18, headY - headR * 0.4, headR * 0.5, 1.1 * v);
+
+    // The mouth, which is the whole performance.
+    var open = this.mouthOpen(t);
+    g.fillStyle(0x7a3b40, 1);
+    g.fillEllipse(cx, headY + headR * 0.52, (2.8 + 2 * open) * u, (0.8 + 4.2 * open) * v);
+    if (open > 0.45) {
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(cx - (1.4 + 1 * open) * u, headY + headR * 0.38, (2.8 + 2 * open) * u, 0.8 * v);
+    }
+  };
+
+  // Open and shut while there is a line being said, and shut for the
+  // last third of a second so a shot never cuts away mid-syllable.
+  MainScene.prototype.mouthOpen = function (t) {
+    var shot = NEWS_SHOTS[this.tv ? this.tv.shot : 0];
+    if (t > shot.secs - 0.35) return 0;
+    return 0.5 + 0.5 * Math.sin(t * NEWS_MOUTH_SPEED);
+  };
+
+  MainScene.prototype.drawFootage = function (g, r, t, shot) {
+    var u = r.w / 100, v = r.h / 100;
+    var ground = r.y + 58 * v;
+
+    g.fillGradientStyle(0x203247, 0x203247, 0x2b3d53, 0x2b3d53, 1); // dusk
+    g.fillRect(r.x, r.y, r.w, r.h);
+    g.fillStyle(0x16202e, 1);                                       // skyline
+    g.fillRect(r.x + 3 * u, ground - 40 * v, 17 * u, 40 * v);
+    g.fillRect(r.x + 24 * u, ground - 28 * v, 13 * u, 28 * v);
+    g.fillRect(r.x + 76 * u, ground - 34 * v, 19 * u, 34 * v);
+    g.fillStyle(0xffe9a8, 0.5);                                     // a few lights still on
+    [[5, 34], [9, 34], [5, 26], [79, 28], [87, 23], [26, 22]].forEach(function (p) {
+      g.fillRect(r.x + p[0] * u, ground - p[1] * v, 2.4 * u, 3 * v);
+    });
+    g.fillStyle(0x2f4257, 1);                                       // road
+    g.fillRect(r.x, ground, r.w, r.h - (ground - r.y));
+    g.fillStyle(0x3d5570, 1);
+    for (var i = 0; i < 6; i++) g.fillRect(r.x + (5 + i * 17) * u, ground + 8 * v, 8 * u, 1 * v);
+
+    var manX = r.x + (26 + Math.min(t, NEWS_SWIPE_AT) * 13) * u;
+    var manH = 22 * v, manW = 4.4 * u, headR = 3.4 * v;
+    var split = Math.max(0, t - NEWS_SPLIT_AT);
+
+    // The alien: a sliver, because that is all a two-dimensional thing
+    // is from the side. It does not walk, it slides.
+    var alienX = r.x + (104 - Math.min(t / NEWS_SWIPE_AT, 1) * 36) * u;
+    var alienH = 30 * v;
+    g.fillStyle(0x0f172a, 0.6);
+    g.fillEllipse(alienX, ground + 1 * v, 7 * u, 1.6 * v);
+    g.fillStyle(0x34d399, 1);
+    g.fillTriangle(alienX, ground - alienH, alienX + 3.2 * u, ground, alienX - 3.2 * u, ground);
+    g.fillStyle(0x062e26, 1);
+    g.fillCircle(alienX - 1 * u, ground - alienH * 0.72, 0.8 * u);
+    g.fillCircle(alienX + 1 * u, ground - alienH * 0.72, 0.8 * u);
+    // The arm: a tapered blade, out and back, with the swipe drawn as
+    // the streak it leaves rather than as a thing being held.
+    if (t > NEWS_SWIPE_AT - 0.3 && t < NEWS_SPLIT_AT + 0.35) {
+      var armY = ground - manH * 0.72;
+      g.fillStyle(0x6ee7b7, 1);
+      g.fillTriangle(alienX, armY - 1.6 * v, alienX, armY + 1.6 * v, manX - 2 * u, armY);
+      g.fillStyle(0xd1fae5, 0.75);
+      g.fillTriangle(alienX - 2 * u, armY - 0.5 * v, alienX - 2 * u, armY + 0.5 * v,
+                     manX - 3 * u, armY);
+    }
+
+    if (split <= 0) {
+      g.fillStyle(0x0f172a, 0.45);
+      g.fillEllipse(manX, ground + 1 * v, 9 * u, 1.8 * v);
+      g.fillStyle(0x2f3f63, 1);                                     // legs
+      g.fillRect(manX - manW * 0.8, ground - manH * 0.42, manW * 1.6, manH * 0.42);
+      g.fillStyle(0x9fb0d4, 1);                                     // coat
+      g.fillRect(manX - manW, ground - manH, manW * 2, manH * 0.62);
+      g.fillStyle(0xe6c9a8, 1);                                     // head
+      g.fillCircle(manX, ground - manH - headR * 0.6, headR);
+      g.fillStyle(0x1e293b, 1);
+      g.fillCircle(manX - headR * 0.3, ground - manH - headR * 0.8, headR * 0.17);
+      g.fillCircle(manX + headR * 0.3, ground - manH - headR * 0.8, headR * 0.17);
+      if (t < NEWS_SWIPE_AT - 0.1) {                                // whistling, as you do
+        g.fillStyle(0xf8fafc, 0.85);
+        g.fillCircle(manX + 7 * u, ground - manH * 1.35, 1.1 * u);
+        g.fillRect(manX + 7.6 * u, ground - manH * 1.55, 0.7 * u, 2.6 * v);
+      }
+    } else {
+      // Two halves, parting a little and then toppling OUTWARD - each
+      // about its own foot, like a felled tree, with its own half of a
+      // head still on top of it. And going thin as they go, because
+      // what the swipe took off him was a dimension.
+      var slide = Math.min(split * 16 * u, 6 * u);
+      var fall = Math.min(split * 2.1, 1);
+      var lean = fall * Math.PI * 0.49;                             // ends lying flat
+      var thin = 1 - 0.78 * fall;
+      for (var side = -1; side <= 1; side += 2) {
+        var footX = manX + side * slide;
+        g.fillStyle(0x9fb0d4, 1);
+        quadAt(g, footX + side * Math.sin(lean) * manH * 0.5,
+               ground - Math.cos(lean) * manH * 0.5,
+               manW * 0.5 * thin, manH * 0.5, side * lean);
+        g.fillStyle(0xe6c9a8, 1);
+        quadAt(g, footX + side * Math.sin(lean) * (manH + headR * 0.7),
+               ground - Math.cos(lean) * (manH + headR * 0.7),
+               headR * 0.55 * thin, headR * 0.9, side * lean);
+      }
+      if (fall >= 1 && split < 1.1) {                               // a little dust, on landing
+        g.fillStyle(0xcbd5f5, Math.max(0, 0.35 - (split - 0.48) * 0.5));
+        g.fillCircle(manX - manH * 0.55, ground - 1 * v, 2.4 * u);
+        g.fillCircle(manX + manH * 0.55, ground - 1 * v, 2.4 * u);
+      }
+      if (split < 0.26) {                                           // the flash of the cut
+        g.fillStyle(0xffffff, 1 - split / 0.26);
+        g.fillRect(manX - 0.7 * u, ground - manH * 1.5, 1.4 * u, manH * 1.6);
+      }
+    }
+
+    g.fillStyle(0xef4444, 1);                                       // somebody's phone
+    g.fillCircle(r.x + 6 * u, r.y + 6 * v, 1.6 * u);
+
+    var badge = this.tvTexts[3];
+    if (shot && shot.badge) {
+      var bsize = Math.max(7, Math.min(5 * v, 6 * u));
+      g.fillStyle(0xef4444, 0.9);
+      g.fillRoundedRect(r.x + 11 * u, r.y + 3 * v, 24 * u, 7.5 * v, 2);
+      badge.setVisible(true).setFontSize(bsize).setText(shot.badge)
+           .setPosition(r.x + 13.5 * u, r.y + 3 * v + 3.75 * v - bsize * 0.6);
+    } else {
+      badge.setVisible(false);
+    }
+  };
+
+  MainScene.prototype.drawChyron = function (g, r, tv) {
+    var u = r.w / 100, v = r.h / 100;
+    var barY = r.y + 76 * v, barH = 12 * v, tickH = 9 * v;
+    g.fillStyle(0x0f172a, 0.92);
+    g.fillRect(r.x, barY, r.w, barH);
+    g.fillStyle(0xd94f5c, 1);
+    g.fillRect(r.x, barY, 30 * u, barH);
+    g.fillStyle(0x0b1220, 0.96);
+    g.fillRect(r.x, barY + barH, r.w, tickH);
+    g.fillStyle(0xd94f5c, 1);
+    g.fillRect(r.x, barY + barH, r.w, 0.6 * v);
+
+    var station = this.tvTexts[0], headline = this.tvTexts[1], ticker = this.tvTexts[2];
+    var size = Math.max(8, Math.min(5.6 * v, 7 * u));
+    station.setVisible(true).setFontSize(size).setText(NEWS_STATION)
+           .setPosition(r.x + 2.5 * u, barY + barH * 0.5 - size * 0.6);
+    headline.setVisible(true).setFontSize(size).setText(NEWS_CHYRON)
+            .setPosition(r.x + 33 * u, barY + barH * 0.5 - size * 0.6);
+
+    // Scrolled by CHARACTER through a window cut out of the doubled
+    // string. A pixel scroll would need the text clipped to the screen's
+    // edge, and a ticker that steps looks like a ticker anyway.
+    var tsize = Math.max(7, Math.min(4.6 * v, 5.6 * u));
+    var charW = tsize * 0.62;
+    var fit = Math.max(8, Math.floor((r.w - 5 * u) / charW));
+    var step = Math.floor(-tv.tickerX / charW);
+    var start = ((step % NEWS_TICKER.length) + NEWS_TICKER.length) % NEWS_TICKER.length;
+    ticker.setVisible(true).setFontSize(tsize)
+          .setText((NEWS_TICKER + NEWS_TICKER).substr(start, fit))
+          .setPosition(r.x + 2.5 * u, barY + barH + tickH * 0.5 - tsize * 0.6);
   };
 
   // ---- Leaving ---------------------------------------------------------
@@ -1025,6 +1493,8 @@
 
     if (this.mode === 'leaving') { this.updateLeaving(); return; }
     if (this.mode === 'gone') return;
+    // The news plays instead of the room: no walking off mid-sentence.
+    if (this.mode === 'watching') { this.updateBroadcast(dt); return; }
 
     var input = window.__houseInput;
     var moveX = input.x, moveY = input.y;
@@ -1063,8 +1533,8 @@
     if (this.atDoor()) { this.leave(); return; }
 
     var thing = this.nearestThing();
-    this.action = thing && thing.go ? thing.go : null;
-    this.setPrompt(thing ? (thing.go ? thing.say + '  ▸ tap' : thing.say) : null);
+    this.action = thing ? (thing.watch ? WATCH_TV : (thing.go || null)) : null;
+    this.setPrompt(thing ? (this.action ? thing.say + '  ▸ tap' : thing.say) : null);
     this.updateDust(dt);
   };
 
@@ -1130,7 +1600,21 @@
       },
       moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
       leave: function () { self.leave(); },
-      use: function () { return self.useThing(); }
+      use: function () { return self.useThing(); },
+      // The broadcast, from outside: which shot is up, what it says, and
+      // whether the mouth is actually moving on it.
+      tv: function () {
+        if (!self.tv) return null;
+        var shot = NEWS_SHOTS[self.tv.shot];
+        return {
+          shot: self.tv.shot, of: NEWS_SHOTS.length, kind: shot.shot,
+          say: shot.say, age: self.tv.age,
+          caption: document.getElementById('tvCaption').textContent,
+          mouth: self.mouthOpen(self.tv.age)
+        };
+      },
+      watchTv: function () { return self.watchTv(); },
+      closeTv: function () { return self.closeTv(); }
     };
   };
 
@@ -1270,6 +1754,12 @@
 
   // The prompt line doubles as the button for whatever you are standing
   // at - see useThing().
+  (function bindTvButton() {
+    var btn = document.getElementById('tvCloseBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function () { if (mainScene) mainScene.closeTv(); });
+  })();
+
   (function bindHintTap() {
     var hint = document.getElementById('hint');
     if (!hint) return;
@@ -1281,7 +1771,11 @@
     Sound.startRoomTone();
     if (isUpKey(e.code) || isDownKey(e.code)) e.preventDefault();
     if (isOutKey(e.code)) {
-      if (!e.repeat) { if (mainScene) mainScene.leave(); else goOutside(); }
+      // While the TV is on, out means out of the TV.
+      if (!e.repeat) {
+        if (mainScene && mainScene.closeTv()) return;
+        if (mainScene) mainScene.leave(); else goOutside();
+      }
       return;
     }
     if (isUseKey(e.code)) {

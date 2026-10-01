@@ -199,10 +199,14 @@ harness.run(async (page, check, ctx) => {
   check('and says so, on the one line the room uses for everything',
     computerUi.tappable && /tap/i.test(computerUi.text), computerUi);
 
-  // The things that are still promises must stay inert - an object that
-  // LOOKS pressable and does nothing is worse than one that says later.
-  const atTelly = await standAt(page, 'tv');
-  check('the TV is still a promise, not a button', atTelly.action === null, atTelly);
+  // Anything that does NOT act must stay inert, and must not offer a
+  // press - an object that looks pressable and does nothing is worse
+  // than one that plainly says later. The books are the room's last
+  // piece of furniture that is only furniture.
+  const atBooks = await standAt(page, 'shelf');
+  check('the books are scenery, and do not pretend otherwise',
+    atBooks.action === null && typeof atBooks.prompt === 'string' &&
+    atBooks.prompt.indexOf('tap') === -1, atBooks);
   const inTheOpen = await page.evaluate(() => {
     window.__houseDebug.moveTo(0.06, 0.70);
     return new Promise(res => setTimeout(() => res(window.__houseDebug.use()), 260));
@@ -216,6 +220,138 @@ harness.run(async (page, check, ctx) => {
     await reachedPage(page, 'head-on.html?tutorial', 6000), page.url());
   await page.goto(ctx.url('house.html'));
   await page.waitForTimeout(BOOT_MS);
+
+  // --- the six o'clock news -------------------------------------------------
+  // The TV was the room's other promise. The draft of the broadcast is
+  // expected to be rewritten - the dialogue especially - so what is
+  // checked here is the MACHINERY around it: that it plays, that the
+  // captions track the shots, that the mouth moves while a line is up,
+  // that the picture really is being drawn, and that it gives the room
+  // back however it ends.
+  const tvSpot = await standAt(page, 'tv');
+  check('the TV offers the news', tvSpot.action === 'watch:tv', tvSpot);
+  const on = await page.evaluate(() => {
+    const d = window.__houseDebug;
+    d.watchTv();
+    return { mode: d.state().mode, tv: d.tv(),
+             bar: document.getElementById('tvBar').classList.contains('visible'),
+             controls: document.getElementById('controlBar').classList.contains('gone') };
+  });
+  check('turning it on starts the bulletin', on.mode === 'watching' && on.tv.shot === 0, on);
+  check('with the captions up and the room\'s controls out of the way',
+    on.bar === true && on.controls === true && on.tv.caption.length > 10, on);
+  check('and the caption is the line the shot is actually on',
+    on.tv.caption === on.tv.say, on.tv);
+
+  // You cannot wander off mid-sentence.
+  await page.keyboard.down('ArrowLeft');
+  await page.waitForTimeout(500);
+  await page.keyboard.up('ArrowLeft');
+  const held = await page.evaluate(() => window.__houseDebug.state());
+  check('the room does not walk while the news is on',
+    Math.abs(held.worldX - tvSpot.worldX) < 0.001, { tvSpot, held });
+
+  // The mouth. Sampled over half a second: a still mouth and a moving
+  // one both "have a mouth", and only one of them is talking.
+  const mouth = await page.evaluate(() => new Promise(res => {
+    const d = window.__houseDebug;
+    const seen = [];
+    const tick = setInterval(() => {
+      const t = d.tv();
+      if (t) seen.push(+t.mouth.toFixed(2));
+      if (seen.length >= 14) { clearInterval(tick); res({ min: Math.min.apply(null, seen), max: Math.max.apply(null, seen), seen: seen }); }
+    }, 40);
+  }));
+  check('the anchor talks - the mouth opens and shuts while a line is up',
+    mouth.max - mouth.min > 0.4, mouth);
+
+  // The picture itself. Everything above would pass with a black
+  // rectangle where the broadcast should be, so this reads the screen:
+  // during the invasion footage there is a green two-dimensional thing
+  // standing in it.
+  const invaderShowed = await page.evaluate(() => new Promise(res => {
+    const d = window.__houseDebug, s = d.scene;
+    const started = Date.now();
+    const tick = setInterval(() => {
+      const t = d.tv();
+      if (!t) { clearInterval(tick); res({ never: true }); return; }
+      if (Date.now() - started > 25000) { clearInterval(tick); res({ timeout: true, green: 0 }); return; }
+      if (t.kind !== 'footage' || t.age < 1.2) return;
+      clearInterval(tick);
+      const r = s.tvRect();
+      s.game.renderer.snapshotArea(Math.round(r.x), Math.round(r.y),
+        Math.round(r.w), Math.round(r.h * 0.7), img => {
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          c.getContext('2d').drawImage(img, 0, 0);
+          const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+          let green = 0;
+          for (let i = 0; i < px.length; i += 4) {
+            if (px[i + 1] > px[i] + 45 && px[i + 1] > px[i + 2] + 25) green++;
+          }
+          res({ green: green, shot: t.shot, kind: t.kind });
+        });
+    }, 100);
+  }));
+  check('and the invader is on screen in the footage, not just in the script',
+    invaderShowed.green > 150, invaderShowed);
+
+  // The captions have to keep up with the shots all the way through.
+  // Deadlined, like every other watch in the suite: a bulletin that
+  // never advances never ends either, and a check that waits for ever
+  // is a test file that hangs rather than one that fails.
+  const run = await page.evaluate(() => new Promise(res => {
+    const d = window.__houseDebug;
+    const captions = [], kinds = {}, mismatched = [];
+    const started = Date.now();
+    const done = over => res({ captions: captions, kinds: Object.keys(kinds),
+                               mismatched: mismatched, over: over });
+    const tick = setInterval(() => {
+      const t = d.tv();
+      if (!t) { clearInterval(tick); done(true); return; }
+      if (captions[captions.length - 1] !== t.caption) captions.push(t.caption);
+      kinds[t.kind] = true;
+      if (t.caption !== t.say) mismatched.push(t.shot);
+      if (Date.now() - started > 45000) { clearInterval(tick); done(false); }
+    }, 120);
+  }));
+  check('the bulletin ends by itself rather than running for ever',
+    run.over === true, { captions: run.captions.length, over: run.over });
+  check('the captions change with the shots, all the way to the end',
+    run.captions.length >= 5, { captions: run.captions.length });
+  check('and never say something other than the line being said',
+    run.mismatched.length === 0, run.mismatched);
+  check('the report cuts to footage of them, not just the studio',
+    run.kinds.indexOf('footage') !== -1, run.kinds);
+
+  const after = await page.evaluate(() => ({
+    mode: window.__houseDebug.state().mode,
+    tv: window.__houseDebug.tv(),
+    bar: document.getElementById('tvBar').classList.contains('visible'),
+    controls: document.getElementById('controlBar').classList.contains('gone')
+  }));
+  check('it runs out on its own and gives the room back',
+    after.mode === 'walk' && after.tv === null && after.bar === false && after.controls === false,
+    after);
+
+  // And the two ways to stop watching it early.
+  await page.evaluate(() => window.__houseDebug.watchTv());
+  await page.click('#tvCloseBtn');
+  await page.waitForTimeout(200);
+  const offByButton = await page.evaluate(() => ({
+    mode: window.__houseDebug.state().mode, tv: window.__houseDebug.tv()
+  }));
+  check('Turn it off stops it at once', offByButton.mode === 'walk' && offByButton.tv === null,
+    offByButton);
+
+  await page.evaluate(() => window.__houseDebug.watchTv());
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const offByEscape = await page.evaluate(() => ({
+    mode: window.__houseDebug.state().mode, url: window.location.pathname
+  }));
+  check('and Escape turns the TV off rather than walking out of the house',
+    offByEscape.mode === 'walk' && /house\.html$/.test(offByEscape.url), offByEscape);
 
   // --- coming back to something --------------------------------------------
   // A page can ask to start you AT a thing rather than in the middle of
