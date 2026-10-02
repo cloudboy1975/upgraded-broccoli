@@ -65,6 +65,28 @@ async function readState(page) {
   }
 }
 
+// Hold a direction from a spot and report where it left you, plus
+// whether the player was ever standing inside the house's walls on the
+// way - which is the thing being fixed, and is invisible in a final
+// position.
+async function walkUntilStopped(page, from, keys, budgetMs) {
+  await page.evaluate(f => window.__yardDebug.moveTo(f[0], f[1]), from);
+  await page.waitForTimeout(140);
+  for (const k of keys) await page.keyboard.down(k);
+  const started = Date.now();
+  let everInside = false, left = false;
+  while (Date.now() - started < budgetMs) {
+    const st = await readState(page);
+    if (st.gone) { left = true; break; }
+    if (st.inWall) everInside = true;
+    if (st.mode !== 'walk') break;
+    await page.waitForTimeout(50);
+  }
+  for (const k of keys) await page.keyboard.up(k).catch(() => {});
+  const end = left ? { gone: true } : await readState(page);
+  return { end: end, everInside: everInside };
+}
+
 harness.run(async (page, check, ctx) => {
   const errors = ctx.errors;
   await page.waitForTimeout(BOOT_MS);
@@ -271,6 +293,45 @@ harness.run(async (page, check, ctx) => {
   check('nor from the front of the yard', aim.frontOfYard === false, aim);
   check('standing beside the door does not let you in', aim.aside === false, aim);
   check('and nor does being round the back of the house', aim.behind === false, aim);
+
+  // --- the house is solid --------------------------------------------------
+  // You could walk into it. Not through the door - through the WALL:
+  // the depth axis runs past the building, the sprites sort by screen
+  // y, and the player slid behind the front wall and vanished, a foot
+  // from a door they never found. Worth its own section because none of
+  // the door checks above would ever notice: they are all about the one
+  // place in that wall where walking in IS the point.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+
+  const intoTheWall = await walkUntilStopped(page, [-0.85, 0.72], ['ArrowUp'], 4000);
+  check('walking at the front of the house stops you',
+    intoTheWall.end.mode === 'walk' && intoTheWall.end.depth > 0.4, intoTheWall);
+  check('and you are left standing in front of it, not inside it',
+    intoTheWall.everInside === false && intoTheWall.end.inWall === false, intoTheWall);
+
+  // The wall is the house's own WIDTH, and only from its own feet
+  // backwards - a block that swallowed the whole garden would pass the
+  // two checks above just as well. Asked of the geometry directly
+  // rather than walked: the lane beside the house is a few metres wide
+  // and the ship's boarding radius is generous, and two probes in this
+  // file have already been eaten trying to walk down it.
+  const wallShape = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const f = d.state().houseFront;
+    const wx = (x, depth) => (x - s.scale.width / 2) / s.depthToHalfWidth(depth);
+    const back = 0.3, front = 0.8, mid = (f.left + f.right) / 2;
+    return {
+      behindTheWall: s.insideHouse(wx(mid, back), back),
+      besideIt: s.insideHouse(wx(f.right + 30, back), back),
+      inFrontOfIt: s.insideHouse(wx(mid, front), front),
+      besideX: +wx(f.right + 30, back).toFixed(2)
+    };
+  });
+  check('and the wall is the house itself, not the whole top of the garden',
+    wallShape.behindTheWall === true && wallShape.besideIt === false, wallShape);
+  check('with the yard in front of it free to stand in',
+    wallShape.inFrontOfIt === false, wallShape);
 
   // --- the door opens as you come up the path -----------------------------
   // The light spilling out is the only thing on screen telling a

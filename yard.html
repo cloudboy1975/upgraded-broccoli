@@ -403,6 +403,12 @@
   var HOUSE_TEX_W = 200;
   var HOUSE_TEX_H = 168;
   var HOUSE_SIZE = 1.15;          // extra scale the sprite is drawn at
+  // The walls' own span on the texture, which is what the player
+  // actually walks into - the roof overhangs it and the shadow spills
+  // past it, and neither of those is a wall.
+  var HOUSE_WALL_LEFT = 0.12;
+  var HOUSE_WALL_RIGHT = 0.88;
+  var WALL_STANDOFF = 3;          // px of yard you are stopped in, in front of the brick
   var HOUSE_DOOR_X = 0.44;        // left edge, as a fraction of the width
   var HOUSE_DOOR_W = 0.13;
   var HOUSE_DOOR_TOP = 0.66;      // as a fraction of the height
@@ -966,6 +972,35 @@
     };
   };
 
+  // The front of the house, in screen space: where the walls start and
+  // stop, and the line their feet stand on.
+  MainScene.prototype.houseFront = function () {
+    var h = this.placeAt(HOUSE.worldX, HOUSE.depth);
+    var S = h.scale * HOUSE_SIZE;
+    return {
+      left: h.x + (HOUSE_TEX_W * HOUSE_WALL_LEFT - HOUSE_TEX_W / 2) * S,
+      right: h.x + (HOUSE_TEX_W * HOUSE_WALL_RIGHT - HOUSE_TEX_W / 2) * S,
+      y: h.y + (HOUSE_TEX_H * HOUSE_DOOR_BOTTOM - HOUSE_TEX_H) * S
+    };
+  };
+
+  // You could walk INTO the house - not through the door, through the
+  // wall. The depth axis runs past the building, the sprites sort by
+  // screen y, and the result was the player sliding behind the front
+  // wall and vanishing, a foot from a door they never found.
+  //
+  // So the wall is solid, from its own line all the way back: anything
+  // at the house's x and further up the garden than its feet is inside
+  // the building, and nobody walks in there. The DOORWAY needs no gap
+  // cut in this - being stopped at the threshold is exactly where
+  // atDoor() fires, so walking at the door still walks you in.
+  MainScene.prototype.insideHouse = function (worldX, depth) {
+    var me = this.placeAt(worldX, depth);
+    var f = this.houseFront();
+    if (me.y >= f.y + WALL_STANDOFF) return false; // out in the yard, in front of it
+    return me.x > f.left && me.x < f.right;
+  };
+
   MainScene.prototype.atDoor = function () {
     var me = this.placeAt(this.worldX, this.depth);
     var door = this.doorRect();
@@ -1110,8 +1145,15 @@
     var walking = magnitude > 0.04;
 
     if (walking) {
-      this.worldX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
-      this.depth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.12, 1);
+      // One axis at a time, so the wall is something you slide along
+      // rather than stick to - the same rule the furniture indoors
+      // follows. And if you are somehow already inside it, every move
+      // is allowed until you are out again.
+      var stuck = this.insideHouse(this.worldX, this.depth);
+      var nextX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
+      if (stuck || !this.insideHouse(nextX, this.depth)) this.worldX = nextX;
+      var nextDepth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.12, 1);
+      if (stuck || !this.insideHouse(this.worldX, nextDepth)) this.depth = nextDepth;
       if (moveX > 0.08) this.flipX = false;
       else if (moveX < -0.08) this.flipX = true;
       this.bobPhase += dt * (6 + magnitude * 6);
@@ -1257,6 +1299,7 @@
           boardRadius: BOARD_RADIUS * self.depthToScale(SHIP.depth),
           atShip: self.atShip(), atDoor: self.atDoor(), nearDoor: self.nearDoor(),
           doorOpen: self.doorOpen, doorRect: self.doorRect(),
+          inWall: self.insideHouse(self.worldX, self.depth), houseFront: self.houseFront(),
           house: HOUSE,
           prompt: self.prompt,
           shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
