@@ -90,10 +90,9 @@ chapter of a longer game about two-dimensional aliens.
   the yard. Walk right into the ship and it takes off; walk left into
   the front door — it opens as you come up the path, with the light
   spilling onto the grass — and you are inside, where the computer runs
-  the flight tutorial and the TV is showing the news. Walk up the gap at
-  the right-hand side of the house instead, and round the back of it,
-  and you come out on the drive. The bottom-right button skips straight
-  to the game.
+  the flight tutorial and the TV is showing the news. Walk up past the
+  right-hand side of the house instead and you come out on the drive.
+  The bottom-right button skips straight to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
   missiles that only hurt their own colour, and falling strips build the
@@ -106,11 +105,13 @@ chapter of a longer game about two-dimensional aliens.
 #### Round the side of the house
 
 You get there by walking **past the house**, not off the edge of the
-screen: up the gap at its right-hand side and in behind it, where the
-house's own sprite swallows you as you go. Both buildings in these
-scenes are solids with a back as well as a front, so the ground behind
-them is ground and a corner is something you can walk round. Coming
-back out of the drive is the same move in reverse.
+screen. The house's own front line, extended to its right, is the way
+out: cross it past the corner and you are round the side. No detour
+behind the building — the fade carries the last two strides of the
+walk, and the house sorts over you as it goes. Coming back out of the
+drive is the same move in reverse, with one difference: there the
+drive carries on up past that same line to the garage, so the way out
+is only the width of the gap at the corner.
 
 The garage here does **not** open because you walked at it — it
 is the one thing in the chapter you have to work for. Stand at it and

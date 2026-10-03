@@ -314,12 +314,13 @@
   // ==================================================================
   // Where everything stands.
   //
-  // You get here by walking round the back of the house in the yard,
-  // and you leave the same way, so this screen is staged around that
-  // move rather than around its edges: the house NEAR and to the left,
-  // close enough that its far corner is a corner you can walk round,
-  // and the garage further up the drive to the right, with open ground
-  // between them for the walk.
+  // You get here by walking past the house in the yard, and you leave
+  // the same way, so this screen is staged around that move rather than
+  // around its edges: the house NEAR and hard left, far enough over
+  // that the gap at its corner is nowhere near the drive, and the
+  // garage up and to the right with the drive running to it. Walking up
+  // to the garage and walking out of the scene must not be the same
+  // walk, and the only thing keeping them apart is this spacing.
   //
   // The first version of this screen had the two buildings overlapping
   // across the middle, which looked right and was a dead end - there
@@ -330,16 +331,18 @@
   // the corner button own the bottom ~140px of the screen, so anything
   // standing near depth 1 is standing under the player's thumbs.
   // ==================================================================
-  var GARAGE = { worldX: 0.42, depth: 0.34 };
-  var HOUSE_SIDE = { worldX: -0.82, depth: 0.56 };
-  var BIN = { worldX: -0.42, depth: 0.66 };
+  var GARAGE = { worldX: 0.62, depth: 0.34 };
+  var HOUSE_SIDE = { worldX: -0.92, depth: 0.60 };
+  // Against the garage's left corner, which is where a bin lives and
+  // which is also the one bit of this screen nobody has to walk through.
+  var BIN = { worldX: -0.12, depth: 0.37 };
   // Up the drive rather than down at the kerb: the kerb is where the
   // thumbstick is, and the yard taught that lesson once already.
-  var MAILBOX = { worldX: 0.82, depth: 0.6 };
+  var MAILBOX = { worldX: 0.88, depth: 0.68 };
   // Stepping out from behind the house, at its right-hand corner -
   // which is exactly where coming back the other way puts you in the
   // yard, so the two screens hand you over in the same pose.
-  var START = { worldX: -0.1, depth: 0.63 };
+  var START = { worldX: 0.18, depth: 0.70 };
 
   // The garage as a texture, and where its door sits on it - one set of
   // fractions shared by the bake, the rolling door and the light, the
@@ -374,17 +377,25 @@
   var WALL_STANDOFF = 3;   // px of drive you are stopped in, in front of the brick
   var LEAVE_FADE = 0.42;   // seconds of black on the way back
 
-  // The buildings have backs, and the way out is round one of them -
-  // the same shape of rule the yard uses, in the same units: px of
-  // ground the building covers, at its own scale.
-  var HOUSE_BODY_DEPTH = 58;
-  var GARAGE_BODY_DEPTH = 64;
   var GARAGE_DOORWAY_POCKET = 18; // how far into the garage the open doorway lets you
-  var PASS_BEHIND = 7;       // a stride past the back wall before you are round it
-  var PASS_SPREAD = 16;      // px of slack either side of the house's own width
-  var PASS_HINT_SPREAD = 86; // how far out from its corner the hint reaches
-  var PASS_HINT_FRONT = 26;  // ...and how far in front of its front wall
-  var PASS_WALKOFF_X = 34;   // px he walks on behind the house while the screen fades
+
+  // The way out is the same rule the yard uses: cross the line of the
+  // house's front wall, on its right-hand side. Here it needs a right
+  // edge as well, which the yard does not - the drive runs UP past that
+  // line to the garage, so an unbounded rule would send you home every
+  // time you walked up to the door you came here for. The corridor is
+  // the width of the gap between the house's corner and the drive, and
+  // the two buildings are placed to keep that gap honest.
+  var PASS_PLANE = 6;        // px past the front line before you count as round it
+  var PASS_SPREAD = 30;      // ...and how far out from its corner the way round reaches
+  var PASS_HINT_FRONT = 170; // how far short of the line the hint starts
+  // The hint reaches wider than the way round itself, because the way
+  // round is 30px of screen and nobody walks a 30px corridor straight:
+  // you come at it diagonally, and a hint you cross without ever being
+  // inside is a hint nobody reads.
+  var PASS_HINT_SPREAD = 70;
+  var PASS_HINT_INSET = 10;
+  var PASS_WALKOFF_X = 34;   // px he walks on past the house while the screen fades
   var PASS_WALKOFF_Y = 16;
 
   // Alien activity, a long way off. Three lights in loose formation,
@@ -993,26 +1004,20 @@
     };
   };
 
-  // Both buildings are bands rather than half-planes - each has a back
-  // as well as a front, and the ground behind them is ground. That is
-  // what lets you walk round the house to get out of here, the same way
-  // you walked round it to get in.
+  // Both buildings are solid from their own line all the way back. The
+  // ground behind them is not modelled because there is no way to get
+  // there: the only line you can cross is the house's, on its right,
+  // and crossing that takes you to the next screen.
   MainScene.prototype.houseFront = function () {
     return this.buildingFront(HOUSE_SIDE, HOUSE_TEX_W, HOUSE_TEX_H, HOUSE_SIZE,
                               HOUSE_WALL_LEFT, HOUSE_WALL_RIGHT, HOUSE_FOOT);
-  };
-
-  MainScene.prototype.houseBodyDepth = function () {
-    return HOUSE_BODY_DEPTH * this.depthToScale(HOUSE_SIDE.depth);
   };
 
   MainScene.prototype.insideBuilding = function (worldX, depth) {
     var me = this.placeAt(worldX, depth);
     var g = this.buildingFront(GARAGE, GARAGE_TEX_W, GARAGE_TEX_H, GARAGE_SIZE,
                                GARAGE_WALL_LEFT, GARAGE_WALL_RIGHT, GARAGE_DOOR_BOTTOM);
-    var gBody = GARAGE_BODY_DEPTH * this.depthToScale(GARAGE.depth);
-    if (me.y < g.y + WALL_STANDOFF && me.y > g.y - gBody &&
-        me.x > g.left && me.x < g.right) {
+    if (me.y < g.y + WALL_STANDOFF && me.x > g.left && me.x < g.right) {
       // ...except the doorway with the door UP, which is a room you may
       // stand in. A pocket, not a passage: it reaches less than half way
       // into the building, so the back of the garage stays a wall and
@@ -1026,26 +1031,27 @@
       if (!inDoorway) return true;
     }
     var h = this.houseFront();
-    return me.y < h.y + WALL_STANDOFF && me.y > h.y - this.houseBodyDepth() &&
-           me.x > h.left && me.x < h.right;
+    return me.y < h.y + WALL_STANDOFF && me.x > h.left && me.x < h.right;
   };
 
-  // The way back: round the house, the way you came. Not off the edge
-  // of the screen - up the gap at its right-hand side and in behind it,
-  // which is the move that put you on this screen in the first place.
+  // The way back: past the line of the house's front wall, on its
+  // right-hand side - the move that put you on this screen in the first
+  // place, done again. Bounded on the right, unlike the yard's, because
+  // the drive carries on up past that line to the garage.
   MainScene.prototype.pastTheHouse = function () {
     var h = this.houseFront();
     var me = this.placeAt(this.worldX, this.depth);
-    return me.y < h.y - this.houseBodyDepth() - PASS_BEHIND &&
-           me.x > h.left - PASS_SPREAD && me.x < h.right + PASS_SPREAD;
+    return me.x > h.right && me.x < h.right + PASS_SPREAD &&
+           me.y < h.y - PASS_PLANE;
   };
 
-  // In the gap at the side of it, which is where the hint belongs.
+  // Coming up to that line at the corner of the house, which is where
+  // the hint belongs: once you have crossed it you have already gone.
   MainScene.prototype.besideTheHouse = function () {
     var h = this.houseFront();
     var me = this.placeAt(this.worldX, this.depth);
-    return me.y < h.y + PASS_HINT_FRONT &&
-           me.x > h.right - 6 && me.x < h.right + PASS_HINT_SPREAD;
+    return me.x > h.right - PASS_HINT_INSET && me.x < h.right + PASS_HINT_SPREAD &&
+           me.y >= h.y - PASS_PLANE && me.y < h.y + PASS_HINT_FRONT;
   };
 
   MainScene.prototype.leaveForYard = function () {
@@ -1118,7 +1124,7 @@
     var bob = walking ? Math.sin(this.bobPhase) * 3 * me.scale : Math.sin(this.idlePhase * 1.2) * 1;
     this.you.setPosition(me.x, me.y + bob).setScale(me.scale).setFlipX(this.flipX).setDepth(me.y);
 
-    // Round the back of the house is back to the yard - no button, same
+    // Past the line of the house is back to the yard - no button, same
     // rule as every other door in this chapter. The garage is the
     // exception, below.
     if (this.pastTheHouse()) { this.leaveForYard(); return; }
@@ -1128,7 +1134,7 @@
         : this.nearGarage() ? (this.garageWant
             ? 'The garage door. Shut it again?'
             : 'The garage door. There is a switch on the frame.')
-        : (this.besideTheHouse() ? 'Round the house, back to the yard ↖' : null)
+        : (this.besideTheHouse() ? 'Round the house, back to the yard ↑' : null)
     );
     this.syncActionButton(this.garageVerb());
 
@@ -1403,7 +1409,7 @@
           garageWant: self.garageWant, buttonVerb: self.buttonVerb,
           nearGarage: self.nearGarage(), atCar: self.atCar(),
           pastTheHouse: self.pastTheHouse(), besideTheHouse: self.besideTheHouse(),
-          houseBodyDepth: self.houseBodyDepth(),
+          passPlane: PASS_PLANE, passSpread: PASS_SPREAD,
           inBuilding: self.insideBuilding(self.worldX, self.depth),
           garageFront: self.buildingFront(GARAGE, GARAGE_TEX_W, GARAGE_TEX_H, GARAGE_SIZE,
                                           GARAGE_WALL_LEFT, GARAGE_WALL_RIGHT, GARAGE_DOOR_BOTTOM),

@@ -102,6 +102,21 @@ harness.run(async (page, check, ctx) => {
     !layout.garageOnStick && !layout.garageOnBack &&
     !layout.houseOnStick && !layout.houseOnBack, layout);
 
+  // --- the drive is not the way out ----------------------------------------
+  // The way out of this screen is crossing the line of the house's
+  // front wall, and the drive runs UP past that same line to the
+  // garage. So the way out has a right-hand edge, and if it ever stops
+  // having one, walking to the door you came here for sends you home
+  // instead. Walked rather than asked, because that is how it would
+  // happen: a thumb held up.
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(2600);
+  await page.keyboard.up('ArrowUp').catch(() => {});
+  const upTheDrive = await readState(page);
+  check('walking straight up the drive reaches the garage rather than leaving',
+    upTheDrive.gone !== true && upTheDrive.mode === 'walk' &&
+    upTheDrive.nearGarage === true, upTheDrive);
+
   // --- the garage ----------------------------------------------------------
   // The door is the whole scene: it is the only thing here that
   // responds, and the car exists to be revealed by it. Unlike every
@@ -208,9 +223,9 @@ harness.run(async (page, check, ctx) => {
   // Asked of the buildings' own fronts rather than of points picked by
   // eye: the first version of this probed twenty pixels left of the
   // opening, which is outside the garage, and happily reported that a
-  // wall was not solid when it was. Each building is a BAND now - it
-  // has a back as well as a front - so every probe here names the depth
-  // it is asking about in the building's own terms.
+  // wall was not solid when it was. Each probe names the depth it is
+  // asking about in the building's own terms, because both buildings
+  // have moved more than once.
   const walls = await page.evaluate(() => {
     const d = window.__driveDebug, s = d.scene, st = d.state();
     const wx = (x, depth) => (x - s.scale.width / 2) / s.depthToHalfWidth(depth);
@@ -223,15 +238,13 @@ harness.run(async (page, check, ctx) => {
     // the doorway is cut out or not, which is what the first version of
     // this probe measured and why it proved nothing.
     const inGarage = depthAt(r.bottom - 12);
-    const inHouse = depthAt(st.houseFront.y - st.houseBodyDepth * 0.5);
-    const behindHouse = depthAt(st.houseFront.y - st.houseBodyDepth - 14);
+    const inHouse = depthAt(st.houseFront.y - 16);
     s.garageOpen = 0; // asked of a SHUT garage, whatever the last check left it as
     return {
       throughTheGarage: s.insideBuilding(wx(inGarageWall, inGarage), inGarage),
       throughTheHouse: s.insideBuilding(wx(inHouseWall, inHouse), inHouse),
       shutDoorway: s.insideBuilding(wx(r.cx, inGarage), inGarage),
       besideTheDoorway: s.insideBuilding(wx(inGarageWall, inGarage), inGarage),
-      roundTheBackOfTheHouse: s.insideBuilding(wx(inHouseWall, behindHouse), behindHouse),
       outOnTheDrive: s.insideBuilding(wx(r.cx, 0.8), 0.8),
       probes: { inGarageWall: Math.round(inGarageWall), inHouseWall: Math.round(inHouseWall) }
     };
@@ -243,8 +256,6 @@ harness.run(async (page, check, ctx) => {
   // garage and out into the field behind it.
   check('and a shut door is a wall too, not a way through',
     walls.shutDoorway === true && walls.besideTheDoorway === true, walls);
-  check('but the ground round the back of the house is ground',
-    walls.roundTheBackOfTheHouse === false, walls);
   check('and the drive in front of it all is free', walls.outOnTheDrive === false, walls);
 
   // ...and with the door up, the opening is a room you can stand in -
@@ -348,12 +359,15 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(BOOT_MS);
   const gapHere = await page.evaluate(() => {
     const d = window.__driveDebug, s = d.scene, st = d.state();
-    const depth = 0.56;
-    const worldX = (st.houseFront.right + 18 - s.scale.width / 2) / s.depthToHalfWidth(depth);
+    // At the house's corner, a stride short of its front line - which is
+    // where the player is when the hint has to be doing its job.
+    const depth = (st.houseFront.y + 40 - s.horizonY()) / (s.scale.height - s.horizonY());
+    const worldX = (st.houseFront.right + 14 - s.scale.width / 2) / s.depthToHalfWidth(depth);
     d.moveTo(worldX, depth);
     return new Promise(res => setTimeout(() => {
       const now = d.state();
       now.gapWorldX = worldX;
+      now.gapDepth = depth;
       res(now);
     }, 300));
   });
@@ -361,14 +375,16 @@ harness.run(async (page, check, ctx) => {
     typeof gapHere.prompt === 'string' && /back to the yard/i.test(gapHere.prompt), gapHere);
   check('and you have not gone round it yet', gapHere.pastTheHouse === false, gapHere);
 
-  await page.evaluate(p => window.__driveDebug.moveTo(p[0], p[1]), [gapHere.gapWorldX, 0.56]);
+  // Walked STRAIGHT up from fourteen pixels past the corner, with no
+  // sideways help. Walking up-and-left crosses a corridor of any width
+  // on the way past, so it proves the way out exists but not that it is
+  // wide enough to walk: a four-pixel version of this passed that way.
+  await page.evaluate(p => window.__driveDebug.moveTo(p[0], p[1]), [gapHere.gapWorldX, gapHere.gapDepth]);
   await page.waitForTimeout(140);
   await page.keyboard.down('ArrowUp');
-  await page.keyboard.down('ArrowLeft');
   const walkedBack = await reachedPage(page, 'yard.html?at=side', 9000);
   await page.keyboard.up('ArrowUp').catch(() => {});
-  await page.keyboard.up('ArrowLeft').catch(() => {});
-  check('walking up the side and round the back goes home', walkedBack, page.url());
+  check('walking straight up past the corner of the house goes home', walkedBack, page.url());
   if (!walkedBack) return; // everything below reads the yard's own scene
   const landed = await page.evaluate(() => {
     const d = window.__yardDebug, s = d.scene, st = d.state();
@@ -390,15 +406,16 @@ harness.run(async (page, check, ctx) => {
   const walkOff = await page.evaluate(() => new Promise(res => {
     const d = window.__driveDebug, s = d.scene, frames = [];
     const h = s.houseFront();
-    d.moveTo((h.right - 4 - s.scale.width / 2) / s.depthToHalfWidth(0.42), 0.42);
-    setTimeout(() => s.leaveForYard(), 60);
+    const depth = (h.y - 12 - s.horizonY()) / (s.scale.height - s.horizonY());
+    d.moveTo((h.right + 6 - s.scale.width / 2) / s.depthToHalfWidth(depth), depth);
+    s.leaveForYard();
     const iv = setInterval(() => {
       frames.push({
         mode: s.mode, x: Math.round(s.you.x),
         behind: s.you.x > h.left && s.you.x < h.right && s.you.depth < s.houseSprite.depth
       });
-      if (frames.length >= 5) { clearInterval(iv); res(frames); }
-    }, 45);
+      if (frames.length >= 7) { clearInterval(iv); res(frames); }
+    }, 50);
   }));
   check('and he walks on behind the house while the screen fades',
     walkOff.every(f => f.mode === 'leaving') &&
