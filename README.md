@@ -90,10 +90,10 @@ chapter of a longer game about two-dimensional aliens.
   the yard. Walk right into the ship and it takes off; walk left into
   the front door — it opens as you come up the path, with the light
   spilling onto the grass — and you are inside, where the computer runs
-  the flight tutorial and the TV is showing the news. Walk right along
-  the lane *behind* the ship instead and you go round the side of the
-  house to the drive. The bottom-right button skips straight to the
-  game.
+  the flight tutorial and the TV is showing the news. Walk up the gap at
+  the right-hand side of the house instead, and round the back of it,
+  and you come out on the drive. The bottom-right button skips straight
+  to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
   missiles that only hurt their own colour, and falling strips build the
@@ -105,8 +105,14 @@ chapter of a longer game about two-dimensional aliens.
 
 #### Round the side of the house
 
-Walk right, along the lane behind the ship, and you come out on the
-drive. The garage here does **not** open because you walked at it — it
+You get there by walking **past the house**, not off the edge of the
+screen: up the gap at its right-hand side and in behind it, where the
+house's own sprite swallows you as you go. Both buildings in these
+scenes are solids with a back as well as a front, so the ground behind
+them is ground and a corner is something you can walk round. Coming
+back out of the drive is the same move in reverse.
+
+The garage here does **not** open because you walked at it — it
 is the one thing in the chapter you have to work for. Stand at it and
 the corner button stops saying *Back* and starts saying **Open**; press
 it and the door rolls up on your father's convertible, a low, wide,
@@ -114,9 +120,10 @@ pointed thing from the years when cars were drawn by the same people
 drawing rockets. No keys in it yet. It stays however you left it, which
 is what makes it a switch rather than a motion sensor.
 
-Walking off the left-hand side brings you back to the yard — in at the
-side you walked out of, so the two screens agree about which way round
-the house you are going. And if you look up while you are round there,
+Each screen hands you over in the same pose — you step out at the
+corner of the house you just walked round, on the side you went round
+it — so the two agree about which way round the house you are going.
+And if you look up while you are round there,
 something is moving in the sky over the ridges: three lights in loose
 formation, one of which will roll through a loop now and then, or put a
 couple of bolts down toward the horizon. Not much. Enough.

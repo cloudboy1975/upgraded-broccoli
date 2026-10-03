@@ -295,60 +295,101 @@ harness.run(async (page, check, ctx) => {
   check('and nor does being round the back of the house', aim.behind === false, aim);
 
   // --- round the side of the house -----------------------------------------
-  // The second screen of the chapter hangs off this one edge: the
-  // RIGHT-hand side, in the lane behind the ship. Nothing else in the
-  // yard announces itself, but the side of the house looks like the end
-  // of the world until you are told it is not - so the hint is part of
+  // The second screen of the chapter hangs off a gap in the scenery
+  // rather than off an edge of the screen: up the right-hand side of
+  // the house and in behind it. The thing you walk round is the house
+  // itself, so every check here is asked of the house's own rectangle.
+  // Nothing else in the yard announces itself, so the hint is part of
   // the exit, not decoration.
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
-  const nearTheCorner = await page.evaluate(() => {
-    window.__yardDebug.moveTo(0.8, 0.4);
-    return new Promise(res => setTimeout(() => res(window.__yardDebug.state()), 260));
+  const inTheGap = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const f = d.state().houseFront, depth = 0.46;
+    const worldX = (f.right + 24 - s.scale.width / 2) / s.depthToHalfWidth(depth);
+    d.moveTo(worldX, depth);
+    return new Promise(res => setTimeout(() => {
+      const st = d.state();
+      st.gapWorldX = worldX;
+      res(st);
+    }, 260));
   });
-  check('walking out to the side of the house says there is something there',
-    typeof nearTheCorner.prompt === 'string' && /side of the house/i.test(nearTheCorner.prompt),
-    nearTheCorner);
-  check('and you are not round it yet', nearTheCorner.atSideEdge === false, nearTheCorner);
+  check('standing in the gap beside the house says there is something there',
+    typeof inTheGap.prompt === 'string' && /side of the house/i.test(inTheGap.prompt),
+    inTheGap);
+  check('and you are not round it yet', inTheGap.pastTheHouse === false, inTheGap);
 
-  // The lane is BEHIND the ship for a reason: touching the ship boards
-  // it with no button and no confirm, so a lane at the ship's own depth
-  // flies you away instead of taking you round the corner. Walked, not
-  // asserted about - the question is what happens to a player holding
-  // right, and the answer used to be "takeoff".
-  const alongTheLane = await page.evaluate(() => {
-    const d = window.__yardDebug;
+  // The gap runs past the ship, and touching the ship boards it with no
+  // button and no confirm. Asked as a sweep up the gap rather than at
+  // one spot: the question is what happens to a thumb held up-and-left,
+  // and the answer must not be "takeoff".
+  const upTheGap = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const f = d.state().houseFront;
     let closest = 1e9, boarded = false;
-    for (let x = 0.6; x <= 1.0001; x += 0.01) {
-      d.moveTo(x, 0.44);
-      const s = d.state();
-      closest = Math.min(closest, s.shipDistance - s.boardRadius);
-      if (s.atShip) boarded = true;
+    for (let depth = 0.3; depth <= 0.7001; depth += 0.01) {
+      const worldX = (f.right + 16 - s.scale.width / 2) / s.depthToHalfWidth(depth);
+      d.moveTo(worldX, depth);
+      const st = d.state();
+      closest = Math.min(closest, st.shipDistance - st.boardRadius);
+      if (st.atShip) boarded = true;
     }
     return { closest: Math.round(closest), boarded: boarded };
   });
-  check('and the lane itself clears the ship rather than boarding it',
-    alongTheLane.boarded === false && alongTheLane.closest > 10, alongTheLane);
+  check('and walking up it clears the ship rather than boarding it',
+    upTheGap.boarded === false && upTheGap.closest > 8, upTheGap);
 
-  const wentRound = await walkUntilStopped(page, [0.8, 0.4], ['ArrowRight'], 5000);
-  check('and walking on takes you round to the drive',
+  const wentRound = await walkUntilStopped(
+    page, [inTheGap.gapWorldX, 0.46], ['ArrowUp', 'ArrowLeft'], 6000);
+  check('and walking on round the back of it takes you to the drive',
     wentRound.end.gone === true || wentRound.end.mode !== 'walk', wentRound);
   check('which is a real page, not a dead end',
     await reachedPage(page, 'driveway.html', 8000), page.url());
 
-  // Coming back the other way lands you at the side, clear of the edge
-  // you just crossed - or the two screens bounce off each other. And on
-  // the side you LEFT by: coming back round the corner onto the opposite
-  // side of the yard is the kind of thing that makes a map unreadable.
+  // ...and the last thing you see is him going BEHIND the house rather
+  // than fading out beside it. That is the whole feeling this exit is
+  // for - walking round the far side of the building - and it is one
+  // sprite sort away from not happening at all.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const walkOff = await page.evaluate(() => new Promise(res => {
+    const d = window.__yardDebug, s = d.scene, frames = [];
+    const f = s.houseFront();
+    d.moveTo((f.right - 2 - s.scale.width / 2) / s.depthToHalfWidth(0.33), 0.33);
+    setTimeout(() => s.leaveForDrive(), 60);
+    const iv = setInterval(() => {
+      frames.push({
+        mode: s.mode, x: Math.round(s.you.x), y: Math.round(s.you.y),
+        behind: s.you.x > f.left && s.you.x < f.right && s.you.depth < s.houseSprite.depth
+      });
+      if (frames.length >= 5) { clearInterval(iv); res(frames); }
+    }, 45);
+  }));
+  check('he keeps walking while the screen fades, round behind the house',
+    walkOff.every(f => f.mode === 'leaving') &&
+    walkOff[walkOff.length - 1].x < walkOff[0].x - 8 &&
+    walkOff[walkOff.length - 1].behind === true, walkOff);
+
+  // Coming back the other way lands you beside the house you just went
+  // round - or the two screens bounce off each other. And at the same
+  // corner you left by: coming back out on the opposite side of the
+  // yard is the kind of thing that makes a map unreadable.
   await page.goto(ctx.url('yard.html?at=side'));
   await page.waitForTimeout(BOOT_MS);
-  const cameBack = await readState(page);
-  check('coming back round puts you at the side of the house',
-    cameBack.worldX > 0.7 && cameBack.worldX < cameBack.sideEdgeX, cameBack);
+  const cameBack = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene, st = d.state();
+    const me = s.placeAt(st.worldX, st.depth);
+    st.meX = Math.round(me.x);
+    st.meY = Math.round(me.y);
+    return st;
+  });
+  check('coming back round puts you at the corner of the house',
+    cameBack.meX > cameBack.houseFront.right &&
+    cameBack.meX < cameBack.houseFront.right + 90, cameBack);
   check('and not straight back round it again',
-    cameBack.mode === 'walk' && cameBack.atSideEdge === false, cameBack);
-  check('and in the lane you left by, not somewhere else entirely',
-    cameBack.depth < cameBack.sideLaneDepth, cameBack);
+    cameBack.mode === 'walk' && cameBack.pastTheHouse === false, cameBack);
+  check('standing out in front of its front wall, not inside it',
+    cameBack.meY > cameBack.houseFront.y && cameBack.inWall === false, cameBack);
   // ...and not underneath a thumb. The arrival spot is the one position
   // in the scene the player cannot walk out of if it is wrong.
   const backLayout = await page.evaluate(() => {
@@ -377,7 +418,16 @@ harness.run(async (page, check, ctx) => {
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
 
-  const intoTheWall = await walkUntilStopped(page, [-0.85, 0.72], ['ArrowUp'], 4000);
+  // Aimed at a piece of WALL, worked out from the house's own
+  // rectangle: half way between the door and the right-hand corner. A
+  // hardcoded worldX here walked into the door the moment the house
+  // moved, and then cheerfully reported that the wall was open.
+  const wallWorldX = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene, st = d.state();
+    const x = (st.doorRect.right + st.houseFront.right) / 2;
+    return (x - s.scale.width / 2) / s.depthToHalfWidth(0.72);
+  });
+  const intoTheWall = await walkUntilStopped(page, [wallWorldX, 0.72], ['ArrowUp'], 4000);
   check('walking at the front of the house stops you',
     intoTheWall.end.mode === 'walk' && intoTheWall.end.depth > 0.4, intoTheWall);
   check('and you are left standing in front of it, not inside it',
@@ -391,20 +441,29 @@ harness.run(async (page, check, ctx) => {
   // file have already been eaten trying to walk down it.
   const wallShape = await page.evaluate(() => {
     const d = window.__yardDebug, s = d.scene;
-    const f = d.state().houseFront;
+    const st = d.state(), f = st.houseFront, body = st.houseBodyDepth;
     const wx = (x, depth) => (x - s.scale.width / 2) / s.depthToHalfWidth(depth);
-    const back = 0.3, front = 0.8, mid = (f.left + f.right) / 2;
+    const depthOf = y => (y - s.horizonY()) / (s.scale.height - s.horizonY());
+    const inIt = depthOf(f.y - body * 0.5);       // half way into the building
+    const roundTheBack = depthOf(f.y - body - 14); // ...and out the other side of it
+    const front = 0.8, mid = (f.left + f.right) / 2;
     return {
-      behindTheWall: s.insideHouse(wx(mid, back), back),
-      besideIt: s.insideHouse(wx(f.right + 30, back), back),
+      insideIt: s.insideHouse(wx(mid, inIt), inIt),
+      besideIt: s.insideHouse(wx(f.right + 30, inIt), inIt),
+      roundTheBack: s.insideHouse(wx(mid, roundTheBack), roundTheBack),
       inFrontOfIt: s.insideHouse(wx(mid, front), front),
-      besideX: +wx(f.right + 30, back).toFixed(2)
+      body: Math.round(body), depths: { inIt: +inIt.toFixed(3), roundTheBack: +roundTheBack.toFixed(3) }
     };
   });
   check('and the wall is the house itself, not the whole top of the garden',
-    wallShape.behindTheWall === true && wallShape.besideIt === false, wallShape);
+    wallShape.insideIt === true && wallShape.besideIt === false, wallShape);
   check('with the yard in front of it free to stand in',
     wallShape.inFrontOfIt === false, wallShape);
+  // The house has a BACK. Without this it is a line painted across the
+  // garden, there is nothing to walk round, and the way to the drive
+  // does not exist.
+  check('and the ground behind it free too, which is where the way round goes',
+    wallShape.roundTheBack === false, wallShape);
 
   // --- the door opens as you come up the path -----------------------------
   // The light spilling out is the only thing on screen telling a

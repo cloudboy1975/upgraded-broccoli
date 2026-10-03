@@ -276,22 +276,25 @@
   var NEXT_PAGE = 'head-on.html';
   var HOUSE_PAGE = 'house.html';
   // Round the side of the house: the front, the drive and the garage.
-  // The way round is the RIGHT-hand side of the screen, and the lane
-  // runs BEHIND the ship rather than at its own depth or in front of it.
-  // Two measurements decided that, at 430x820:
-  //   - touching the ship IS boarding it, with no button and no confirm,
-  //     so a lane level with it flies you away instead of taking you
-  //     round the corner. Behind it at depth 0.48 the nearest the ship
-  //     ever gets along the lane is 64px against a 46px boarding radius;
-  //     at 0.56 it is 29px, which boards you outright.
-  //   - the near lane, in front of the ship, runs straight under the Fly
-  //     button: the figure vanishes behind it for the last stride before
-  //     the edge, which is the same disappearing act the house's wall
-  //     used to do.
+  //
+  // You get there by walking PAST THE HOUSE, not by walking off the edge
+  // of the screen. Up the gap on its right-hand side, in behind it, and
+  // the garden you are standing in is the one on the other side. The
+  // house's own sprite does the rest of the work: standing behind it
+  // sorts you underneath it, so the last thing that happens before the
+  // fade is the figure disappearing round the back.
+  //
+  // That needs the house to HAVE a back - see insideHouse(), where the
+  // wall is a band the depth of the building rather than everything
+  // beyond its front line.
   var DRIVE_PAGE = 'driveway.html';
-  var SIDE_EDGE_X = 0.95;     // past this, in the lane, you are round the corner
-  var SIDE_HINT_X = 0.6;      // ...and from here the hint says so
-  var SIDE_LANE_DEPTH = 0.48; // the lane is everything BEHIND this, the ship being at 0.62
+  var HOUSE_BODY_DEPTH = 52; // px of ground the house itself covers, at its own scale
+  var PASS_BEHIND = 7;       // ...and a stride past its back wall before you are round it
+  var PASS_SPREAD = 16;      // px of slack either side of the house's own width
+  var PASS_HINT_SPREAD = 86; // how far out from its right-hand corner the hint reaches
+  var PASS_HINT_FRONT = 26;  // ...and how far in front of its front wall
+  var PASS_WALKOFF_X = 34;   // px he walks on behind the house while the screen fades
+  var PASS_WALKOFF_Y = 16;
   var ENTER_FADE = 0.4; // seconds of black before the interior loads
 
   // Night, fixed - no mood cycling here. These are painted-lands' own
@@ -337,17 +340,25 @@
   // player both sit around 0.62 to keep clear of them - and they sit
   // together, because that near-equal depth is what makes "hold right"
   // reach the ship.
-  var HOUSE = { worldX: -0.62, depth: 0.44 };
-  var SHIP = { worldX: 0.48, depth: 0.62 };
+  // The gap between these two is now a place you walk through rather
+  // than scenery between two things, so it has to be wide enough to
+  // walk through on a PHONE. At 390x844 the house's right-hand corner
+  // and the edge of the ship's boarding circle were 15px apart - the
+  // figure is 26px across, so the only way up the side of the house was
+  // through the ship, and the ship takes off. Spread apart, that gap is
+  // 50px at 390 and 66px at 430; the composition is the same, the
+  // corridor is a corridor.
+  var HOUSE = { worldX: -0.70, depth: 0.44 };
+  var SHIP = { worldX: 0.70, depth: 0.62 };
   // You start between the two, because the choice is the scene: the ship
   // is a second to the right, the front door a second to the left.
   var START = { worldX: -0.16, depth: 0.64 };
-  // Coming back round the corner puts you where you left, not back in
-  // the middle of the lawn - ?at=side, the same idea the room uses. In
-  // the lane you left by, a short step inside the edge, and well clear
-  // of both the ship (65px against a 46px boarding radius) and the
-  // controls, which are a long way below this.
-  var SIDE_RETURN = { worldX: 0.88, depth: 0.46 };
+  // Coming back round the corner puts you where you left: stepping out
+  // of the gap at the side of the house, a little in front of its front
+  // corner so the house is beside you rather than on top of you -
+  // ?at=side, the same idea the room uses. Clear of the ship by 65px
+  // against a 46px boarding radius, and nowhere near the controls.
+  var SIDE_RETURN = { worldX: 0.16, depth: 0.52 };
 
 
 
@@ -1025,15 +1036,22 @@
   // screen y, and the result was the player sliding behind the front
   // wall and vanishing, a foot from a door they never found.
   //
-  // So the wall is solid, from its own line all the way back: anything
-  // at the house's x and further up the garden than its feet is inside
-  // the building, and nobody walks in there. The DOORWAY needs no gap
-  // cut in this - being stopped at the threshold is exactly where
-  // atDoor() fires, so walking at the door still walks you in.
+  // So the wall is solid - but as a BAND rather than a half-plane: the
+  // house has a back as well as a front, and the ground behind it is
+  // ground. That is what makes it a building you can walk round instead
+  // of a line painted across the garden, and the way to the drive is
+  // exactly that walk. The DOORWAY needs no gap cut in this - being
+  // stopped at the threshold is exactly where atDoor() fires, so
+  // walking at the door still walks you in.
+  MainScene.prototype.houseBodyDepth = function () {
+    return HOUSE_BODY_DEPTH * this.depthToScale(HOUSE.depth);
+  };
+
   MainScene.prototype.insideHouse = function (worldX, depth) {
     var me = this.placeAt(worldX, depth);
     var f = this.houseFront();
-    if (me.y >= f.y + WALL_STANDOFF) return false; // out in the yard, in front of it
+    if (me.y >= f.y + WALL_STANDOFF) return false;        // out in the yard, in front of it
+    if (me.y <= f.y - this.houseBodyDepth()) return false; // round the back of it
     return me.x > f.left && me.x < f.right;
   };
 
@@ -1073,17 +1091,39 @@
   // Going in is a plain fade rather than the ship's whole sequence -
   // opening your own front door is not a set piece, and this is a door
   // that will be walked through on the way to a tutorial.
-  // Walking off the right-hand side, along the lane behind the ship,
-  // goes round to the drive. The same rule as every other way out of
-  // this scene: you walk at it, and it happens.
-  MainScene.prototype.atSideEdge = function () {
-    return this.worldX >= SIDE_EDGE_X && this.depth < SIDE_LANE_DEPTH;
+  // Round the back of the house is round to the drive. The same rule as
+  // every other way out of this scene: you walk at it, and it happens.
+  //
+  // Both of these are asked of the HOUSE's own screen rectangle rather
+  // than of worldX, because that is what the player is actually walking
+  // round. The world narrows toward the horizon, and the house's left
+  // side is already outside it - at every depth up the garden, worldX
+  // -1 is still within the house's width - so the gap on the right is
+  // the only way past, without that having to be enforced anywhere.
+  MainScene.prototype.pastTheHouse = function () {
+    var f = this.houseFront();
+    var me = this.placeAt(this.worldX, this.depth);
+    return me.y < f.y - this.houseBodyDepth() - PASS_BEHIND &&
+           me.x > f.left - PASS_SPREAD && me.x < f.right + PASS_SPREAD;
+  };
+
+  // In the gap at the side, which is where the hint belongs: by the time
+  // you are behind the house you have already gone.
+  MainScene.prototype.besideTheHouse = function () {
+    var f = this.houseFront();
+    var me = this.placeAt(this.worldX, this.depth);
+    return me.y < f.y + PASS_HINT_FRONT &&
+           me.x > f.right - 6 && me.x < f.right + PASS_HINT_SPREAD;
   };
 
   MainScene.prototype.leaveForDrive = function () {
     if (this.mode !== 'walk') return;
     this.mode = 'leaving';
     this.modeAge = 0;
+    // Where he was when he cleared the corner. He keeps walking through
+    // the fade - see updateSequence() - which is what sells the whole
+    // thing: the last you see of him is his back going round the house.
+    this.leaveFrom = this.placeAt(this.worldX, this.depth);
     this.setPrompt(null);
     document.getElementById('hint').classList.add('hidden');
     document.getElementById('controlBar').classList.add('gone');
@@ -1105,6 +1145,19 @@
     if (this.mode === 'leaving') {
       this.updateDoorSwing(dt);
       var lt = clamp(this.modeAge / ENTER_FADE, 0, 1);
+      // Two more strides, up and to the left, behind the house. He sorts
+      // under it already at this depth, so the house swallows him as he
+      // goes - no mask, no extra layer, just the same foot-line sort
+      // everything else in the scene uses.
+      var walkOff = this.leaveFrom;
+      if (walkOff) {
+        var ox = walkOff.x - PASS_WALKOFF_X * lt;
+        var oy = walkOff.y - PASS_WALKOFF_Y * lt;
+        this.you.setPosition(ox, oy + Math.sin(this.modeAge * 14) * 2 * walkOff.scale)
+            .setScale(walkOff.scale * (1 - 0.06 * lt))
+            .setFlipX(true)
+            .setDepth(oy);
+      }
       this.fadeGfx.clear();
       this.fadeGfx.fillStyle(0x000000, lt);
       this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
@@ -1239,14 +1292,13 @@
     // which is the whole navigation of this scene: right to play, left
     // for the story.
     if (this.atDoor()) { this.enterHouse(); return; }
-    if (this.atSideEdge()) { this.leaveForDrive(); return; }
-    // Nothing else in this scene announces itself, but the side of the
-    // house looks like the edge of the world until you are told it is
-    // not - and an exit nobody finds is an exit nobody has. It only
-    // speaks up in the lane itself, which is also what tells you the way
-    // round is behind the ship rather than through it.
-    this.setPrompt(this.worldX > SIDE_HINT_X && this.depth < SIDE_LANE_DEPTH
-      ? 'Round the side of the house \u2192' : null);
+    if (this.pastTheHouse()) { this.leaveForDrive(); return; }
+    // Nothing else in this scene announces itself, but the gap at the
+    // side of the house looks like scenery until you are told it is not
+    // - and an exit nobody finds is an exit nobody has. The arrow points
+    // the way you actually walk: up, and round the back.
+    this.setPrompt(this.besideTheHouse()
+      ? 'Round the side of the house \u2196' : null);
 
     // A little parallax on the ridges, and the ship idling.
     this.mtnFarGfx.x = -this.worldX * 8;
@@ -1369,8 +1421,8 @@
           atShip: self.atShip(), atDoor: self.atDoor(), nearDoor: self.nearDoor(),
           doorOpen: self.doorOpen, doorRect: self.doorRect(),
           inWall: self.insideHouse(self.worldX, self.depth), houseFront: self.houseFront(),
-          atSideEdge: self.atSideEdge(), sideEdgeX: SIDE_EDGE_X,
-          sideLaneDepth: SIDE_LANE_DEPTH,
+          pastTheHouse: self.pastTheHouse(), besideTheHouse: self.besideTheHouse(),
+          houseBodyDepth: self.houseBodyDepth(),
           house: HOUSE,
           prompt: self.prompt,
           shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
