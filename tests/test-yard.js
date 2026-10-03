@@ -294,6 +294,40 @@ harness.run(async (page, check, ctx) => {
   check('standing beside the door does not let you in', aim.aside === false, aim);
   check('and nor does being round the back of the house', aim.behind === false, aim);
 
+  // --- round the side of the house -----------------------------------------
+  // The second screen of the chapter hangs off this one edge. Nothing
+  // else in the yard announces itself, but the side of the house looks
+  // like the end of the world until you are told it is not - so the
+  // hint is part of the exit, not decoration.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const nearTheCorner = await page.evaluate(() => {
+    window.__yardDebug.moveTo(-0.8, 0.82);
+    return new Promise(res => setTimeout(() => res(window.__yardDebug.state()), 260));
+  });
+  check('walking out to the side of the house says there is something there',
+    typeof nearTheCorner.prompt === 'string' && /side of the house/i.test(nearTheCorner.prompt),
+    nearTheCorner);
+  check('and you are not round it yet', nearTheCorner.atSideEdge === false, nearTheCorner);
+
+  const wentRound = await walkUntilStopped(page, [-0.8, 0.82], ['ArrowLeft'], 5000);
+  check('and walking on takes you round to the drive',
+    wentRound.end.gone === true || wentRound.end.mode !== 'walk', wentRound);
+  check('which is a real page, not a dead end',
+    await reachedPage(page, 'driveway.html', 8000), page.url());
+
+  // Coming back the other way lands you at the side, clear of the edge
+  // you just crossed - or the two screens bounce off each other.
+  await page.goto(ctx.url('yard.html?at=side'));
+  await page.waitForTimeout(BOOT_MS);
+  const cameBack = await readState(page);
+  check('coming back round puts you at the side of the house',
+    cameBack.worldX < -0.7 && cameBack.worldX > cameBack.sideEdgeX, cameBack);
+  check('and not straight back round it again',
+    cameBack.mode === 'walk' && cameBack.atSideEdge === false, cameBack);
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+
   // --- the house is solid --------------------------------------------------
   // You could walk into it. Not through the door - through the WALL:
   // the depth axis runs past the building, the sprites sort by screen

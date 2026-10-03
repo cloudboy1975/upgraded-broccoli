@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Head-On &mdash; Chapter 1</title>
+<title>Head-On &mdash; The Driveway</title>
 <style>
   :root {
     --bg-1: #05061a;
@@ -232,7 +232,7 @@
     <div class="chapter-tag">Chapter 1</div>
   </div>
 
-  <div class="hint" id="hint">Right to your ship &middot; left to go inside</div>
+  <div class="hint" id="hint">The front of the house</div>
 
   <div class="control-bar" id="controlBar">
     <div class="stick-zone" id="stickZone" aria-label="Walk (press anywhere and drag)">
@@ -240,9 +240,9 @@
       <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
     </div>
 
-    <button type="button" class="fly-btn" id="flyBtn" aria-label="Fly now - skip straight to the game">
+    <button type="button" class="fly-btn" id="backBtn" aria-label="Back round to the yard">
       <span class="fly-icon" aria-hidden="true"></span>
-      Fly
+      Back
     </button>
   </div>
 
@@ -273,13 +273,7 @@
   // fire button lives in the game it leads to.
   // ==================================================================
 
-  var NEXT_PAGE = 'head-on.html';
-  var HOUSE_PAGE = 'house.html';
-  // Round the side of the house: the front, the drive and the garage.
-  var DRIVE_PAGE = 'driveway.html';
-  var SIDE_EDGE_X = -0.95;  // past this, with the house behind you, you are round the corner
-  var SIDE_HINT_X = -0.74;  // ...and from here the hint says so
-  var ENTER_FADE = 0.4; // seconds of black before the interior loads
+  var YARD_PAGE = 'yard.html?at=side';
 
   // Night, fixed - no mood cycling here. These are painted-lands' own
   // Night preset; the scene is a specific place at a specific hour now,
@@ -324,108 +318,57 @@
   // player both sit around 0.62 to keep clear of them - and they sit
   // together, because that near-equal depth is what makes "hold right"
   // reach the ship.
-  var HOUSE = { worldX: -0.62, depth: 0.44 };
-  var SHIP = { worldX: 0.48, depth: 0.62 };
-  // You start between the two, because the choice is the scene: the ship
-  // is a second to the right, the front door a second to the left.
-  var START = { worldX: -0.16, depth: 0.64 };
-  // Coming back round the corner puts you where you left, not back in
-  // the middle of the lawn - ?at=side, the same idea the room uses.
-  var SIDE_RETURN = { worldX: -0.88, depth: 0.8 };
-
-
-
-  // The ship's silhouette, written out as the four y values it actually
-  // has rather than derived from a centre line and a radius. Derived,
-  // making the hull taller also pushed its wingtips into the ground and
-  // left the legs nowhere to be - these have to be able to move
-  // independently.
+  // ==================================================================
+  // Where everything stands.
   //
-  // The proportions follow head-on.html's own shipTex, which is TALLER
-  // than it is wide (1.5r across, 1.7r down). This is the same dart seen
-  // parked and a little foreshortened, not a different, flatter ship.
-  //
-  // Module scope, not inside buildTextures(), because the hull and the
-  // legs are baked separately and must agree exactly, and because the
-  // exhaust plume is positioned from them every frame of the takeoff.
-  var SHIP_W = 132, SHIP_H = 140;
-  var SHIP_NOSE_Y = SHIP_H * 0.10;   // the point
-  var SHIP_NOTCH_Y = SHIP_H * 0.60;  // the tail's inward notch
-  var SHIP_TIP_Y = SHIP_H * 0.76;    // the wingtips, and the hull's lowest edge
-  var SHIP_FOOT_Y = SHIP_H - 6;      // where the feet meet the grass
-  var SHIP_HALF_SPAN = SHIP_W * 0.36;
-  // How far the hull's underside sits above the ground, in texture px -
-  // where the exhaust comes from.
-  var SHIP_EXHAUST_UP = SHIP_H - SHIP_TIP_Y;
+  // You arrive round the corner of the house from the back garden, so
+  // the house is on the RIGHT with its front door out of sight, and the
+  // thing you came round here to find is the garage.
+  // ==================================================================
+  var GARAGE = { worldX: -0.28, depth: 0.36 };
+  var HOUSE_SIDE = { worldX: 0.74, depth: 0.42 };
+  var BIN = { worldX: 0.26, depth: 0.56 };
+  // Up the drive rather than down at the kerb: the kerb is where the
+  // thumbstick is, and the yard taught that lesson once already.
+  var MAILBOX = { worldX: -0.82, depth: 0.6 };
+  var START = { worldX: 0.58, depth: 0.72 };
 
-  // How close counts as reaching the ship, in screen px, scaled by the
-  // ship's own perspective scale so it means the same thing wherever the
-  // ship is parked. Generous on purpose: this is an auto-trigger and the
-  // player's intent is never in doubt - nobody walks INTO their ship by
-  // accident on a screen with one ship on it.
-  var BOARD_RADIUS = 62;
+  // The garage as a texture, and where its door sits on it - one set of
+  // fractions shared by the bake, the rolling door and the light, the
+  // same way the front door works over in the yard.
+  var GARAGE_TEX_W = 230, GARAGE_TEX_H = 150, GARAGE_SIZE = 1.15;
+  var GARAGE_DOOR_X = 0.17, GARAGE_DOOR_W = 0.66;
+  var GARAGE_DOOR_TOP = 0.4, GARAGE_DOOR_BOTTOM = 1 - 5 / 150;
+  var GARAGE_WALL_LEFT = 0.06, GARAGE_WALL_RIGHT = 0.94;
 
-  // Reaching the front door is not a radius, and trying to make it one
-  // is what produced a stepping stone in the middle of the lawn. The
-  // house sits back at depth 0.44 because that is where it looks right,
-  // and you walk at 0.64 - which is 95px up the screen. No circle
-  // bridges that without also swallowing the spot you are standing on.
-  //
-  // What "at the front door" actually means is simpler than a distance:
-  // LINED UP with the door, and standing in its threshold - a band, not
-  // a blob. You have to walk INTO the doorway, not merely stand on the
-  // path pointing at it from down the garden. The light spilling out is
-  // what makes that fair: it says "this one, keep coming" long before
-  // you arrive, which is the thing the scene was missing when the only
-  // workable trigger was a whole column of grass.
-  //
-  // Wider than the door looks, because you arrive DIAGONALLY. Pushing a
-  // stick up-and-left crosses the door's column and the door's depth at
-  // different moments, and a zone only as wide as the doorway threads
-  // neatly between them - measured, it missed by four pixels and walked
-  // straight past the house.
-  var DOOR_HALF_WIDTH = 34; // px either side of the door, at YOUR scale
-  var DOOR_BEHIND = 24;     // how far past the threshold still counts
-  var DOOR_APPROACH = 40;   // ...and how far short of it
+  var HOUSE_TEX_W = 170, HOUSE_TEX_H = 210, HOUSE_SIZE = 1.2;
+  var HOUSE_WALL_LEFT = 0.1, HOUSE_WALL_RIGHT = 0.9;
+  var HOUSE_FOOT = 1 - 5 / 210;
 
-  // The door opens as you come up the path and closes behind you. The
-  // zone that triggers it is far looser than the one that lets you in:
-  // its whole job is to say "this one, keep coming" while you are still
-  // deciding, which it cannot do if it waits until you have arrived.
-  // Tall and narrow: it has to reach all the way down the path so the
-  // door reacts while you are still walking past the front of the
-  // house, without reaching sideways far enough to open every time you
-  // set off toward the ship.
-  var DOOR_NOTICE_X = 50;
-  var DOOR_NOTICE_Y = 200;
-  var DOOR_SWING_RATE = 3.6;   // how fast it opens and closes, per second
-  var DOOR_SPILL_LENGTH = 118; // px of light thrown down the path, at the house's scale
-  var COLOR_DOOR_LIGHT = 0xffca6e;
+  // The car. Drawn big and scaled down, like everything else here.
+  var CAR_TEX_W = 150, CAR_TEX_H = 92, CAR_SIZE = 0.86;
 
-  // The house's own texture, and where the door sits on it - as
-  // fractions, so the bake and the scene cannot disagree about where the
-  // doorway is. They did disagree while this was two sets of numbers,
-  // and a door that opens somewhere other than where the door is drawn
-  // is a hard thing to un-see.
-  var HOUSE_TEX_W = 200;
-  var HOUSE_TEX_H = 168;
-  var HOUSE_SIZE = 1.15;          // extra scale the sprite is drawn at
-  // The walls' own span on the texture, which is what the player
-  // actually walks into - the roof overhangs it and the shadow spills
-  // past it, and neither of those is a wall.
-  var HOUSE_WALL_LEFT = 0.12;
-  var HOUSE_WALL_RIGHT = 0.88;
-  var WALL_STANDOFF = 3;          // px of yard you are stopped in, in front of the brick
-  var HOUSE_DOOR_X = 0.44;        // left edge, as a fraction of the width
-  var HOUSE_DOOR_W = 0.13;
-  var HOUSE_DOOR_TOP = 0.66;      // as a fraction of the height
-  var HOUSE_DOOR_BOTTOM = 1 - 6 / 168; // the walls' foot
+  // The rolling door. Slower than the front door's swing - it is a
+  // motor, not a hinge - and it opens on approach rather than on a
+  // button, which is the rule this chapter has already taught twice.
+  var GARAGE_NOTICE_X = 190;
+  var GARAGE_NOTICE_Y = 340;
+  var GARAGE_RATE = 0.85;
+  var COLOR_GARAGE_LIGHT = 0xffd49a;
+  var GARAGE_SPILL_LENGTH = 150;
 
-  // The takeoff, in seconds. Kept short enough to sit through on a
-  // hundredth replay.
-  var BOARD_DURATION = 0.55;   // climbing in: the figure shrinks into the hull
-  var LIFTOFF_DURATION = 1.75; // the climb out of the yard
-  var FADE_DURATION = 0.55;    // ...overlapping the end of it
+  var WALL_STANDOFF = 3;   // px of drive you are stopped in, in front of the brick
+  var EDGE_X = 0.95;       // past this on the right, you are round the corner again
+  var LEAVE_FADE = 0.42;   // seconds of black on the way back
+
+  // Alien activity, a long way off. Three lights in loose formation,
+  // drifting, with the occasional flare - the point is that you notice
+  // it on the second look, not the first. Anything more dramatic than
+  // this belongs in a cutscene, and this is a driveway.
+  var UFO_COUNT = 3;
+  var UFO_DRIFT = 5.5;        // px/sec across the sky
+  var UFO_FLARE_EVERY = 7.5;  // seconds between one of them brightening
+  var COLOR_UFO = 0x9ef0d0;
 
   // ==================================================================
   // Procedural ambience (Web Audio, no asset files) - wind from
@@ -512,30 +455,12 @@
   var mainScene = null;
   var navigated = false;
 
-  // One door out, called from the takeoff's end and from the Fly button
-  // alike, and guarded so a double tap cannot fire two navigations.
-  function goToGame() {
+  // One door out - round the corner of the house, back to the yard and
+  // the ship. Guarded so a double tap cannot fire two navigations.
+  function goYard() {
     if (navigated) return;
     navigated = true;
-    window.location.href = NEXT_PAGE;
-  }
-
-  function goInside() {
-    if (navigated) return;
-    navigated = true;
-    window.location.href = HOUSE_PAGE;
-  }
-
-  function goDrive() {
-    if (navigated) return;
-    navigated = true;
-    window.location.href = DRIVE_PAGE;
-  }
-
-  // Where you start, which is the middle of the lawn unless you have
-  // just come back round the side of the house.
-  function startSpot() {
-    return /(?:^|[?&])at=side(?:&|$)/.test(window.location.search || '') ? SIDE_RETURN : START;
+    window.location.href = YARD_PAGE;
   }
 
   // Clears the arrival fade once there is a frame to look at. Named and
@@ -559,14 +484,14 @@
     this.mode = 'walk'; // 'walk' -> 'board' -> 'liftoff' -> 'gone'
     this.modeAge = 0;
 
-    var spot = startSpot();
-    this.worldX = spot.worldX;
-    this.depth = spot.depth;
+    this.worldX = START.worldX;
+    this.depth = START.depth;
     this.flipX = false;
     this.bobPhase = 0;
     this.idlePhase = Math.random() * 10;
     this.prompt = null;
-    this.doorOpen = 0; // 0 shut, 1 wide - see updateDoorSwing()
+    this.garageOpen = 0; // 0 shut, 1 rolled up - see updateGarageDoor()
+    this.clock = 0;
 
     this.mountainLayers = {
       far: { amp1: 0.05, amp2: 0.03, freq1: 1.3, freq2: 2.7, phase1: 1.1, phase2: 4.2 },
@@ -579,6 +504,19 @@
         phase: Math.random() * Math.PI * 2, speed: 0.35 + Math.random() * 0.4
       });
     }
+
+    // Three of them, in a loose line, a long way out - see updateSky().
+    this.ufos = [];
+    for (var u = 0; u < UFO_COUNT; u++) {
+      this.ufos.push({
+        xFrac: 0.3 + u * 0.07 + Math.random() * 0.03,
+        yFrac: 0.3 + u * 0.035 + Math.random() * 0.03,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.8 + Math.random() * 0.5
+      });
+    }
+    this.ufoAge = 0;
+    this.flareAt = UFO_FLARE_EVERY * 0.5;
 
     this.buildTextures();
     this.buildLayers();
@@ -621,149 +559,136 @@
       g.destroy();
     })();
 
-    // The house: a flat gabled cottage with its lights on. At night the
-    // lit windows are the whole read - they are the only warm thing on a
-    // blue screen, which is what makes the yard feel like somewhere you
-    // live rather than a field with a shape in it.
+    // The garage: a flat-roofed box tacked onto the house, with a dark
+    // opening where the door goes. The door itself is not baked in -
+    // it rolls, so it is drawn (see renderGarage()).
+    (function () {
+      var w = GARAGE_TEX_W, h = GARAGE_TEX_H;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var foot = h * GARAGE_DOOR_BOTTOM;
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(w / 2, h - 3, w * 0.86, 10);
+      g.fillStyle(0x2a2438, 1);                                  // walls
+      g.fillRect(w * GARAGE_WALL_LEFT, h * 0.2, w * (GARAGE_WALL_RIGHT - GARAGE_WALL_LEFT), foot - h * 0.2);
+      g.fillStyle(0x1d1830, 1);                                  // the flat roof's lip
+      g.fillRect(w * 0.03, h * 0.16, w * 0.94, h * 0.06);
+      g.fillStyle(0x151024, 1);                                  // the opening, unlit
+      g.fillRect(w * GARAGE_DOOR_X, h * GARAGE_DOOR_TOP,
+                 w * GARAGE_DOOR_W, foot - h * GARAGE_DOOR_TOP);
+      // A light over the door, off. It comes on with the door.
+      g.fillStyle(0x3b3252, 1);
+      g.fillRect(w * 0.47, h * 0.31, w * 0.06, h * 0.05);
+      g.generateTexture('garageTex', w, h);
+      g.destroy();
+    })();
+
+    // The house again, from its front corner: taller than the garage,
+    // one lit window, and a porch light you cannot reach from here.
     (function () {
       var w = HOUSE_TEX_W, h = HOUSE_TEX_H;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      var bodyTop = h * 0.42, bodyBottom = h * HOUSE_DOOR_BOTTOM;
+      var foot = h * HOUSE_FOOT, top = h * 0.3;
       g.fillStyle(0x000000, 0.3);
       g.fillEllipse(w / 2, h - 4, w * 0.8, 12);
-      g.fillStyle(0x2a2438, 1);                           // walls
-      g.fillRect(w * 0.12, bodyTop, w * 0.76, bodyBottom - bodyTop);
-      g.fillStyle(0x191428, 1);                           // roof
+      g.fillStyle(0x251f33, 1);                                  // the gable end
+      g.fillRect(w * HOUSE_WALL_LEFT, top, w * (HOUSE_WALL_RIGHT - HOUSE_WALL_LEFT), foot - top);
+      g.fillStyle(0x191428, 1);                                  // roof
       g.beginPath();
-      g.moveTo(w / 2, h * 0.08);
-      g.lineTo(w * 0.96, bodyTop + 4);
-      g.lineTo(w * 0.04, bodyTop + 4);
+      g.moveTo(w * 0.5, h * 0.08);
+      g.lineTo(w * 0.98, top + 4);
+      g.lineTo(w * 0.02, top + 4);
       g.closePath();
       g.fillPath();
-      g.fillStyle(0x221c33, 1);                           // chimney
-      g.fillRect(w * 0.68, h * 0.14, w * 0.09, h * 0.2);
-      // Lit windows, with a soft bloom so they read at small scale.
-      [[0.24, 0.52], [0.63, 0.52]].forEach(function (p) {
-        var wx = w * p[0], wy = h * p[1];
-        g.fillStyle(0xffd487, 0.16);
-        g.fillCircle(wx + w * 0.065, wy + h * 0.075, w * 0.12);
-        g.fillStyle(0xffd487, 0.95);
-        g.fillRect(wx, wy, w * 0.13, h * 0.15);
-        g.lineStyle(2, 0x151024, 1);
-        g.strokeRect(wx, wy, w * 0.13, h * 0.15);
-        g.beginPath();
-        g.moveTo(wx + w * 0.065, wy);
-        g.lineTo(wx + w * 0.065, wy + h * 0.15);
-        g.strokePath();
-      });
-      // Door, with a porch light over it - this is where the story and
-      // the tutorial go once there is an inside to walk into.
-      var dx = w * HOUSE_DOOR_X, dy = h * HOUSE_DOOR_TOP;
-      var dw = w * HOUSE_DOOR_W, dh = bodyBottom - dy;
-      g.fillStyle(0xffca6e, 0.13);
-      g.fillCircle(dx + dw / 2, dy - h * 0.03, w * 0.11);
-      g.fillStyle(0x3d3252, 1);
-      g.fillRect(dx, dy, dw, dh);
+      g.fillStyle(0xffd487, 0.14);                               // a lit window, bloomed
+      g.fillCircle(w * 0.36, h * 0.52, w * 0.17);
+      g.fillStyle(0xffd487, 0.92);
+      g.fillRect(w * 0.26, h * 0.44, w * 0.2, h * 0.14);
       g.lineStyle(2, 0x151024, 1);
-      g.strokeRect(dx, dy, dw, dh);
-      g.fillStyle(0xffca6e, 0.9);
-      g.fillCircle(dx + dw / 2, dy - h * 0.035, 2.6);
-      g.generateTexture('houseTex', w, h);
-      g.destroy();
-    })();
-
-    // The ship: the same swept arrowhead the player flies in the game,
-    // seen parked and foreshortened, on three legs. Recognising it in the
-    // yard as the thing you are about to fly is the entire point of the
-    // scene, so the silhouette matches head-on.html's shipTex rather than
-    // being a nicer-looking spacecraft.
-    (function () {
-      var w = SHIP_W, h = SHIP_H;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      var cx = w / 2;
-      g.fillStyle(0x000000, 0.32);
-      g.fillEllipse(cx, h - 3, w * 0.66, 11);
-      g.fillStyle(0xe2e8f0, 1);
-      g.lineStyle(2, 0x94a3b8, 1);
+      g.strokeRect(w * 0.26, h * 0.44, w * 0.2, h * 0.14);
       g.beginPath();
-      g.moveTo(cx, SHIP_NOSE_Y);
-      g.lineTo(cx + SHIP_HALF_SPAN, SHIP_TIP_Y);
-      g.lineTo(cx, SHIP_NOTCH_Y);
-      g.lineTo(cx - SHIP_HALF_SPAN, SHIP_TIP_Y);
-      g.closePath();
-      g.fillPath();
+      g.moveTo(w * 0.36, h * 0.44);
+      g.lineTo(w * 0.36, h * 0.58);
       g.strokePath();
-      var canopyY = SHIP_NOSE_Y + (SHIP_TIP_Y - SHIP_NOSE_Y) * 0.34;
-      g.fillStyle(0x38bdf8, 0.85);
-      g.fillEllipse(cx, canopyY, w * 0.17, h * 0.12);
-      g.fillStyle(0xffffff, 0.5);
-      g.fillEllipse(cx - w * 0.03, canopyY - h * 0.02, w * 0.06, h * 0.04);
-      g.generateTexture('shipTex', w, h);
+      g.generateTexture('houseSideTex', w, h);
       g.destroy();
     })();
 
-    // The landing legs are a SEPARATE sprite from the hull so they can be
-    // retracted. Baked into the hull they stayed deployed all the way up,
-    // which read less as a spacecraft leaving than as a table being
-    // lifted.
+    // The convertible. A low, wide, pointed thing from the years when
+    // cars were drawn by the same people drawing rockets: quad lights
+    // in pontoon fenders, a split bumper, no roof, and two headrest
+    // humps behind the screen. Seen nose-on, because that is how it
+    // sits in a garage you are standing in front of.
     (function () {
-      var w = SHIP_W, h = SHIP_H;
+      var w = CAR_TEX_W, h = CAR_TEX_H;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      var cx = w / 2;
-      g.lineStyle(3, 0x94a3b8, 1);
-      // Splayed out from under the hull's lowest edge, so they read as
-      // carrying it rather than as lines drawn beneath it.
-      [[-0.45, -0.95], [0.45, 0.95], [0, 0.06]].forEach(function (p) {
-        g.beginPath();
-        g.moveTo(cx + SHIP_HALF_SPAN * p[0], SHIP_TIP_Y - 2);
-        g.lineTo(cx + SHIP_HALF_SPAN * p[1], SHIP_FOOT_Y);
-        g.strokePath();
+      var body = 0xb8c6d8, bodyDark = 0x8795a8, chrome = 0xdfe7f2;
+      g.fillStyle(0x000000, 0.42);                               // it is parked on concrete
+      g.fillEllipse(w / 2, h - 4, w * 0.88, 9);
+      g.fillStyle(0x15121c, 1);                                  // tyres
+      g.fillRect(w * 0.06, h * 0.68, w * 0.14, h * 0.28);
+      g.fillRect(w * 0.8, h * 0.68, w * 0.14, h * 0.28);
+      g.fillStyle(0xd8dde6, 0.55);                               // a hint of whitewall
+      g.fillRect(w * 0.08, h * 0.78, w * 0.1, h * 0.1);
+      g.fillRect(w * 0.82, h * 0.78, w * 0.1, h * 0.1);
+      g.fillStyle(bodyDark, 1);                                  // the body's shadowed lower half
+      g.fillRoundedRect(w * 0.08, h * 0.52, w * 0.84, h * 0.34, 7);
+      g.fillStyle(body, 1);                                      // and its lit upper half
+      g.fillRoundedRect(w * 0.08, h * 0.46, w * 0.84, h * 0.24, 8);
+      g.fillStyle(body, 1);                                      // pontoon fenders, peaked
+      g.fillEllipse(w * 0.22, h * 0.47, w * 0.3, h * 0.26);
+      g.fillEllipse(w * 0.78, h * 0.47, w * 0.3, h * 0.26);
+      g.fillStyle(0xdfe9f7, 1);                                  // the hood's crease
+      g.fillRect(w * 0.47, h * 0.44, w * 0.06, h * 0.22);
+      g.fillStyle(0x0d1018, 1);                                  // the screen
+      g.fillRoundedRect(w * 0.3, h * 0.26, w * 0.4, h * 0.2, 4);
+      g.fillStyle(0x2b3444, 1);
+      g.fillRoundedRect(w * 0.33, h * 0.29, w * 0.34, h * 0.14, 3);
+      g.fillStyle(body, 1);                                      // headrest humps
+      g.fillEllipse(w * 0.38, h * 0.27, w * 0.12, h * 0.1);
+      g.fillEllipse(w * 0.62, h * 0.27, w * 0.12, h * 0.1);
+      g.fillStyle(0xfff2cf, 1);                                  // quad headlights
+      [0.16, 0.28, 0.72, 0.84].forEach(function (f) {
+        g.fillCircle(w * f, h * 0.52, w * 0.035);
       });
-      g.fillStyle(0x94a3b8, 1); // feet
-      [-0.95, 0.95, 0.06].forEach(function (f) {
-        g.fillEllipse(cx + SHIP_HALF_SPAN * f, SHIP_FOOT_Y, 9, 4);
-      });
-      g.generateTexture('shipLegsTex', w, h);
+      g.fillStyle(0xfff2cf, 0.18);
+      [0.22, 0.78].forEach(function (f) { g.fillCircle(w * f, h * 0.52, w * 0.1); });
+      g.fillStyle(0x121722, 1);                                  // grille
+      g.fillRoundedRect(w * 0.37, h * 0.6, w * 0.26, h * 0.12, 3);
+      g.fillStyle(chrome, 1);                                    // split bumper
+      g.fillRoundedRect(w * 0.1, h * 0.74, w * 0.3, h * 0.07, 3);
+      g.fillRoundedRect(w * 0.6, h * 0.74, w * 0.3, h * 0.07, 3);
+      g.fillStyle(0xff6b6b, 1);                                  // red interior, just visible
+      g.fillRect(w * 0.35, h * 0.42, w * 0.3, h * 0.03);
+      g.generateTexture('carTex', w, h);
       g.destroy();
     })();
 
-    // Exhaust: a tapering plume with its origin at the TOP, so it hangs
-    // from the ship's base and stretches downward as the climb speeds up.
+    // Two things that are only here for scale: a bin by the house and a
+    // mailbox down at the kerb.
     (function () {
-      var w = 54, h = 150;
+      var w = 34, h = 46;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      var layers = [
-        { col: 0x38bdf8, a: 0.22, halfTop: w * 0.45, len: h },
-        { col: 0x7dd3fc, a: 0.5, halfTop: w * 0.3, len: h * 0.6 },
-        // Short and wide, not long and thin: a narrow core this bright
-        // over this much length stops looking like flame and starts
-        // looking like a rod holding the ship up.
-        { col: 0xf0f9ff, a: 0.9, halfTop: w * 0.17, len: h * 0.24 }
-      ];
-      layers.forEach(function (L) {
-        g.fillStyle(L.col, L.a);
-        g.beginPath();
-        g.moveTo(w / 2 - L.halfTop, 0);
-        g.lineTo(w / 2 + L.halfTop, 0);
-        g.lineTo(w / 2, L.len);
-        g.closePath();
-        g.fillPath();
-      });
-      g.generateTexture('shipPlumeTex', w, h);
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(w / 2, h - 3, w * 0.8, 7);
+      g.fillStyle(0x2f3a46, 1);
+      g.fillRoundedRect(w * 0.12, h * 0.18, w * 0.76, h * 0.78, 4);
+      g.fillStyle(0x3d4a58, 1);
+      g.fillRoundedRect(w * 0.06, h * 0.08, w * 0.88, h * 0.14, 4);
+      g.generateTexture('binTex', w, h);
       g.destroy();
     })();
-
-    // The idle underglow, drawn under the parked ship and pulsing - the
-    // one thing on screen that says it is powered up and waiting for you
-    // rather than abandoned.
     (function () {
-      var size = 120;
+      var w = 30, h = 64;
       var g = self.make.graphics({ x: 0, y: 0, add: false });
-      for (var i = 4; i >= 1; i--) {
-        g.fillStyle(0x38bdf8, 0.06 * (5 - i));
-        g.fillEllipse(size / 2, size / 2, size * (i / 4), size * 0.32 * (i / 4));
-      }
-      g.generateTexture('shipGlowTex', size, size);
+      g.fillStyle(0x000000, 0.28);
+      g.fillEllipse(w / 2, h - 3, w * 0.7, 6);
+      g.fillStyle(0x3a2f26, 1);
+      g.fillRect(w * 0.42, h * 0.3, w * 0.16, h * 0.68);
+      g.fillStyle(0x4a5663, 1);
+      g.fillRoundedRect(w * 0.1, h * 0.12, w * 0.8, h * 0.22, 5);
+      g.fillStyle(0xd05c4a, 1);                                   // the little flag
+      g.fillRect(w * 0.84, h * 0.04, w * 0.1, h * 0.12);
+      g.generateTexture('mailboxTex', w, h);
       g.destroy();
     })();
   };
@@ -772,32 +697,30 @@
     this.skyGfx = this.add.graphics().setDepth(-20);
     this.moonGfx = this.add.graphics().setDepth(-19);
     this.starsGfx = this.add.graphics().setDepth(-18);
+    // Whatever that is, out over the ridges - see updateSky().
+    this.skyFxGfx = this.add.graphics().setDepth(-17.5);
     this.mtnFarGfx = this.add.graphics().setDepth(-17);
     this.mtnMidGfx = this.add.graphics().setDepth(-16);
     this.groundGfx = this.add.graphics().setDepth(-10);
-    this.yardGfx = this.add.graphics().setDepth(-9);
+    this.driveGfx = this.add.graphics().setDepth(-9);
     this.firefliesGfx = this.add.graphics().setDepth(-5);
-    // The light on the grass goes UNDER the house (and so under anything
-    // standing in front of it, including you); the opening and the leaf
-    // go OVER it, since they are part of the building's face.
-    this.doorSpillGfx = this.add.graphics();
+    // The light out of the garage goes UNDER everything standing in
+    // front of it; the rolling door goes over the building's own face.
+    this.spillGfx = this.add.graphics();
+    this.interiorGfx = this.add.graphics();
     this.doorGfx = this.add.graphics();
-    // Above EVERYTHING. Props sort by their own screen y, which runs
-    // to the height of the screen, so a fade at any depth in that
-    // range darkens the ground and leaves the furniture - and the
-    // player - sitting brightly on top of it.
     this.fadeGfx = this.add.graphics().setDepth(10000);
   };
 
-  // Everything that stands on the ground is a sprite with its origin at
-  // its feet, sorted by screen Y - so walking in front of the house puts
-  // you in front of it, with no z bookkeeping at all.
   MainScene.prototype.buildProps = function () {
-    this.houseSprite = this.add.sprite(0, 0, 'houseTex').setOrigin(0.5, 1);
-    this.shipGlow = this.add.sprite(0, 0, 'shipGlowTex').setOrigin(0.5, 0.5);
-    this.shipPlume = this.add.sprite(0, 0, 'shipPlumeTex').setOrigin(0.5, 0).setAlpha(0);
-    this.shipLegs = this.add.sprite(0, 0, 'shipLegsTex').setOrigin(0.5, 1);
-    this.shipSprite = this.add.sprite(0, 0, 'shipTex').setOrigin(0.5, 1);
+    this.garageSprite = this.add.sprite(0, 0, 'garageTex').setOrigin(0.5, 1);
+    // The car is inside the garage, so it is drawn over the building's
+    // face and under the door - and it is sized to sit inside the
+    // opening, which is what saves this from needing a mask.
+    this.carSprite = this.add.sprite(0, 0, 'carTex').setOrigin(0.5, 1);
+    this.houseSprite = this.add.sprite(0, 0, 'houseSideTex').setOrigin(0.5, 1);
+    this.binSprite = this.add.sprite(0, 0, 'binTex').setOrigin(0.5, 1);
+    this.mailboxSprite = this.add.sprite(0, 0, 'mailboxTex').setOrigin(0.5, 1);
     this.you = this.add.sprite(0, 0, 'youTex').setOrigin(0.5, 0.94);
     this.layoutProps();
   };
@@ -820,16 +743,26 @@
   };
 
   MainScene.prototype.layoutProps = function () {
-    var h = this.placeAt(HOUSE.worldX, HOUSE.depth);
-    this.houseSprite.setPosition(h.x, h.y).setScale(h.scale * HOUSE_SIZE).setDepth(h.y);
-    this.doorSpillGfx.setDepth(h.y - 1);
-    this.doorGfx.setDepth(h.y + 0.5);
+    var g = this.placeAt(GARAGE.worldX, GARAGE.depth);
+    this.garageSprite.setPosition(g.x, g.y).setScale(g.scale * GARAGE_SIZE).setDepth(g.y);
 
-    var s = this.placeAt(SHIP.worldX, SHIP.depth);
-    this.shipSprite.setPosition(s.x, s.y).setScale(s.scale).setDepth(s.y);
-    this.shipLegs.setPosition(s.x, s.y).setScale(s.scale).setDepth(s.y - 0.5);
-    this.shipGlow.setPosition(s.x, s.y - 6 * s.scale).setScale(s.scale).setDepth(s.y - 1);
-    this.shipPlume.setPosition(s.x, s.y - SHIP_EXHAUST_UP * s.scale).setScale(s.scale).setDepth(s.y - 2);
+    // The car stands on the garage floor, which is the building's own
+    // foot line, and is drawn just over the building's face.
+    var opening = this.garageRect();
+    this.carSprite.setPosition(opening.cx, opening.bottom - 1)
+        .setScale(opening.scale * CAR_SIZE).setDepth(g.y + 0.2);
+    this.doorGfx.setDepth(g.y + 0.5);
+    this.interiorGfx.setDepth(g.y + 0.1);
+    this.spillGfx.setDepth(g.y - 1);
+
+    var h = this.placeAt(HOUSE_SIDE.worldX, HOUSE_SIDE.depth);
+    this.houseSprite.setPosition(h.x, h.y).setScale(h.scale * HOUSE_SIZE).setDepth(h.y);
+
+    var b = this.placeAt(BIN.worldX, BIN.depth);
+    this.binSprite.setPosition(b.x, b.y).setScale(b.scale).setDepth(b.y);
+
+    var m = this.placeAt(MAILBOX.worldX, MAILBOX.depth);
+    this.mailboxSprite.setPosition(m.x, m.y).setScale(m.scale).setDepth(m.y);
   };
 
   MainScene.prototype.mountainHeight = function (layer, xFrac) {
@@ -888,42 +821,30 @@
     this.groundGfx.fillGradientStyle(MTN_MID, MTN_MID, GROUND_FAR, GROUND_FAR, 0.85, 0.85, 0, 0);
     this.groundGfx.fillRect(0, horizonY, W, H * 0.075);
 
-    // A mown patch of yard between the house and the ship, so the ground
-    // reads as somebody's garden rather than open country.
-    var topHalf = this.depthToHalfWidth(0.25), botHalf = this.depthToHalfWidth(1);
-    this.yardGfx.clear();
-    // Faint on purpose. At any real strength this repaints the whole
-    // visible field and the night turns back into dusk - it only has to
-    // hint that somebody mows here.
-    this.yardGfx.fillStyle(0x24402a, 0.16);
-    this.yardGfx.beginPath();
-    this.yardGfx.moveTo(W / 2 - topHalf * 1.1, this.depthToScreenY(0.25));
-    this.yardGfx.lineTo(W / 2 + topHalf * 1.1, this.depthToScreenY(0.25));
-    this.yardGfx.lineTo(W / 2 + botHalf * 0.95, H);
-    this.yardGfx.lineTo(W / 2 - botHalf * 0.95, H);
-    this.yardGfx.closePath();
-    this.yardGfx.fillPath();
-
-    // The doorstep. Without it the way into the house is an invisible
-    // trigger on blank grass, and the only thing telling you it is there
-    // is the sentence at the top of the screen.
-    // A path running out from the front door toward the viewer. It marks
-    // the column you walk into to go in - it is not the trigger, the
-    // door is; this just makes the approach visible instead of leaving
-    // it to a line of text at the top of the screen.
-    var houseAt = this.placeAt(HOUSE.worldX, HOUSE.depth);
-    var pathTop = houseAt.y - 2;
-    var pathBottom = this.depthToScreenY(0.98);
-    var topHalfW = DOOR_HALF_WIDTH * houseAt.scale * 1.2;
-    var botHalfW = DOOR_HALF_WIDTH * this.depthToScale(0.98) * 1.9;
-    this.yardGfx.fillStyle(0x3b4450, 0.42);
-    this.yardGfx.beginPath();
-    this.yardGfx.moveTo(houseAt.x - topHalfW, pathTop);
-    this.yardGfx.lineTo(houseAt.x + topHalfW, pathTop);
-    this.yardGfx.lineTo(houseAt.x + botHalfW, pathBottom);
-    this.yardGfx.lineTo(houseAt.x - botHalfW, pathBottom);
-    this.yardGfx.closePath();
-    this.yardGfx.fillPath();
+    // The drive: a slab of concrete running from the garage door down
+    // past the camera, with the lawn either side of it. Drawn as a
+    // trapezoid in the same perspective everything else uses, so it
+    // narrows toward the building rather than toward the screen.
+    var opening = this.garageRect();
+    var nearHalf = this.depthToHalfWidth(1) * 0.42;
+    this.driveGfx.clear();
+    this.driveGfx.fillStyle(0x2c2e3a, 1);
+    this.driveGfx.beginPath();
+    this.driveGfx.moveTo(opening.left - 6, opening.bottom);
+    this.driveGfx.lineTo(opening.right + 6, opening.bottom);
+    this.driveGfx.lineTo(this.scale.width / 2 - 0.1 * nearHalf + nearHalf, H);
+    this.driveGfx.lineTo(this.scale.width / 2 - 0.1 * nearHalf - nearHalf, H);
+    this.driveGfx.closePath();
+    this.driveGfx.fillPath();
+    // One expansion joint across it, which is the whole difference
+    // between concrete and a grey triangle.
+    this.driveGfx.lineStyle(1.5, 0x3a3d4c, 0.8);
+    var jointY = lerp(opening.bottom, H, 0.45);
+    var jointHalf = lerp((opening.right - opening.left) / 2 + 6, nearHalf, 0.45);
+    this.driveGfx.beginPath();
+    this.driveGfx.moveTo(this.scale.width / 2 - 0.1 * nearHalf - jointHalf, jointY);
+    this.driveGfx.lineTo(this.scale.width / 2 - 0.1 * nearHalf + jointHalf, jointY);
+    this.driveGfx.strokePath();
 
     this.buildVignette(W, H);
   };
@@ -961,110 +882,84 @@
   };
 
   // ---- Reaching things ------------------------------------------------
-  // Distance from the player's feet to a prop's, in screen px. Screen
-  // space rather than world space on purpose: the ground is a trapezoid,
-  // so the same world-space gap is a very different apparent distance
-  // near the horizon, and what should decide "am I at the ship" is what
-  // the player can see.
   MainScene.prototype.distanceToProp = function (prop) {
     var me = this.placeAt(this.worldX, this.depth);
     var it = this.placeAt(prop.worldX, prop.depth);
     return Math.hypot(me.x - it.x, me.y - it.y);
   };
-  MainScene.prototype.atShip = function () {
-    return this.distanceToProp(SHIP) < BOARD_RADIUS * this.depthToScale(SHIP.depth);
-  };
-  // Where the front door actually is on screen, worked back through the
-  // house sprite's own transform rather than guessed at. Everything that
-  // cares about the door - the trigger, the light, the swinging leaf -
-  // reads this, so they cannot drift apart.
-  MainScene.prototype.doorRect = function () {
-    var h = this.placeAt(HOUSE.worldX, HOUSE.depth);
-    var S = h.scale * HOUSE_SIZE;
-    var left = h.x + (HOUSE_TEX_W * HOUSE_DOOR_X - HOUSE_TEX_W / 2) * S;
-    var width = HOUSE_TEX_W * HOUSE_DOOR_W * S;
+
+  // The garage's opening, worked back through the sprite's own
+  // transform - the bake, the rolling door, the light and the car all
+  // read this, so none of them can drift away from the others.
+  MainScene.prototype.garageRect = function () {
+    var g = this.placeAt(GARAGE.worldX, GARAGE.depth);
+    var S = g.scale * GARAGE_SIZE;
+    var left = g.x + (GARAGE_TEX_W * GARAGE_DOOR_X - GARAGE_TEX_W / 2) * S;
+    var width = GARAGE_TEX_W * GARAGE_DOOR_W * S;
     return {
-      left: left, right: left + width, width: width,
-      cx: left + width / 2,
-      top: h.y + (HOUSE_TEX_H * HOUSE_DOOR_TOP - HOUSE_TEX_H) * S,
-      bottom: h.y + (HOUSE_TEX_H * HOUSE_DOOR_BOTTOM - HOUSE_TEX_H) * S,
+      left: left, right: left + width, width: width, cx: left + width / 2,
+      top: g.y + (GARAGE_TEX_H * GARAGE_DOOR_TOP - GARAGE_TEX_H) * S,
+      bottom: g.y + (GARAGE_TEX_H * GARAGE_DOOR_BOTTOM - GARAGE_TEX_H) * S,
       scale: S
     };
   };
 
-  // The front of the house, in screen space: where the walls start and
-  // stop, and the line their feet stand on.
-  MainScene.prototype.houseFront = function () {
-    var h = this.placeAt(HOUSE.worldX, HOUSE.depth);
-    var S = h.scale * HOUSE_SIZE;
-    return {
-      left: h.x + (HOUSE_TEX_W * HOUSE_WALL_LEFT - HOUSE_TEX_W / 2) * S,
-      right: h.x + (HOUSE_TEX_W * HOUSE_WALL_RIGHT - HOUSE_TEX_W / 2) * S,
-      y: h.y + (HOUSE_TEX_H * HOUSE_DOOR_BOTTOM - HOUSE_TEX_H) * S
-    };
-  };
-
-  // You could walk INTO the house - not through the door, through the
-  // wall. The depth axis runs past the building, the sprites sort by
-  // screen y, and the result was the player sliding behind the front
-  // wall and vanishing, a foot from a door they never found.
-  //
-  // So the wall is solid, from its own line all the way back: anything
-  // at the house's x and further up the garden than its feet is inside
-  // the building, and nobody walks in there. The DOORWAY needs no gap
-  // cut in this - being stopped at the threshold is exactly where
-  // atDoor() fires, so walking at the door still walks you in.
-  MainScene.prototype.insideHouse = function (worldX, depth) {
-    var me = this.placeAt(worldX, depth);
-    var f = this.houseFront();
-    if (me.y >= f.y + WALL_STANDOFF) return false; // out in the yard, in front of it
-    return me.x > f.left && me.x < f.right;
-  };
-
-  MainScene.prototype.atDoor = function () {
+  // Near enough for the motor to start. Generous, and wider than it is
+  // deep: you are walking across the front of it, not up to a handle.
+  MainScene.prototype.nearGarage = function () {
     var me = this.placeAt(this.worldX, this.depth);
-    var door = this.doorRect();
-    if (me.y < door.bottom - DOOR_BEHIND) return false;   // past the threshold
-    if (me.y > door.bottom + DOOR_APPROACH) return false; // still out on the path
-    return Math.abs(me.x - door.cx) < DOOR_HALF_WIDTH * this.depthToScale(this.depth);
-  };
-
-  // Loose enough to fire while you are still walking up. Scaled by the
-  // house's own perspective so it means the same thing at any framing.
-  MainScene.prototype.nearDoor = function () {
-    var me = this.placeAt(this.worldX, this.depth);
-    var door = this.doorRect();
-    var s = this.depthToScale(HOUSE.depth);
-    var dx = (me.x - door.cx) / (DOOR_NOTICE_X * s);
-    var dy = (me.y - door.bottom) / (DOOR_NOTICE_Y * s);
+    var r = this.garageRect();
+    var s = this.depthToScale(GARAGE.depth);
+    var dx = (me.x - r.cx) / (GARAGE_NOTICE_X * s);
+    var dy = (me.y - r.bottom) / (GARAGE_NOTICE_Y * s);
     return dx * dx + dy * dy <= 1;
   };
 
-  // ---- The takeoff ----------------------------------------------------
-  MainScene.prototype.board = function () {
-    if (this.mode !== 'walk') return;
-    this.mode = 'board';
-    this.modeAge = 0;
-    this.boardFrom = this.placeAt(this.worldX, this.depth);
-    Sound.ensureAudio();
-    Sound.playLaunch(BOARD_DURATION + LIFTOFF_DURATION);
-    this.setPrompt(null);
-    document.getElementById('hint').classList.add('hidden');
-    document.getElementById('controlBar').classList.add('gone');
-    forceReleaseAllInput(); // or a held stick keeps walking underneath the cutscene
+  // Standing in the opening, with the door up far enough to see in.
+  MainScene.prototype.atCar = function () {
+    if (this.garageOpen < 0.55) return false;
+    var me = this.placeAt(this.worldX, this.depth);
+    var r = this.garageRect();
+    if (me.y < r.bottom - 10) return false;
+    if (me.y > r.bottom + 70) return false;
+    return Math.abs(me.x - r.cx) < r.width * 0.55;
   };
 
-  // Going in is a plain fade rather than the ship's whole sequence -
-  // opening your own front door is not a set piece, and this is a door
-  // that will be walked through on the way to a tutorial.
-  // Walking off the left-hand side, past the front of the house, goes
-  // round to the drive. The same rule as every other way out of this
-  // scene: you walk at it, and it happens.
-  MainScene.prototype.atSideEdge = function () {
-    return this.worldX <= SIDE_EDGE_X && this.depth > HOUSE.depth + 0.12;
+  // Both buildings are solid, by the same rule the house uses in the
+  // yard: anything at their width and further up the drive than their
+  // feet is inside a building, and nobody walks in there. The garage
+  // has its doorway cut out of it, because that one you can stand in.
+  MainScene.prototype.buildingFront = function (prop, texW, texH, size, left, right, foot) {
+    var p = this.placeAt(prop.worldX, prop.depth);
+    var S = p.scale * size;
+    return {
+      left: p.x + (texW * left - texW / 2) * S,
+      right: p.x + (texW * right - texW / 2) * S,
+      y: p.y + (texH * foot - texH) * S
+    };
   };
 
-  MainScene.prototype.leaveForDrive = function () {
+  MainScene.prototype.insideBuilding = function (worldX, depth) {
+    var me = this.placeAt(worldX, depth);
+    var g = this.buildingFront(GARAGE, GARAGE_TEX_W, GARAGE_TEX_H, GARAGE_SIZE,
+                               GARAGE_WALL_LEFT, GARAGE_WALL_RIGHT, GARAGE_DOOR_BOTTOM);
+    if (me.y < g.y + WALL_STANDOFF && me.x > g.left && me.x < g.right) {
+      // ...except the doorway, which is a room you may stand in.
+      var r = this.garageRect();
+      var inDoorway = me.x > r.left + 2 && me.x < r.right - 2 && me.y > r.bottom - 26;
+      if (!inDoorway) return true;
+    }
+    var h = this.buildingFront(HOUSE_SIDE, HOUSE_TEX_W, HOUSE_TEX_H, HOUSE_SIZE,
+                               HOUSE_WALL_LEFT, HOUSE_WALL_RIGHT, HOUSE_FOOT);
+    return me.y < h.y + WALL_STANDOFF && me.x > h.left && me.x < h.right;
+  };
+
+  // The way back: round the corner of the house, the way you came.
+  MainScene.prototype.atYardEdge = function () {
+    return this.worldX >= EDGE_X && this.depth > HOUSE_SIDE.depth + 0.1;
+  };
+
+  MainScene.prototype.leaveForYard = function () {
     if (this.mode !== 'walk') return;
     this.mode = 'leaving';
     this.modeAge = 0;
@@ -1074,137 +969,44 @@
     forceReleaseAllInput();
   };
 
-  MainScene.prototype.enterHouse = function () {
-    if (this.mode !== 'walk') return;
-    this.mode = 'entering';
-    this.modeAge = 0;
-    this.enterFrom = this.placeAt(this.worldX, this.depth);
-    this.setPrompt(null);
-    document.getElementById('hint').classList.add('hidden');
-    document.getElementById('controlBar').classList.add('gone');
-    forceReleaseAllInput();
-  };
-
   MainScene.prototype.updateSequence = function (dt) {
-    if (this.mode === 'leaving') {
-      this.updateDoorSwing(dt);
-      var lt = clamp(this.modeAge / ENTER_FADE, 0, 1);
-      this.fadeGfx.clear();
-      this.fadeGfx.fillStyle(0x000000, lt);
-      this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
-      if (lt >= 1) { this.mode = 'gone'; goDrive(); }
-      return;
-    }
-    if (this.mode === 'entering') {
-      this.updateDoorSwing(dt); // finishes the swing behind the fade
-
-      // The doorstep is wider than the door has to be - a 19px target
-      // on a phone would be a fiddle - so you usually trigger it a
-      // little to one side of the opening. Step across into the middle
-      // of it while the screen fades, or the last thing the scene shows
-      // is a man walking into the wall beside his own front door.
-      var sill = this.doorRect();
-      var st = clamp(this.modeAge / (ENTER_FADE * 0.6), 0, 1);
-      var stepped = st * st * (3 - 2 * st);
-      this.you.setPosition(
-        lerp(this.enterFrom.x, sill.cx, stepped),
-        lerp(this.enterFrom.y, sill.bottom - 1, stepped)
-      );
-      this.you.setScale(this.enterFrom.scale * (1 - 0.12 * stepped));
-
-      // The lit doorway is painted over the house, and a figure standing
-      // in that doorway is at the house's own foot - a tie the light
-      // wins, so he blinks out on the threshold instead of standing in
-      // it. Lift him over the light for the length of the fade.
-      this.you.setDepth(this.doorGfx.depth + 1);
-      var et = clamp(this.modeAge / ENTER_FADE, 0, 1);
-      this.fadeGfx.clear();
-      this.fadeGfx.fillStyle(0x000000, et);
-      this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
-      if (et >= 1) { this.mode = 'gone'; goInside(); }
-      return;
-    }
-
-    var ship = this.placeAt(SHIP.worldX, SHIP.depth);
-
-    if (this.mode === 'board') {
-      // Climbing in, read as the figure being drawn to the hull and
-      // folding into it - no door animation, just the fold.
-      var t = clamp(this.modeAge / BOARD_DURATION, 0, 1);
-      var eased = t * t * (3 - 2 * t);
-      this.you.setPosition(
-        lerp(this.boardFrom.x, ship.x, eased),
-        lerp(this.boardFrom.y, ship.y - 10 * ship.scale, eased)
-      );
-      this.you.setScale(this.boardFrom.scale * (1 - eased * 0.75));
-      this.you.setAlpha(1 - eased);
-      this.shipGlow.setAlpha(0.6 + 0.4 * eased);
-      this.shipPlume.setAlpha(eased * 0.35).setScale(ship.scale, ship.scale * 0.35);
-      if (t >= 1) { this.mode = 'liftoff'; this.modeAge = 0; this.you.setVisible(false); }
-      return;
-    }
-
-    if (this.mode === 'liftoff') {
-      var lt = clamp(this.modeAge / LIFTOFF_DURATION, 0, 1);
-      // Accelerating, not linear: a ship that rises at a constant rate
-      // reads as being winched. Cubed, it leaves.
-      var climb = lt * lt * lt;
-      var rise = climb * (ship.y + this.scale.height * 0.35);
-      var shrink = 1 - climb * 0.82;
-      var shipY = ship.y - rise;
-      this.shipSprite.setPosition(ship.x, shipY).setScale(ship.scale * shrink);
-      // Legs fold away over the first moments of the climb.
-      this.shipLegs.setPosition(ship.x, shipY).setScale(ship.scale * shrink)
-        .setAlpha(clamp(1 - lt * 5, 0, 1));
-      // The ground pool hands over to the plume: one is the ship sitting
-      // on the grass, the other is it leaving.
-      this.shipGlow.setPosition(ship.x, ship.y - 6 * ship.scale)
-        .setAlpha(clamp(1 - lt * 3, 0, 1));
-      this.shipPlume.setPosition(ship.x, shipY - SHIP_EXHAUST_UP * ship.scale * shrink)
-        .setScale(ship.scale * shrink, ship.scale * shrink * (0.5 + climb * 2.2))
-        .setAlpha(clamp(lt * 4, 0, 1) * clamp(1 - climb * 0.5, 0, 1));
-
-      // The fade overlaps the end of the climb rather than following it,
-      // so the page change lands while he is still moving.
-      var fadeStart = LIFTOFF_DURATION - FADE_DURATION;
-      var fade = clamp((this.modeAge - fadeStart) / FADE_DURATION, 0, 1);
-      this.fadeGfx.clear();
-      if (fade > 0) {
-        this.fadeGfx.fillStyle(0x000000, fade);
-        this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
-      }
-      if (lt >= 1) { this.mode = 'gone'; goToGame(); }
-      return;
-    }
+    if (this.mode !== 'leaving') return;
+    this.updateGarageDoor(dt); // it keeps rolling behind the fade
+    var t = clamp(this.modeAge / LEAVE_FADE, 0, 1);
+    this.fadeGfx.clear();
+    this.fadeGfx.fillStyle(0x000000, t);
+    this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
+    if (t >= 1) { this.mode = 'gone'; goYard(); }
   };
 
   // ---- Per-frame -------------------------------------------------------
   MainScene.prototype.update = function (time, delta) {
     var dt = Math.min(delta / 1000, 0.05);
     this.modeAge += dt;
+    this.clock += dt;
+
+    this.updateSky(dt); // whatever that is keeps moving, fade or no fade
 
     if (this.mode !== 'walk') { this.updateSequence(dt); return; }
 
-    var input = window.__yardInput;
+    var input = window.__driveInput;
     var moveX = input.x, moveY = input.y;
     var magnitude = Math.hypot(moveX, moveY);
     var walking = magnitude > 0.04;
 
     if (walking) {
-      // One axis at a time, so the wall is something you slide along
-      // rather than stick to - the same rule the furniture indoors
-      // follows. And if you are somehow already inside it, every move
-      // is allowed until you are out again.
-      var stuck = this.insideHouse(this.worldX, this.depth);
+      // One axis at a time, so a wall is something you slide along
+      // rather than stick to - and with the same escape hatch, so being
+      // inside one is never a trap.
+      var stuck = this.insideBuilding(this.worldX, this.depth);
       var nextX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
-      if (stuck || !this.insideHouse(nextX, this.depth)) this.worldX = nextX;
+      if (stuck || !this.insideBuilding(nextX, this.depth)) this.worldX = nextX;
       var nextDepth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.12, 1);
-      if (stuck || !this.insideHouse(this.worldX, nextDepth)) this.depth = nextDepth;
+      if (stuck || !this.insideBuilding(this.worldX, nextDepth)) this.depth = nextDepth;
       if (moveX > 0.08) this.flipX = false;
       else if (moveX < -0.08) this.flipX = true;
       this.bobPhase += dt * (6 + magnitude * 6);
       this.idlePhase = 0;
-      document.getElementById('hint').classList.add('hidden');
     } else {
       this.idlePhase += dt;
     }
@@ -1213,94 +1015,126 @@
     var bob = walking ? Math.sin(this.bobPhase) * 3 * me.scale : Math.sin(this.idlePhase * 1.2) * 1;
     this.you.setPosition(me.x, me.y + bob).setScale(me.scale).setFlipX(this.flipX).setDepth(me.y);
 
-    // Touching the ship IS boarding - no button, no confirm. It is the
-    // one interactive thing in the scene and the player walked at it on
-    // purpose.
-    if (this.atShip()) { this.board(); return; }
+    // Walking off the right-hand side is walking back round the corner,
+    // the same way you came - no button, same rule as every other door
+    // in this chapter.
+    if (this.atYardEdge()) { this.leaveForYard(); return; }
 
-    // And touching the front door goes inside, on exactly the same
-    // terms. The two are in opposite directions from where you start,
-    // which is the whole navigation of this scene: right to play, left
-    // for the story.
-    if (this.atDoor()) { this.enterHouse(); return; }
-    if (this.atSideEdge()) { this.leaveForDrive(); return; }
-    // Nothing else in this scene announces itself, but the side of the
-    // house looks like the edge of the world until you are told it is
-    // not - and an exit nobody finds is an exit nobody has.
-    this.setPrompt(this.worldX < SIDE_HINT_X && this.depth > HOUSE.depth + 0.12
-      ? 'Round the side of the house \u2190' : null);
+    this.setPrompt(
+      this.atCar() ? 'Your father\'s convertible. No keys in it.'
+        : (this.worldX > EDGE_X - 0.2 ? 'Round the corner, back to the yard.' : null)
+    );
 
-    // A little parallax on the ridges, and the ship idling.
     this.mtnFarGfx.x = -this.worldX * 8;
     this.mtnMidGfx.x = -this.worldX * 22;
-    this.shipGlow.setAlpha(0.55 + 0.25 * (0.5 + 0.5 * Math.sin(time / 520)));
 
-    this.updateDoorSwing(dt);
+    this.updateGarageDoor(dt);
     this.updateFireflies(dt);
   };
 
-  // Eases toward open while you are near and shut once you leave. It
-  // keeps running through the entering fade, where the figure is still
-  // standing in its own doorway and so still counts as near: you arrive
-  // with the leaf a hair short of wide, and it finishes the swing while
-  // the screen goes black rather than freezing halfway.
-  MainScene.prototype.updateDoorSwing = function (dt) {
-    var want = this.nearDoor() ? 1 : 0;
-    var step = DOOR_SWING_RATE * dt;
-    if (this.doorOpen < want) this.doorOpen = Math.min(want, this.doorOpen + step);
-    else if (this.doorOpen > want) this.doorOpen = Math.max(want, this.doorOpen - step);
-    this.renderDoor();
+  // Rolls up as you come near, and back down behind you. Slower than
+  // the front door's swing, because it is a motor and not a hinge.
+  MainScene.prototype.updateGarageDoor = function (dt) {
+    var want = this.nearGarage() ? 1 : 0;
+    var step = GARAGE_RATE * dt;
+    if (this.garageOpen < want) this.garageOpen = Math.min(want, this.garageOpen + step);
+    else if (this.garageOpen > want) this.garageOpen = Math.max(want, this.garageOpen - step);
+    this.renderGarage();
   };
 
-  MainScene.prototype.renderDoor = function () {
-    var open = this.doorOpen;
-    this.doorGfx.clear();
-    this.doorSpillGfx.clear();
-    if (open <= 0.001) return;
+  MainScene.prototype.renderGarage = function () {
+    var open = this.garageOpen;
+    var r = this.garageRect();
+    var h = r.bottom - r.top;
+    var g = this.doorGfx, inner = this.interiorGfx, spill = this.spillGfx;
+    g.clear();
+    inner.clear();
+    spill.clear();
 
-    var d = this.doorRect();
-    var h = d.bottom - d.top;
+    // What is behind the door: a lit floor and a back wall, drawn under
+    // the car and over the building, so the car reads as standing IN
+    // something rather than pasted onto it.
+    if (open > 0.02) {
+      inner.fillGradientStyle(0x2a2231, 0x2a2231, COLOR_GARAGE_LIGHT, COLOR_GARAGE_LIGHT,
+                              0.95, 0.95, 0.5 * open, 0.5 * open);
+      inner.fillRect(r.left, r.top, r.width, h);
+      inner.fillStyle(COLOR_GARAGE_LIGHT, 0.5 * open); // the strip light itself
+      inner.fillRect(r.cx - r.width * 0.22, r.top + h * 0.1, r.width * 0.44, h * 0.045);
+    }
+    this.carSprite.setVisible(open > 0.12);
 
-    // The lit hallway behind the door. Brightest at the foot, where the
-    // floor is catching the light, which is what stops a warm rectangle
-    // reading as a poster.
-    this.doorGfx.fillGradientStyle(COLOR_DOOR_LIGHT, COLOR_DOOR_LIGHT,
-                                   0xfff0cf, 0xfff0cf, open * 0.55, open * 0.55, open, open);
-    this.doorGfx.fillRect(d.left, d.top, d.width, h);
-
-    // The leaf, swinging inward: its face narrows toward the hinge as it
-    // turns away, and the edge nearest us catches the inside light.
-    var leafW = d.width * (1 - open * 0.88);
-    if (leafW > 0.6) {
-      var skew = h * 0.05 * open;
-      this.doorGfx.fillStyle(0x2d2440, 1);
-      this.doorGfx.beginPath();
-      this.doorGfx.moveTo(d.left, d.top);
-      this.doorGfx.lineTo(d.left + leafW, d.top + skew);
-      this.doorGfx.lineTo(d.left + leafW, d.bottom - skew);
-      this.doorGfx.lineTo(d.left, d.bottom);
-      this.doorGfx.closePath();
-      this.doorGfx.fillPath();
-      this.doorGfx.fillStyle(COLOR_DOOR_LIGHT, 0.75 * open);
-      this.doorGfx.fillRect(d.left + leafW - 1.2, d.top + skew, 1.6, h - skew * 2);
+    // The door itself: slats, hanging from the lintel, rolled up as far
+    // as it has got.
+    var shut = h * (1 - open);
+    if (shut > 1) {
+      g.fillStyle(0x4a4357, 1);
+      g.fillRect(r.left, r.top, r.width, shut);
+      g.lineStyle(1, 0x2f2a3b, 0.9);
+      for (var y = r.top + 6; y < r.top + shut; y += Math.max(5, h * 0.11)) {
+        g.beginPath();
+        g.moveTo(r.left, y);
+        g.lineTo(r.right, y);
+        g.strokePath();
+      }
+      g.fillStyle(0x5d5569, 1); // the bottom rail, catching the light
+      g.fillRect(r.left, r.top + shut - 2.5, r.width, 2.5);
+    }
+    // The roll above the lintel, which is where all that door went.
+    if (open > 0.08) {
+      g.fillStyle(0x3b3449, 1);
+      g.fillRect(r.left - 1, r.top - 4 * r.scale, r.width + 2, 4 * r.scale);
     }
 
-    // And the light thrown out down the path. Three nested quads rather
-    // than one, so it falls off with distance instead of ending in a
-    // hard line across the grass.
-    var reach = DOOR_SPILL_LENGTH * d.scale * open;
-    for (var i = 3; i >= 1; i--) {
-      var f = i / 3;
-      var halfTop = d.width * 0.5 * (0.7 + 0.3 * f);
-      var halfBot = d.width * (0.75 + 0.9 * f);
-      this.doorSpillGfx.fillStyle(COLOR_DOOR_LIGHT, 0.09 * open * (1.1 - f * 0.5));
-      this.doorSpillGfx.beginPath();
-      this.doorSpillGfx.moveTo(d.cx - halfTop, d.bottom);
-      this.doorSpillGfx.lineTo(d.cx + halfTop, d.bottom);
-      this.doorSpillGfx.lineTo(d.cx + halfBot, d.bottom + reach * f);
-      this.doorSpillGfx.lineTo(d.cx - halfBot, d.bottom + reach * f);
-      this.doorSpillGfx.closePath();
-      this.doorSpillGfx.fillPath();
+    // And the light it throws out onto the concrete. Three nested quads
+    // so it falls off with distance instead of ending in a hard line.
+    if (open > 0.02) {
+      var reach = GARAGE_SPILL_LENGTH * r.scale * open;
+      for (var i = 3; i >= 1; i--) {
+        var f = i / 3;
+        var halfTop = r.width * 0.5;
+        var halfBot = r.width * (0.6 + 0.5 * f);
+        spill.fillStyle(COLOR_GARAGE_LIGHT, 0.075 * open * (1.1 - f * 0.5));
+        spill.beginPath();
+        spill.moveTo(r.cx - halfTop, r.bottom);
+        spill.lineTo(r.cx + halfTop, r.bottom);
+        spill.lineTo(r.cx + halfBot, r.bottom + reach * f);
+        spill.lineTo(r.cx - halfBot, r.bottom + reach * f);
+        spill.closePath();
+        spill.fillPath();
+      }
+    }
+  };
+
+  // Something is going on out there. Three lights in a loose line,
+  // drifting, with one of them flaring now and then - deliberately
+  // small and deliberately silent. It is meant to be the thing you
+  // notice on the second look, not an event.
+  MainScene.prototype.updateSky = function (dt) {
+    var W = this.scale.width, horizon = this.horizonY();
+    this.ufoAge += dt;
+    this.flareAt -= dt;
+    var flaring = -1;
+    if (this.flareAt <= 0) {
+      this.flareAt = UFO_FLARE_EVERY * (0.7 + Math.random() * 0.6);
+      this.flaringIndex = Math.floor(Math.random() * this.ufos.length);
+      this.flareAge = 0;
+    }
+    this.flareAge = (this.flareAge === undefined ? 9 : this.flareAge) + dt;
+    if (this.flareAge < 0.9) flaring = this.flaringIndex;
+
+    var g = this.skyFxGfx;
+    g.clear();
+    for (var i = 0; i < this.ufos.length; i++) {
+      var u = this.ufos[i];
+      u.xFrac -= (UFO_DRIFT * u.speed * dt) / W;
+      if (u.xFrac < -0.1) u.xFrac = 1.1;
+      var x = u.xFrac * W;
+      var y = horizon * u.yFrac + Math.sin(this.ufoAge * 0.5 + u.phase) * 2.5;
+      var flare = (i === flaring) ? 1 - this.flareAge / 0.9 : 0;
+      g.fillStyle(COLOR_UFO, 0.05 + 0.1 * flare);
+      g.fillCircle(x, y, 5 + 4 * flare);
+      g.fillStyle(COLOR_UFO, 0.5 + 0.45 * flare);
+      g.fillCircle(x, y, 1.1 + 0.5 * flare);
     }
   };
 
@@ -1334,46 +1168,36 @@
 
   MainScene.prototype.exposeDebugHooks = function () {
     var self = this;
-    window.__yardDebug = {
+    window.__driveDebug = {
       scene: this,
-      nextPage: NEXT_PAGE,
-      // Everything a test needs to know without reading pixels.
+      backPage: YARD_PAGE,
       state: function () {
         return {
           mode: self.mode, worldX: self.worldX, depth: self.depth,
-          // The scene's own clock, and the deadline the entering fade
-          // runs to. A test watching the fade has to measure in this
-          // rather than in wall time: the page navigates when the two
-          // meet, and a probe still reading when that happens dies.
-          modeAge: self.modeAge, enterFade: ENTER_FADE,
-          shipDistance: self.distanceToProp(SHIP),
-          boardRadius: BOARD_RADIUS * self.depthToScale(SHIP.depth),
-          atShip: self.atShip(), atDoor: self.atDoor(), nearDoor: self.nearDoor(),
-          doorOpen: self.doorOpen, doorRect: self.doorRect(),
-          inWall: self.insideHouse(self.worldX, self.depth), houseFront: self.houseFront(),
-          atSideEdge: self.atSideEdge(), sideEdgeX: SIDE_EDGE_X,
-          house: HOUSE,
+          modeAge: self.modeAge, leaveFade: LEAVE_FADE,
+          garageOpen: self.garageOpen, garageRect: self.garageRect(),
+          nearGarage: self.nearGarage(), atCar: self.atCar(),
+          atEdge: self.atYardEdge(),
+          inBuilding: self.insideBuilding(self.worldX, self.depth),
+          garageFront: self.buildingFront(GARAGE, GARAGE_TEX_W, GARAGE_TEX_H, GARAGE_SIZE,
+                                          GARAGE_WALL_LEFT, GARAGE_WALL_RIGHT, GARAGE_DOOR_BOTTOM),
+          houseFront: self.buildingFront(HOUSE_SIDE, HOUSE_TEX_W, HOUSE_TEX_H, HOUSE_SIZE,
+                                         HOUSE_WALL_LEFT, HOUSE_WALL_RIGHT, HOUSE_FOOT),
           prompt: self.prompt,
-          shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
-          youVisible: self.you.visible
+          carVisible: self.carSprite.visible,
+          ufos: self.ufos.map(function (u) { return { x: +u.xFrac.toFixed(3), y: +u.yFrac.toFixed(3) }; })
         };
       },
-      // Screen rectangles, for the layout checks: nothing that stands in
-      // the yard may end up underneath the controls.
       bounds: function () {
         function box(sprite) {
           var b = sprite.getBounds();
           return { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height };
         }
-        return { you: box(self.you), ship: box(self.shipSprite), house: box(self.houseSprite) };
+        return { you: box(self.you), garage: box(self.garageSprite),
+                 car: box(self.carSprite), house: box(self.houseSprite) };
       },
-      // The drawn silhouette's own proportions, which is what "short and
-      // fat" was about - the texture's canvas is mostly padding.
-      shipShape: { width: SHIP_HALF_SPAN * 2, height: SHIP_TIP_Y - SHIP_NOSE_Y },
-      // Teleport, for tests that are about what happens when you ARRIVE
-      // rather than about the walking.
       moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
-      board: function () { self.board(); }
+      leave: function () { self.leaveForYard(); }
     };
   };
 
@@ -1381,7 +1205,7 @@
   // Input: the analog stick and touch hardening from painted-lands.html
   // ==================================================================
   var inputState = { x: 0, y: 0 };
-  window.__yardInput = inputState;
+  window.__driveInput = inputState;
 
   var touchX = 0, touchY = 0;
   var kb = { up: false, down: false, left: false, right: false };
@@ -1491,12 +1315,12 @@
   );
 
   (function bindFlyButton() {
-    var el = document.getElementById('flyBtn');
+    var el = document.getElementById('backBtn');
     suppressCallout(el);
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault();
       el.classList.add('active');
-      goToGame();
+      if (mainScene) mainScene.leaveForYard(); else goYard();
     });
     function release() { el.classList.remove('active'); }
     el.addEventListener('pointerup', release);
@@ -1507,13 +1331,16 @@
   function isDownKey(code) { return code === 'ArrowDown' || code === 'KeyS'; }
   function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
   function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
-  function isFlyKey(code) { return code === 'Space' || code === 'Enter' || code === 'KeyE'; }
+  function isBackKey(code) { return code === 'Escape' || code === 'KeyQ'; }
 
   document.addEventListener('keydown', function (e) {
     Sound.ensureAudio();
     Sound.startWind();
-    if (isUpKey(e.code) || isDownKey(e.code) || isFlyKey(e.code)) e.preventDefault();
-    if (isFlyKey(e.code)) { if (!e.repeat) goToGame(); return; }
+    if (isUpKey(e.code) || isDownKey(e.code)) e.preventDefault();
+    if (isBackKey(e.code)) {
+      if (!e.repeat) { if (mainScene) mainScene.leaveForYard(); else goYard(); }
+      return;
+    }
     if (e.repeat) return;
     if (isUpKey(e.code)) { kb.up = true; updateKbVector(); }
     else if (isDownKey(e.code)) { kb.down = true; updateKbVector(); }

@@ -101,6 +101,17 @@ chapter of a longer game about two-dimensional aliens.
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
 
+#### Round the side of the house
+
+Walk left past the front of the house and you come out on the drive:
+the garage rolls open as you approach it, and inside is your father's
+convertible — a low, wide, pointed thing from the years when cars were
+drawn by the same people drawing rockets. No keys in it yet.
+
+Walking off the right-hand side brings you back to the yard, as does
+the button in the corner. And if you look up while you are round there,
+something is moving in the sky over the ridges. Not much. Enough.
+
 #### The six o'clock news
 
 Stand at the TV in the front room; the button in the corner becomes
@@ -185,6 +196,7 @@ additionally share a centered-card page layout, while Asteroids II,
 Head-On and Painted Lands break out to layouts suited to their controls.
 Every screen links back to the games hub.
 
-`head-on.html`, `yard.html` and `house.html` have a browser test suite in
+`head-on.html`, `yard.html`, `house.html` and `driveway.html` have a
+browser test suite in
 [`tests/`](tests/) — plain Node scripts driving a real Chromium through
 Playwright. `./tests/run.sh` serves the repo and runs all of them.
