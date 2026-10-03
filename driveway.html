@@ -192,6 +192,15 @@
     user-select: none;
     transition: transform 0.08s, background 0.15s, border-color 0.15s, color 0.15s;
   }
+  /* Lit differently when it is the garage's opener rather than the way
+     out, so the change is visible from the corner of the eye and not
+     only readable - the same treatment the button indoors gets. */
+  .fly-btn.acts {
+    border-color: rgba(125, 211, 252, 0.5);
+    background: radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.3), rgba(30, 64, 94, 0.2) 70%);
+    color: rgba(226, 246, 255, 0.92);
+  }
+  .fly-btn.acts .fly-icon { border-bottom-color: rgba(190, 233, 255, 0.85); }
   .fly-btn:active, .fly-btn.active {
     transform: scale(0.93);
     background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.85), rgba(90, 70, 35, 0.5) 70%);
@@ -240,9 +249,12 @@
       <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
     </div>
 
+    <!-- One button in the corner, relabelled for whatever is in reach by
+         syncActionButton(): the way back out of the scene most of the
+         time, the garage door's switch when you are standing at it. -->
     <button type="button" class="fly-btn" id="backBtn" aria-label="Back round to the yard">
       <span class="fly-icon" aria-hidden="true"></span>
-      Back
+      <span id="backLabel">Back</span>
     </button>
   </div>
 
@@ -302,36 +314,29 @@
   // ==================================================================
   // Where everything stands.
   //
-  // The start point is deliberately most of the way there already. A
-  // long establishing walk is exactly the chore this must not be, so the
-  // player begins in front of the house with the ship a second or so to
-  // the right - far enough to be a walk, near enough that nobody ever
-  // resents it.
-  // ==================================================================
-  // The ship sits at very nearly the player's own depth, which is not an
-  // aesthetic choice: it means "hold right" reaches it. Putting it
-  // further back made the first screen of the game a lesson in the depth
-  // axis, and the first screen of the game should teach nothing.
-  // Depth is also a LAYOUT constraint, not just a look: the stick and the
-  // Fly button own the bottom ~140px of the screen, so anything standing
-  // near depth 1 is standing under the player's thumbs. The ship and the
-  // player both sit around 0.62 to keep clear of them - and they sit
-  // together, because that near-equal depth is what makes "hold right"
-  // reach the ship.
-  // ==================================================================
-  // Where everything stands.
+  // You get here by walking off the RIGHT-hand side of the yard, so you
+  // arrive from the left and the house you just walked past is behind
+  // you on the left, its front door out of sight round the corner. The
+  // thing you came round here to find is the garage, which stands a
+  // short walk to the right of where you come in.
   //
-  // You arrive round the corner of the house from the back garden, so
-  // the house is on the RIGHT with its front door out of sight, and the
-  // thing you came round here to find is the garage.
+  // Depth is a LAYOUT constraint here, not just a look: the stick and
+  // the corner button own the bottom ~140px of the screen, so anything
+  // standing near depth 1 is standing under the player's thumbs. The
+  // arrival spot is the one that matters most - you cannot walk out
+  // from under your own thumb - and at 430x820 the figure's feet at
+  // depth 0.62 clear the top of the stick zone by 28px.
   // ==================================================================
-  var GARAGE = { worldX: -0.28, depth: 0.36 };
-  var HOUSE_SIDE = { worldX: 0.74, depth: 0.42 };
-  var BIN = { worldX: 0.26, depth: 0.56 };
+  var GARAGE = { worldX: 0.28, depth: 0.36 };
+  var HOUSE_SIDE = { worldX: -0.74, depth: 0.42 };
+  var BIN = { worldX: -0.26, depth: 0.56 };
   // Up the drive rather than down at the kerb: the kerb is where the
   // thumbstick is, and the yard taught that lesson once already.
-  var MAILBOX = { worldX: -0.82, depth: 0.6 };
-  var START = { worldX: 0.58, depth: 0.72 };
+  var MAILBOX = { worldX: 0.82, depth: 0.6 };
+  // Round the corner, facing up the drive - the same side of the screen
+  // you walked off the yard towards, at nearly the depth you left at, so
+  // the two screens read as one continuous walk.
+  var START = { worldX: -0.66, depth: 0.62 };
 
   // The garage as a texture, and where its door sits on it - one set of
   // fractions shared by the bake, the rolling door and the light, the
@@ -349,8 +354,10 @@
   var CAR_TEX_W = 150, CAR_TEX_H = 92, CAR_SIZE = 0.86;
 
   // The rolling door. Slower than the front door's swing - it is a
-  // motor, not a hinge - and it opens on approach rather than on a
-  // button, which is the rule this chapter has already taught twice.
+  // motor, not a hinge - and unlike every other door in this chapter it
+  // does NOT open because you walked at it: a garage door is a thing you
+  // operate, so the reach below is only how close you have to be for the
+  // corner button to become the opener.
   var GARAGE_NOTICE_X = 190;
   var GARAGE_NOTICE_Y = 340;
   var GARAGE_RATE = 0.85;
@@ -358,17 +365,32 @@
   var GARAGE_SPILL_LENGTH = 150;
 
   var WALL_STANDOFF = 3;   // px of drive you are stopped in, in front of the brick
-  var EDGE_X = 0.95;       // past this on the right, you are round the corner again
+  var EDGE_X = -0.95;      // past this on the left, you are round the corner again
   var LEAVE_FADE = 0.42;   // seconds of black on the way back
 
   // Alien activity, a long way off. Three lights in loose formation,
   // drifting, with the occasional flare - the point is that you notice
   // it on the second look, not the first. Anything more dramatic than
   // this belongs in a cutscene, and this is a driveway.
+  //
+  // Two of them do a little more than drift: one will roll through a
+  // loop now and then, and one will put a couple of short bolts down
+  // toward the horizon. Both are small, brief and far away - a loop
+  // nine pixels across and a bolt the length of a fingernail - because
+  // the brief here is "a little, not too dramatic".
   var UFO_COUNT = 3;
   var UFO_DRIFT = 5.5;        // px/sec across the sky
   var UFO_FLARE_EVERY = 7.5;  // seconds between one of them brightening
   var COLOR_UFO = 0x9ef0d0;
+  var UFO_LOOP_EVERY = 11;    // seconds between one of them looping
+  var UFO_LOOP_SECS = 1.9;    // how long the loop takes
+  var UFO_LOOP_R = 9;         // px radius of the loop itself
+  var UFO_SHOOT_EVERY = 13;   // seconds between one of them firing
+  var UFO_SHOTS = 2;          // bolts per burst - "a laser or two"
+  var UFO_SHOT_SECS = 0.16;   // how long one bolt is on screen
+  var UFO_SHOT_GAP = 0.34;    // ...and the pause between them
+  var UFO_SHOT_LEN = 22;      // px, angled down toward the ridges
+  var COLOR_UFO_SHOT = 0xd8fff0;
 
   // ==================================================================
   // Procedural ambience (Web Audio, no asset files) - wind from
@@ -491,6 +513,8 @@
     this.idlePhase = Math.random() * 10;
     this.prompt = null;
     this.garageOpen = 0; // 0 shut, 1 rolled up - see updateGarageDoor()
+    this.garageWant = 0; // what the switch was last set to, 0 or 1
+    this.buttonVerb = null; // what the corner button says - see syncActionButton()
     this.clock = 0;
 
     this.mountainLayers = {
@@ -512,11 +536,18 @@
         xFrac: 0.3 + u * 0.07 + Math.random() * 0.03,
         yFrac: 0.3 + u * 0.035 + Math.random() * 0.03,
         phase: Math.random() * Math.PI * 2,
-        speed: 0.8 + Math.random() * 0.5
+        speed: 0.8 + Math.random() * 0.5,
+        aim: Math.random() < 0.5 ? -1 : 1, // which way its bolts lean
+        x: 0, y: 0                         // where it was last drawn
       });
     }
     this.ufoAge = 0;
     this.flareAt = UFO_FLARE_EVERY * 0.5;
+    // Staggered, so the first loop and the first bolts do not land on
+    // the same second as each other or as the arrival fade.
+    this.loopAt = UFO_LOOP_EVERY * 0.45;
+    this.shootAt = UFO_SHOOT_EVERY * 0.8;
+    this.shots = [];
 
     this.buildTextures();
     this.buildLayers();
@@ -827,13 +858,17 @@
     // narrows toward the building rather than toward the screen.
     var opening = this.garageRect();
     var nearHalf = this.depthToHalfWidth(1) * 0.42;
+    // The near end leans the garage's way rather than sitting dead
+    // centre, so the slab reads as running up to the door instead of
+    // straight at the camera.
+    var nearCx = this.scale.width / 2 + 0.1 * nearHalf;
     this.driveGfx.clear();
     this.driveGfx.fillStyle(0x2c2e3a, 1);
     this.driveGfx.beginPath();
     this.driveGfx.moveTo(opening.left - 6, opening.bottom);
     this.driveGfx.lineTo(opening.right + 6, opening.bottom);
-    this.driveGfx.lineTo(this.scale.width / 2 - 0.1 * nearHalf + nearHalf, H);
-    this.driveGfx.lineTo(this.scale.width / 2 - 0.1 * nearHalf - nearHalf, H);
+    this.driveGfx.lineTo(nearCx + nearHalf, H);
+    this.driveGfx.lineTo(nearCx - nearHalf, H);
     this.driveGfx.closePath();
     this.driveGfx.fillPath();
     // One expansion joint across it, which is the whole difference
@@ -842,8 +877,8 @@
     var jointY = lerp(opening.bottom, H, 0.45);
     var jointHalf = lerp((opening.right - opening.left) / 2 + 6, nearHalf, 0.45);
     this.driveGfx.beginPath();
-    this.driveGfx.moveTo(this.scale.width / 2 - 0.1 * nearHalf - jointHalf, jointY);
-    this.driveGfx.lineTo(this.scale.width / 2 - 0.1 * nearHalf + jointHalf, jointY);
+    this.driveGfx.moveTo(nearCx - jointHalf, jointY);
+    this.driveGfx.lineTo(nearCx + jointHalf, jointY);
     this.driveGfx.strokePath();
 
     this.buildVignette(W, H);
@@ -954,9 +989,10 @@
     return me.y < h.y + WALL_STANDOFF && me.x > h.left && me.x < h.right;
   };
 
-  // The way back: round the corner of the house, the way you came.
+  // The way back: round the corner of the house, the way you came -
+  // off the left-hand side, because that is the side you came in on.
   MainScene.prototype.atYardEdge = function () {
-    return this.worldX >= EDGE_X && this.depth > HOUSE_SIDE.depth + 0.1;
+    return this.worldX <= EDGE_X && this.depth > HOUSE_SIDE.depth + 0.1;
   };
 
   MainScene.prototype.leaveForYard = function () {
@@ -1015,15 +1051,19 @@
     var bob = walking ? Math.sin(this.bobPhase) * 3 * me.scale : Math.sin(this.idlePhase * 1.2) * 1;
     this.you.setPosition(me.x, me.y + bob).setScale(me.scale).setFlipX(this.flipX).setDepth(me.y);
 
-    // Walking off the right-hand side is walking back round the corner,
+    // Walking off the left-hand side is walking back round the corner,
     // the same way you came - no button, same rule as every other door
-    // in this chapter.
+    // in this chapter. The garage is the exception, below.
     if (this.atYardEdge()) { this.leaveForYard(); return; }
 
     this.setPrompt(
       this.atCar() ? 'Your father\'s convertible. No keys in it.'
-        : (this.worldX > EDGE_X - 0.2 ? 'Round the corner, back to the yard.' : null)
+        : this.nearGarage() ? (this.garageWant
+            ? 'The garage door. Shut it again?'
+            : 'The garage door. There is a switch on the frame.')
+        : (this.worldX < EDGE_X + 0.2 ? 'Round the corner, back to the yard.' : null)
     );
+    this.syncActionButton(this.garageVerb());
 
     this.mtnFarGfx.x = -this.worldX * 8;
     this.mtnMidGfx.x = -this.worldX * 22;
@@ -1032,10 +1072,43 @@
     this.updateFireflies(dt);
   };
 
-  // Rolls up as you come near, and back down behind you. Slower than
-  // the front door's swing, because it is a motor and not a hinge.
+  // What the corner button would do if you pressed it now: work the
+  // door if you are standing at it, otherwise go back round the corner.
+  MainScene.prototype.garageVerb = function () {
+    if (!this.nearGarage()) return null;
+    return this.garageWant ? 'Close' : 'Open';
+  };
+
+  // The corner button, relabelled for whatever is in reach - the same
+  // button and the same rule as the one indoors. Only touched when it
+  // actually changes, because this runs every frame.
+  MainScene.prototype.syncActionButton = function (verb) {
+    if (this.buttonVerb === verb) return;
+    this.buttonVerb = verb;
+    var btn = document.getElementById('backBtn');
+    var label = document.getElementById('backLabel');
+    if (!btn || !label) return;
+    label.textContent = verb || 'Back';
+    btn.classList.toggle('acts', !!verb);
+    btn.setAttribute('aria-label', verb ? verb + ' the garage door' : 'Back round to the yard');
+  };
+
+  // Pressing it. Everything else in this chapter opens because you
+  // walked at it; a garage door does not, so this is the chapter's one
+  // deliberate press - and the one thing in the scene that stays as you
+  // left it, because a door you opened staying open is the difference
+  // between a switch and a motion sensor.
+  MainScene.prototype.workGarageDoor = function () {
+    if (this.mode !== 'walk' || !this.nearGarage()) return false;
+    this.garageWant = this.garageWant ? 0 : 1;
+    Sound.ensureAudio();
+    return true;
+  };
+
+  // Rolls toward whatever the switch last said. Slower than the front
+  // door's swing, because it is a motor and not a hinge.
   MainScene.prototype.updateGarageDoor = function (dt) {
-    var want = this.nearGarage() ? 1 : 0;
+    var want = this.garageWant;
     var step = GARAGE_RATE * dt;
     if (this.garageOpen < want) this.garageOpen = Math.min(want, this.garageOpen + step);
     else if (this.garageOpen > want) this.garageOpen = Math.max(want, this.garageOpen - step);
@@ -1109,6 +1182,42 @@
   // drifting, with one of them flaring now and then - deliberately
   // small and deliberately silent. It is meant to be the thing you
   // notice on the second look, not an event.
+  //
+  // Two of them have something to do beyond drifting: a loop, and a
+  // couple of bolts fired off toward the ridges. Both are picked by a
+  // countdown rather than scripted, both are over in about two seconds,
+  // and neither is ever near enough to be about you. startLoop() and
+  // startBurst() are also how the tests make them happen on demand -
+  // waiting out a random countdown is how you get a flaky test.
+  MainScene.prototype.startLoop = function (which) {
+    var i = (which === undefined) ? Math.floor(Math.random() * this.ufos.length) : which;
+    this.ufos[i].loopAge = 0;
+    this.loopAt = UFO_LOOP_EVERY * (0.7 + Math.random() * 0.6);
+    return i;
+  };
+
+  MainScene.prototype.startBurst = function (which) {
+    var i = (which === undefined) ? Math.floor(Math.random() * this.ufos.length) : which;
+    this.ufos[i].burstAge = 0;
+    this.shootAt = UFO_SHOOT_EVERY * (0.7 + Math.random() * 0.6);
+    return i;
+  };
+
+  // Where a bolt from this one is right now, or null between shots and
+  // once the burst is done. Two shots, each a short angled line away
+  // from the light and down toward the ridges.
+  MainScene.prototype.ufoShot = function (u, x, y) {
+    if (u.burstAge === undefined) return null;
+    var cycle = UFO_SHOT_SECS + UFO_SHOT_GAP;
+    var shot = Math.floor(u.burstAge / cycle);
+    if (shot >= UFO_SHOTS) return null;
+    var into = u.burstAge - shot * cycle;
+    if (into > UFO_SHOT_SECS) return null;
+    var dir = u.aim === undefined ? 1 : u.aim;
+    var len = UFO_SHOT_LEN * (0.6 + 0.4 * (1 - into / UFO_SHOT_SECS));
+    return { x1: x, y1: y, x2: x + dir * len * 0.55, y2: y + len, life: 1 - into / UFO_SHOT_SECS };
+  };
+
   MainScene.prototype.updateSky = function (dt) {
     var W = this.scale.width, horizon = this.horizonY();
     this.ufoAge += dt;
@@ -1122,19 +1231,67 @@
     this.flareAge = (this.flareAge === undefined ? 9 : this.flareAge) + dt;
     if (this.flareAge < 0.9) flaring = this.flaringIndex;
 
+    this.loopAt -= dt;
+    if (this.loopAt <= 0) this.startLoop();
+    this.shootAt -= dt;
+    if (this.shootAt <= 0) this.startBurst();
+
     var g = this.skyFxGfx;
     g.clear();
+    this.shots = [];
     for (var i = 0; i < this.ufos.length; i++) {
       var u = this.ufos[i];
       u.xFrac -= (UFO_DRIFT * u.speed * dt) / W;
       if (u.xFrac < -0.1) u.xFrac = 1.1;
       var x = u.xFrac * W;
       var y = horizon * u.yFrac + Math.sin(this.ufoAge * 0.5 + u.phase) * 2.5;
+
+      // The loop: one turn about a point just above the drift line, so
+      // it climbs, comes over and rejoins exactly where it left off.
+      if (u.loopAge !== undefined) {
+        u.loopAge += dt;
+        if (u.loopAge >= UFO_LOOP_SECS) {
+          u.loopAge = undefined;
+        } else {
+          var t = u.loopAge / UFO_LOOP_SECS;
+          var a = t * Math.PI * 2;
+          x += Math.sin(a) * UFO_LOOP_R;
+          y -= (1 - Math.cos(a)) * UFO_LOOP_R;
+        }
+      }
+      u.x = x;
+      u.y = y;
+
+      var shot = null;
+      if (u.burstAge !== undefined) {
+        u.burstAge += dt;
+        if (u.burstAge > UFO_SHOTS * (UFO_SHOT_SECS + UFO_SHOT_GAP)) u.burstAge = undefined;
+        else shot = this.ufoShot(u, x, y);
+      }
+
       var flare = (i === flaring) ? 1 - this.flareAge / 0.9 : 0;
       g.fillStyle(COLOR_UFO, 0.05 + 0.1 * flare);
       g.fillCircle(x, y, 5 + 4 * flare);
       g.fillStyle(COLOR_UFO, 0.5 + 0.45 * flare);
       g.fillCircle(x, y, 1.1 + 0.5 * flare);
+
+      if (shot) {
+        this.shots.push(shot);
+        // A soft sheath and a hard core: one stroke alone reads as a
+        // shooting star, and a shooting star is not what is happening.
+        g.lineStyle(2.4, COLOR_UFO, 0.16 + 0.2 * shot.life);
+        g.beginPath();
+        g.moveTo(shot.x1, shot.y1);
+        g.lineTo(shot.x2, shot.y2);
+        g.strokePath();
+        g.lineStyle(0.9, COLOR_UFO_SHOT, 0.45 + 0.45 * shot.life);
+        g.beginPath();
+        g.moveTo(shot.x1, shot.y1);
+        g.lineTo(shot.x2, shot.y2);
+        g.strokePath();
+        g.fillStyle(COLOR_UFO_SHOT, 0.5 * shot.life); // the muzzle, for one frame
+        g.fillCircle(shot.x1, shot.y1, 1.8);
+      }
     }
   };
 
@@ -1176,8 +1333,9 @@
           mode: self.mode, worldX: self.worldX, depth: self.depth,
           modeAge: self.modeAge, leaveFade: LEAVE_FADE,
           garageOpen: self.garageOpen, garageRect: self.garageRect(),
+          garageWant: self.garageWant, buttonVerb: self.buttonVerb,
           nearGarage: self.nearGarage(), atCar: self.atCar(),
-          atEdge: self.atYardEdge(),
+          atEdge: self.atYardEdge(), edgeX: EDGE_X,
           inBuilding: self.insideBuilding(self.worldX, self.depth),
           garageFront: self.buildingFront(GARAGE, GARAGE_TEX_W, GARAGE_TEX_H, GARAGE_SIZE,
                                           GARAGE_WALL_LEFT, GARAGE_WALL_RIGHT, GARAGE_DOOR_BOTTOM),
@@ -1185,9 +1343,27 @@
                                          HOUSE_WALL_LEFT, HOUSE_WALL_RIGHT, HOUSE_FOOT),
           prompt: self.prompt,
           carVisible: self.carSprite.visible,
-          ufos: self.ufos.map(function (u) { return { x: +u.xFrac.toFixed(3), y: +u.yFrac.toFixed(3) }; })
+          // Both the drift (xFrac/yFrac) and where the light was
+          // actually drawn (x/y), because a loop moves the second
+          // without touching the first.
+          ufos: self.ufos.map(function (u) {
+            return {
+              x: +u.xFrac.toFixed(3), y: +u.yFrac.toFixed(3),
+              drawX: +u.x.toFixed(1), drawY: +u.y.toFixed(1),
+              looping: u.loopAge !== undefined, firing: u.burstAge !== undefined
+            };
+          }),
+          shots: self.shots.map(function (s) {
+            return { x1: +s.x1.toFixed(1), y1: +s.y1.toFixed(1),
+                     x2: +s.x2.toFixed(1), y2: +s.y2.toFixed(1) };
+          })
         };
       },
+      // The sky's two set pieces, on demand: waiting out a ten-second
+      // random countdown is how a test becomes a coin toss.
+      loopNow: function (which) { return self.startLoop(which); },
+      shootNow: function (which) { return self.startBurst(which); },
+      workGarage: function () { return self.workGarageDoor(); },
       bounds: function () {
         function box(sprite) {
           var b = sprite.getBounds();
@@ -1320,6 +1496,9 @@
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault();
       el.classList.add('active');
+      // Whatever the button currently says. Standing at the garage it
+      // works the door; anywhere else it is still the way out.
+      if (mainScene && mainScene.workGarageDoor()) return;
       if (mainScene) mainScene.leaveForYard(); else goYard();
     });
     function release() { el.classList.remove('active'); }
@@ -1332,11 +1511,18 @@
   function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
   function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
   function isBackKey(code) { return code === 'Escape' || code === 'KeyQ'; }
+  // The keyboard twin of the corner button, for anyone playing this at
+  // a desk - the same keys the yard boards the ship with.
+  function isActionKey(code) { return code === 'Space' || code === 'Enter' || code === 'KeyE'; }
 
   document.addEventListener('keydown', function (e) {
     Sound.ensureAudio();
     Sound.startWind();
     if (isUpKey(e.code) || isDownKey(e.code)) e.preventDefault();
+    if (isActionKey(e.code)) {
+      if (!e.repeat && mainScene) mainScene.workGarageDoor();
+      return;
+    }
     if (isBackKey(e.code)) {
       if (!e.repeat) { if (mainScene) mainScene.leaveForYard(); else goYard(); }
       return;

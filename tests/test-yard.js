@@ -295,14 +295,15 @@ harness.run(async (page, check, ctx) => {
   check('and nor does being round the back of the house', aim.behind === false, aim);
 
   // --- round the side of the house -----------------------------------------
-  // The second screen of the chapter hangs off this one edge. Nothing
-  // else in the yard announces itself, but the side of the house looks
-  // like the end of the world until you are told it is not - so the
-  // hint is part of the exit, not decoration.
+  // The second screen of the chapter hangs off this one edge: the
+  // RIGHT-hand side, in the lane behind the ship. Nothing else in the
+  // yard announces itself, but the side of the house looks like the end
+  // of the world until you are told it is not - so the hint is part of
+  // the exit, not decoration.
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
   const nearTheCorner = await page.evaluate(() => {
-    window.__yardDebug.moveTo(-0.8, 0.82);
+    window.__yardDebug.moveTo(0.8, 0.4);
     return new Promise(res => setTimeout(() => res(window.__yardDebug.state()), 260));
   });
   check('walking out to the side of the house says there is something there',
@@ -310,21 +311,59 @@ harness.run(async (page, check, ctx) => {
     nearTheCorner);
   check('and you are not round it yet', nearTheCorner.atSideEdge === false, nearTheCorner);
 
-  const wentRound = await walkUntilStopped(page, [-0.8, 0.82], ['ArrowLeft'], 5000);
+  // The lane is BEHIND the ship for a reason: touching the ship boards
+  // it with no button and no confirm, so a lane at the ship's own depth
+  // flies you away instead of taking you round the corner. Walked, not
+  // asserted about - the question is what happens to a player holding
+  // right, and the answer used to be "takeoff".
+  const alongTheLane = await page.evaluate(() => {
+    const d = window.__yardDebug;
+    let closest = 1e9, boarded = false;
+    for (let x = 0.6; x <= 1.0001; x += 0.01) {
+      d.moveTo(x, 0.44);
+      const s = d.state();
+      closest = Math.min(closest, s.shipDistance - s.boardRadius);
+      if (s.atShip) boarded = true;
+    }
+    return { closest: Math.round(closest), boarded: boarded };
+  });
+  check('and the lane itself clears the ship rather than boarding it',
+    alongTheLane.boarded === false && alongTheLane.closest > 10, alongTheLane);
+
+  const wentRound = await walkUntilStopped(page, [0.8, 0.4], ['ArrowRight'], 5000);
   check('and walking on takes you round to the drive',
     wentRound.end.gone === true || wentRound.end.mode !== 'walk', wentRound);
   check('which is a real page, not a dead end',
     await reachedPage(page, 'driveway.html', 8000), page.url());
 
   // Coming back the other way lands you at the side, clear of the edge
-  // you just crossed - or the two screens bounce off each other.
+  // you just crossed - or the two screens bounce off each other. And on
+  // the side you LEFT by: coming back round the corner onto the opposite
+  // side of the yard is the kind of thing that makes a map unreadable.
   await page.goto(ctx.url('yard.html?at=side'));
   await page.waitForTimeout(BOOT_MS);
   const cameBack = await readState(page);
   check('coming back round puts you at the side of the house',
-    cameBack.worldX < -0.7 && cameBack.worldX > cameBack.sideEdgeX, cameBack);
+    cameBack.worldX > 0.7 && cameBack.worldX < cameBack.sideEdgeX, cameBack);
   check('and not straight back round it again',
     cameBack.mode === 'walk' && cameBack.atSideEdge === false, cameBack);
+  check('and in the lane you left by, not somewhere else entirely',
+    cameBack.depth < cameBack.sideLaneDepth, cameBack);
+  // ...and not underneath a thumb. The arrival spot is the one position
+  // in the scene the player cannot walk out of if it is wrong.
+  const backLayout = await page.evaluate(() => {
+    const b = window.__yardDebug.bounds();
+    function rect(id) {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    }
+    function overlaps(a, c) {
+      return a.left < c.right && a.right > c.left && a.top < c.bottom && a.bottom > c.top;
+    }
+    return { onStick: overlaps(b.you, rect('stickZone')), onFly: overlaps(b.you, rect('flyBtn')) };
+  });
+  check('and standing where you can be seen, not behind a control',
+    !backLayout.onStick && !backLayout.onFly, backLayout);
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
 

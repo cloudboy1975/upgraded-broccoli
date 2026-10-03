@@ -276,9 +276,22 @@
   var NEXT_PAGE = 'head-on.html';
   var HOUSE_PAGE = 'house.html';
   // Round the side of the house: the front, the drive and the garage.
+  // The way round is the RIGHT-hand side of the screen, and the lane
+  // runs BEHIND the ship rather than at its own depth or in front of it.
+  // Two measurements decided that, at 430x820:
+  //   - touching the ship IS boarding it, with no button and no confirm,
+  //     so a lane level with it flies you away instead of taking you
+  //     round the corner. Behind it at depth 0.48 the nearest the ship
+  //     ever gets along the lane is 64px against a 46px boarding radius;
+  //     at 0.56 it is 29px, which boards you outright.
+  //   - the near lane, in front of the ship, runs straight under the Fly
+  //     button: the figure vanishes behind it for the last stride before
+  //     the edge, which is the same disappearing act the house's wall
+  //     used to do.
   var DRIVE_PAGE = 'driveway.html';
-  var SIDE_EDGE_X = -0.95;  // past this, with the house behind you, you are round the corner
-  var SIDE_HINT_X = -0.74;  // ...and from here the hint says so
+  var SIDE_EDGE_X = 0.95;     // past this, in the lane, you are round the corner
+  var SIDE_HINT_X = 0.6;      // ...and from here the hint says so
+  var SIDE_LANE_DEPTH = 0.48; // the lane is everything BEHIND this, the ship being at 0.62
   var ENTER_FADE = 0.4; // seconds of black before the interior loads
 
   // Night, fixed - no mood cycling here. These are painted-lands' own
@@ -330,8 +343,11 @@
   // is a second to the right, the front door a second to the left.
   var START = { worldX: -0.16, depth: 0.64 };
   // Coming back round the corner puts you where you left, not back in
-  // the middle of the lawn - ?at=side, the same idea the room uses.
-  var SIDE_RETURN = { worldX: -0.88, depth: 0.8 };
+  // the middle of the lawn - ?at=side, the same idea the room uses. In
+  // the lane you left by, a short step inside the edge, and well clear
+  // of both the ship (65px against a 46px boarding radius) and the
+  // controls, which are a long way below this.
+  var SIDE_RETURN = { worldX: 0.88, depth: 0.46 };
 
 
 
@@ -1057,11 +1073,11 @@
   // Going in is a plain fade rather than the ship's whole sequence -
   // opening your own front door is not a set piece, and this is a door
   // that will be walked through on the way to a tutorial.
-  // Walking off the left-hand side, past the front of the house, goes
-  // round to the drive. The same rule as every other way out of this
-  // scene: you walk at it, and it happens.
+  // Walking off the right-hand side, along the lane behind the ship,
+  // goes round to the drive. The same rule as every other way out of
+  // this scene: you walk at it, and it happens.
   MainScene.prototype.atSideEdge = function () {
-    return this.worldX <= SIDE_EDGE_X && this.depth > HOUSE.depth + 0.12;
+    return this.worldX >= SIDE_EDGE_X && this.depth < SIDE_LANE_DEPTH;
   };
 
   MainScene.prototype.leaveForDrive = function () {
@@ -1226,9 +1242,11 @@
     if (this.atSideEdge()) { this.leaveForDrive(); return; }
     // Nothing else in this scene announces itself, but the side of the
     // house looks like the edge of the world until you are told it is
-    // not - and an exit nobody finds is an exit nobody has.
-    this.setPrompt(this.worldX < SIDE_HINT_X && this.depth > HOUSE.depth + 0.12
-      ? 'Round the side of the house \u2190' : null);
+    // not - and an exit nobody finds is an exit nobody has. It only
+    // speaks up in the lane itself, which is also what tells you the way
+    // round is behind the ship rather than through it.
+    this.setPrompt(this.worldX > SIDE_HINT_X && this.depth < SIDE_LANE_DEPTH
+      ? 'Round the side of the house \u2192' : null);
 
     // A little parallax on the ridges, and the ship idling.
     this.mtnFarGfx.x = -this.worldX * 8;
@@ -1352,6 +1370,7 @@
           doorOpen: self.doorOpen, doorRect: self.doorRect(),
           inWall: self.insideHouse(self.worldX, self.depth), houseFront: self.houseFront(),
           atSideEdge: self.atSideEdge(), sideEdgeX: SIDE_EDGE_X,
+          sideLaneDepth: SIDE_LANE_DEPTH,
           house: HOUSE,
           prompt: self.prompt,
           shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
