@@ -348,32 +348,34 @@ harness.run(async (page, check, ctx) => {
   check('which is a real page, not a dead end',
     await reachedPage(page, 'driveway.html', 8000), page.url());
 
-  // ...and the last thing you see is him going BEHIND the house rather
-  // than fading out beside it. That is the whole feeling this exit is
-  // for - walking round the far side of the building - and it is one
-  // sprite sort away from not happening at all.
+  // ...and the hand-off is a CUT. Crossing the line puts you on the
+  // next screen, with no fade and nobody walking off: the two screens
+  // are meant to read as one walk, and a transition - any transition -
+  // is what breaks that. The ship's takeoff and the front door's fade
+  // are set pieces and stay; this is a doorway.
+  //
+  // Sampled while a thumb is actually held on the key, because the
+  // animated version of this arrived too, just a beat later and with a
+  // mode of its own on the way.
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
-  const walkOff = await page.evaluate(() => new Promise(res => {
-    const d = window.__yardDebug, s = d.scene, frames = [];
-    const f = s.houseFront();
-    // Standing where the crossing actually happens: a stride past the
-    // corner, a stride past the line.
-    const depth = (f.y - 12 - s.horizonY()) / (s.scale.height - s.horizonY());
-    d.moveTo((f.right + 6 - s.scale.width / 2) / s.depthToHalfWidth(depth), depth);
-    s.leaveForDrive();
-    const iv = setInterval(() => {
-      frames.push({
-        mode: s.mode, x: Math.round(s.you.x), y: Math.round(s.you.y),
-        behind: s.you.x > f.left && s.you.x < f.right && s.you.depth < s.houseSprite.depth
-      });
-      if (frames.length >= 7) { clearInterval(iv); res(frames); }
-    }, 50);
-  }));
-  check('he keeps walking while the screen fades, round behind the house',
-    walkOff.every(f => f.mode === 'leaving') &&
-    walkOff[walkOff.length - 1].x < walkOff[0].x - 8 &&
-    walkOff[walkOff.length - 1].behind === true, walkOff);
+  await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene, f = s.houseFront();
+    const depth = (f.y + 26 - s.horizonY()) / (s.scale.height - s.horizonY());
+    d.moveTo((f.right + 16 - s.scale.width / 2) / s.depthToHalfWidth(depth), depth);
+  });
+  await page.waitForTimeout(120);
+  const crossing = [];
+  const watch = setInterval(() => {
+    page.evaluate(() => window.__yardDebug.state().mode).then(m => crossing.push(m), () => {});
+  }, 25);
+  await page.keyboard.down('ArrowUp');
+  const cut = await reachedPage(page, 'driveway.html', 9000);
+  clearInterval(watch);
+  await page.keyboard.up('ArrowUp').catch(() => {});
+  check('crossing the line cuts straight to the drive, with no leaving sequence',
+    cut && crossing.length > 0 && crossing.every(m => m === 'walk'),
+    { modes: [...new Set(crossing)], url: page.url() });
 
   // Coming back the other way lands you beside the house you just went
   // round - or the two screens bounce off each other. And at the same
@@ -415,6 +417,26 @@ harness.run(async (page, check, ctx) => {
   });
   check('and standing where you can be seen, not behind a control',
     !backLayout.onStick && !backLayout.onFly, backLayout);
+  // ...and it does not fade up on you either: the exit was made
+  // instant, so the arrival is instant. Walking out of the front door
+  // still fades, because going in faded - that pair is checked further
+  // down, and this one must not take it with it.
+  const arrival = await page.evaluate(() => {
+    const el = document.getElementById('blackout');
+    return { cls: el.className, opacity: getComputedStyle(el).opacity,
+             fade: getComputedStyle(el).transitionDuration };
+  });
+  check('and the scene does not fade up after an instant exit',
+    arrival.opacity === '0' && arrival.fade === '0s', arrival);
+  // The same page arrived at any other way keeps its fade.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const plainArrival = await page.evaluate(() => {
+    const el = document.getElementById('blackout');
+    return { fade: getComputedStyle(el).transitionDuration, opacity: getComputedStyle(el).opacity };
+  });
+  check('while arriving any other way still fades up',
+    plainArrival.fade !== '0s' && plainArrival.opacity === '0', plainArrival);
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
 

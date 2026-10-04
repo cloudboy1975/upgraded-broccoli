@@ -220,6 +220,10 @@
     transition: opacity 0.45s ease;
   }
   .blackout.visible { opacity: 1; }
+  /* ...except when you walked in from the side of the house, which is a
+     doorway rather than a scene change: that one snaps, so the arrival
+     has no fade either. */
+  .blackout.instant { transition: none; }
 
 </style>
 </head>
@@ -285,8 +289,6 @@
   var DRIVE_PAGE = 'driveway.html';
   var PASS_PLANE = 6;        // px past the front line before you count as round it
   var PASS_HINT_FRONT = 110; // ...and how far short of it the hint starts
-  var PASS_WALKOFF_X = 34;   // px he walks on past the house while the screen fades
-  var PASS_WALKOFF_Y = 16;
   var ENTER_FADE = 0.4; // seconds of black before the interior loads
 
   // Night, fixed - no mood cycling here. These are painted-lands' own
@@ -552,10 +554,14 @@
     window.location.href = DRIVE_PAGE;
   }
 
+  function cameFromTheSide() {
+    return /(?:^|[?&])at=side(?:&|$)/.test(window.location.search || '');
+  }
+
   // Where you start, which is the middle of the lawn unless you have
   // just come back round the side of the house.
   function startSpot() {
-    return /(?:^|[?&])at=side(?:&|$)/.test(window.location.search || '') ? SIDE_RETURN : START;
+    return cameFromTheSide() ? SIDE_RETURN : START;
   }
 
   // Clears the arrival fade once there is a frame to look at. Named and
@@ -564,7 +570,13 @@
   // anybody could miss.
   function clearArrivalFade() {
     var el = document.getElementById('blackout');
-    if (el) el.classList.remove('visible');
+    if (!el) return;
+    // Coming back round the side of the house is a cut, so the way in
+    // is a cut too - fading up out of black after an instant exit is
+    // the transition the exit was just made to avoid. Walking out of
+    // the front door still fades, because going in faded.
+    if (cameFromTheSide()) el.classList.add('instant');
+    el.classList.remove('visible');
   }
 
   function MainScene() {
@@ -1105,18 +1117,18 @@
     return me.x > f.right && me.y >= f.y - PASS_PLANE && me.y < f.y + PASS_HINT_FRONT;
   };
 
+  // Crossing the line is the cut. No fade, no last-two-strides walk-off:
+  // you touch the plane and you are on the next screen, which is how the
+  // games this is pretending to be did it, and it reads as one
+  // continuous walk rather than as two scenes with a transition between
+  // them. The ship's takeoff and the front door's fade stay exactly as
+  // they are - those are set pieces, this is a doorway.
   MainScene.prototype.leaveForDrive = function () {
     if (this.mode !== 'walk') return;
-    this.mode = 'leaving';
-    this.modeAge = 0;
-    // Where he was when he cleared the corner. He keeps walking through
-    // the fade - see updateSequence() - which is what sells the whole
-    // thing: the last you see of him is his back going round the house.
-    this.leaveFrom = this.placeAt(this.worldX, this.depth);
+    this.mode = 'gone';
     this.setPrompt(null);
-    document.getElementById('hint').classList.add('hidden');
-    document.getElementById('controlBar').classList.add('gone');
     forceReleaseAllInput();
+    goDrive();
   };
 
   MainScene.prototype.enterHouse = function () {
@@ -1131,28 +1143,6 @@
   };
 
   MainScene.prototype.updateSequence = function (dt) {
-    if (this.mode === 'leaving') {
-      this.updateDoorSwing(dt);
-      var lt = clamp(this.modeAge / ENTER_FADE, 0, 1);
-      // Two more strides, up and to the left, behind the house. He sorts
-      // under it already at this depth, so the house swallows him as he
-      // goes - no mask, no extra layer, just the same foot-line sort
-      // everything else in the scene uses.
-      var walkOff = this.leaveFrom;
-      if (walkOff) {
-        var ox = walkOff.x - PASS_WALKOFF_X * lt;
-        var oy = walkOff.y - PASS_WALKOFF_Y * lt;
-        this.you.setPosition(ox, oy + Math.sin(this.modeAge * 14) * 2 * walkOff.scale)
-            .setScale(walkOff.scale * (1 - 0.06 * lt))
-            .setFlipX(true)
-            .setDepth(oy);
-      }
-      this.fadeGfx.clear();
-      this.fadeGfx.fillStyle(0x000000, lt);
-      this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
-      if (lt >= 1) { this.mode = 'gone'; goDrive(); }
-      return;
-    }
     if (this.mode === 'entering') {
       this.updateDoorSwing(dt); // finishes the swing behind the fade
 

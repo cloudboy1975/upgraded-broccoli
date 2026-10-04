@@ -107,11 +107,14 @@ chapter of a longer game about two-dimensional aliens.
 You get there by walking **past the house**, not off the edge of the
 screen. The house's own front line, extended to its right, is the way
 out: cross it past the corner and you are round the side. No detour
-behind the building — the fade carries the last two strides of the
-walk, and the house sorts over you as it goes. Coming back out of the
-drive is the same move in reverse, with one difference: there the
-drive carries on up past that same line to the garage, so the way out
-is only the width of the gap at the corner.
+behind the building, and no transition — touching the line puts you on
+the next screen, the way the games this is pretending to be did it. The
+takeoff and the front door still have their sequences; a doorway does
+not get one.
+
+Coming back is simpler still: the yard is off to the left, so walking
+left is how you get there. Hold left from where you land and you walk
+in front of the house and straight out of the scene.
 
 The garage here does **not** open because you walked at it — it
 is the one thing in the chapter you have to work for. Stand at it and
@@ -122,8 +125,8 @@ drawing rockets. No keys in it yet. It stays however you left it, which
 is what makes it a switch rather than a motion sensor.
 
 Each screen hands you over in the same pose — you step out at the
-corner of the house you just walked round, on the side you went round
-it — so the two agree about which way round the house you are going.
+corner of the house you just walked round — so the two agree about
+which way round the house you are going.
 And if you look up while you are round there,
 something is moving in the sky over the ridges: three lights in loose
 formation, one of which will roll through a loop now and then, or put a

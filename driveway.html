@@ -229,6 +229,10 @@
     transition: opacity 0.45s ease;
   }
   .blackout.visible { opacity: 1; }
+  /* ...except when you walked in from the side of the house, which is a
+     doorway rather than a scene change: that one snaps, so the arrival
+     has no fade either. */
+  .blackout.instant { transition: none; }
 
 </style>
 </head>
@@ -375,28 +379,20 @@
   var GARAGE_SPILL_LENGTH = 150;
 
   var WALL_STANDOFF = 3;   // px of drive you are stopped in, in front of the brick
-  var LEAVE_FADE = 0.42;   // seconds of black on the way back
 
   var GARAGE_DOORWAY_POCKET = 18; // how far into the garage the open doorway lets you
 
-  // The way out is the same rule the yard uses: cross the line of the
-  // house's front wall, on its right-hand side. Here it needs a right
-  // edge as well, which the yard does not - the drive runs UP past that
-  // line to the garage, so an unbounded rule would send you home every
-  // time you walked up to the door you came here for. The corridor is
-  // the width of the gap between the house's corner and the drive, and
-  // the two buildings are placed to keep that gap honest.
-  var PASS_PLANE = 6;        // px past the front line before you count as round it
-  var PASS_SPREAD = 30;      // ...and how far out from its corner the way round reaches
-  var PASS_HINT_FRONT = 170; // how far short of the line the hint starts
-  // The hint reaches wider than the way round itself, because the way
-  // round is 30px of screen and nobody walks a 30px corridor straight:
-  // you come at it diagonally, and a hint you cross without ever being
-  // inside is a hint nobody reads.
-  var PASS_HINT_SPREAD = 70;
-  var PASS_HINT_INSET = 10;
-  var PASS_WALKOFF_X = 34;   // px he walks on past the house while the screen fades
-  var PASS_WALKOFF_Y = 16;
+  // The way out is the left-hand border. Not a corner to find and not a
+  // line to cross at one particular place: the yard is off that way, so
+  // walking that way goes there. The house stands between you and it,
+  // near and to the left, and you pass in front of it on the way - its
+  // own front line is below everywhere you can walk on this side, so
+  // holding left never walks you into brick.
+  var LEFT_EDGE_X = -0.95;
+  // The hint comes on once you are level with the house rather than at
+  // some worldX: worldX means a different distance at every depth, and
+  // this is about being beside the building.
+  var LEFT_HINT_MARGIN = 40; // px right of the house's own corner
 
   // Alien activity, a long way off. Three lights in loose formation,
   // drifting, with the occasional flare - the point is that you notice
@@ -519,9 +515,14 @@
   // shared so every scene lifts it the same way - and so a page that
   // forgets to is a page that stays black, which is not a failure
   // anybody could miss.
+  // There is only one way onto this screen - round the side of the
+  // house from the yard - and that way is a cut, so arriving is a cut
+  // too: the black goes the moment there is a frame, with no fade up.
   function clearArrivalFade() {
     var el = document.getElementById('blackout');
-    if (el) el.classList.remove('visible');
+    if (!el) return;
+    el.classList.add('instant');
+    el.classList.remove('visible');
   }
 
   function MainScene() {
@@ -533,7 +534,7 @@
   MainScene.prototype.create = function () {
     mainScene = this;
 
-    this.mode = 'walk'; // 'walk' -> 'board' -> 'liftoff' -> 'gone'
+    this.mode = 'walk'; // 'walk' -> 'gone'; leaving here is a cut, not a sequence
     this.modeAge = 0;
 
     this.worldX = START.worldX;
@@ -770,7 +771,6 @@
     this.spillGfx = this.add.graphics();
     this.interiorGfx = this.add.graphics();
     this.doorGfx = this.add.graphics();
-    this.fadeGfx = this.add.graphics().setDepth(10000);
   };
 
   MainScene.prototype.buildProps = function () {
@@ -1034,58 +1034,34 @@
     return me.y < h.y + WALL_STANDOFF && me.x > h.left && me.x < h.right;
   };
 
-  // The way back: past the line of the house's front wall, on its
-  // right-hand side - the move that put you on this screen in the first
-  // place, done again. Bounded on the right, unlike the yard's, because
-  // the drive carries on up past that line to the garage.
-  MainScene.prototype.pastTheHouse = function () {
-    var h = this.houseFront();
-    var me = this.placeAt(this.worldX, this.depth);
-    return me.x > h.right && me.x < h.right + PASS_SPREAD &&
-           me.y < h.y - PASS_PLANE;
+  // The way back is the left-hand border, straight off the side of the
+  // screen. You came round the house to get here, so the house is
+  // behind you on the left and walking back at it is the move - and it
+  // has to be THE move, not a corner to find: holding left from where
+  // you arrive walks you out, in front of the house, every time.
+  MainScene.prototype.atLeftEdge = function () {
+    return this.worldX <= LEFT_EDGE_X;
   };
 
-  // Coming up to that line at the corner of the house, which is where
-  // the hint belongs: once you have crossed it you have already gone.
-  MainScene.prototype.besideTheHouse = function () {
-    var h = this.houseFront();
+  // Coming up on it, which is where the hint belongs - and only where
+  // holding left actually gets you out. Up the drive, past the house's
+  // front line, the house itself is in the way and the honest move is
+  // to come back down first; a hint there would be a lie.
+  MainScene.prototype.nearLeftEdge = function () {
+    if (this.atLeftEdge()) return false;
     var me = this.placeAt(this.worldX, this.depth);
-    return me.x > h.right - PASS_HINT_INSET && me.x < h.right + PASS_HINT_SPREAD &&
-           me.y >= h.y - PASS_PLANE && me.y < h.y + PASS_HINT_FRONT;
+    var h = this.houseFront();
+    return me.x < h.right + LEFT_HINT_MARGIN && me.y > h.y;
   };
 
+  // Crossing it is the cut - no fade, no walk-off, the same snap the
+  // yard uses coming the other way.
   MainScene.prototype.leaveForYard = function () {
     if (this.mode !== 'walk') return;
-    this.mode = 'leaving';
-    this.modeAge = 0;
-    // Where he was when he cleared the corner - he keeps walking
-    // through the fade, behind the house. See updateSequence().
-    this.leaveFrom = this.placeAt(this.worldX, this.depth);
+    this.mode = 'gone';
     this.setPrompt(null);
-    document.getElementById('hint').classList.add('hidden');
-    document.getElementById('controlBar').classList.add('gone');
     forceReleaseAllInput();
-  };
-
-  MainScene.prototype.updateSequence = function (dt) {
-    if (this.mode !== 'leaving') return;
-    this.updateGarageDoor(dt); // it keeps rolling behind the fade
-    var t = clamp(this.modeAge / LEAVE_FADE, 0, 1);
-    // Two more strides behind the house, which sorts over him at this
-    // depth - the last you see of him is his back going round it.
-    var walkOff = this.leaveFrom;
-    if (walkOff) {
-      var ox = walkOff.x - PASS_WALKOFF_X * t;
-      var oy = walkOff.y - PASS_WALKOFF_Y * t;
-      this.you.setPosition(ox, oy + Math.sin(this.modeAge * 14) * 2 * walkOff.scale)
-          .setScale(walkOff.scale * (1 - 0.06 * t))
-          .setFlipX(true)
-          .setDepth(oy);
-    }
-    this.fadeGfx.clear();
-    this.fadeGfx.fillStyle(0x000000, t);
-    this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
-    if (t >= 1) { this.mode = 'gone'; goYard(); }
+    goYard();
   };
 
   // ---- Per-frame -------------------------------------------------------
@@ -1096,7 +1072,7 @@
 
     this.updateSky(dt); // whatever that is keeps moving, fade or no fade
 
-    if (this.mode !== 'walk') { this.updateSequence(dt); return; }
+    if (this.mode !== 'walk') return;
 
     var input = window.__driveInput;
     var moveX = input.x, moveY = input.y;
@@ -1127,14 +1103,14 @@
     // Past the line of the house is back to the yard - no button, same
     // rule as every other door in this chapter. The garage is the
     // exception, below.
-    if (this.pastTheHouse()) { this.leaveForYard(); return; }
+    if (this.atLeftEdge()) { this.leaveForYard(); return; }
 
     this.setPrompt(
       this.atCar() ? 'Your father\'s convertible. No keys in it.'
         : this.nearGarage() ? (this.garageWant
             ? 'The garage door. Shut it again?'
             : 'The garage door. There is a switch on the frame.')
-        : (this.besideTheHouse() ? 'Round the house, back to the yard ↑' : null)
+        : (this.nearLeftEdge() ? 'Back round to the yard ←' : null)
     );
     this.syncActionButton(this.garageVerb());
 
@@ -1404,12 +1380,12 @@
       state: function () {
         return {
           mode: self.mode, worldX: self.worldX, depth: self.depth,
-          modeAge: self.modeAge, leaveFade: LEAVE_FADE,
+          modeAge: self.modeAge,
           garageOpen: self.garageOpen, garageRect: self.garageRect(),
           garageWant: self.garageWant, buttonVerb: self.buttonVerb,
           nearGarage: self.nearGarage(), atCar: self.atCar(),
-          pastTheHouse: self.pastTheHouse(), besideTheHouse: self.besideTheHouse(),
-          passPlane: PASS_PLANE, passSpread: PASS_SPREAD,
+          atLeftEdge: self.atLeftEdge(), nearLeftEdge: self.nearLeftEdge(),
+          leftEdgeX: LEFT_EDGE_X,
           inBuilding: self.insideBuilding(self.worldX, self.depth),
           garageFront: self.buildingFront(GARAGE, GARAGE_TEX_W, GARAGE_TEX_H, GARAGE_SIZE,
                                           GARAGE_WALL_LEFT, GARAGE_WALL_RIGHT, GARAGE_DOOR_BOTTOM),

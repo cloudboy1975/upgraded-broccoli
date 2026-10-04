@@ -71,6 +71,16 @@ harness.run(async (page, check, ctx) => {
     start.prompt === null, start);
   check('and the corner button is still the way out',
     start.buttonVerb === null, start);
+  // There is one way onto this screen and it is a cut, so arriving is a
+  // cut: black while the page loads, then the scene. Fading up after an
+  // instant exit is the transition the instant exit was made to avoid.
+  const arrival = await page.evaluate(() => {
+    const el = document.getElementById('blackout');
+    return { cls: el.className, opacity: getComputedStyle(el).opacity,
+             fade: getComputedStyle(el).transitionDuration };
+  });
+  check('and the scene does not fade up on arrival either',
+    arrival.opacity === '0' && arrival.fade === '0s', arrival);
 
   // --- nothing stands under the controls -----------------------------------
   // The yard shipped with the player under the thumbstick and the ship
@@ -352,39 +362,46 @@ harness.run(async (page, check, ctx) => {
     burst.firingAfter === false, burst.firingAfter);
 
   // --- the way back --------------------------------------------------------
-  // Round the house, the same move that brought you here - not off an
-  // edge. The two screens have to agree about which way round the house
-  // you are walking, or the map folds in half.
+  // Straight out to the left-hand border, in front of the house. The
+  // test is a thumb held left from wherever the player actually lands,
+  // because that is the whole requirement: the way home is the
+  // direction the yard is in, not a corner to be found.
   await page.goto(ctx.url('driveway.html'));
   await page.waitForTimeout(BOOT_MS);
-  const gapHere = await page.evaluate(() => {
-    const d = window.__driveDebug, s = d.scene, st = d.state();
-    // At the house's corner, a stride short of its front line - which is
-    // where the player is when the hint has to be doing its job.
-    const depth = (st.houseFront.y + 40 - s.horizonY()) / (s.scale.height - s.horizonY());
-    const worldX = (st.houseFront.right + 14 - s.scale.width / 2) / s.depthToHalfWidth(depth);
-    d.moveTo(worldX, depth);
+  const headingOut = await page.evaluate(() => {
+    const d = window.__driveDebug, s = d.scene, h = s.houseFront();
+    const depthAt = y => (y - s.horizonY()) / (s.scale.height - s.horizonY());
+    const wx = (x, depth) => (x - s.scale.width / 2) / s.depthToHalfWidth(depth);
+    // Beside the house, in front of its front wall: here holding left
+    // walks you out, and the hint says so.
+    const infront = depthAt(h.y + 50);
+    d.moveTo(wx(h.right + 20, infront), infront);
     return new Promise(res => setTimeout(() => {
-      const now = d.state();
-      now.gapWorldX = worldX;
-      now.gapDepth = depth;
-      res(now);
+      const out = d.state();
+      // ...and the same distance from the corner but UP the drive,
+      // past the house's line, where the house is in the way and
+      // holding left gets you nothing. A hint there would be a lie.
+      const behind = depthAt(h.y - 80);
+      d.moveTo(wx(h.right + 20, behind), behind);
+      setTimeout(() => { out.upTheDrive = d.state(); res(out); }, 200);
     }, 300));
   });
-  check('standing at the side of the house says the way back is round it',
-    typeof gapHere.prompt === 'string' && /back to the yard/i.test(gapHere.prompt), gapHere);
-  check('and you have not gone round it yet', gapHere.pastTheHouse === false, gapHere);
+  check('walking out to the left says that is the way back',
+    typeof headingOut.prompt === 'string' && /back .*to the yard/i.test(headingOut.prompt), headingOut);
+  check('and you are not out of the scene yet',
+    headingOut.atLeftEdge === false && headingOut.mode === 'walk', headingOut);
+  check('but it keeps quiet up the drive, where the house is in the way',
+    headingOut.upTheDrive.prompt === null &&
+    headingOut.upTheDrive.nearLeftEdge === false, headingOut.upTheDrive);
 
-  // Walked STRAIGHT up from fourteen pixels past the corner, with no
-  // sideways help. Walking up-and-left crosses a corridor of any width
-  // on the way past, so it proves the way out exists but not that it is
-  // wide enough to walk: a four-pixel version of this passed that way.
-  await page.evaluate(p => window.__driveDebug.moveTo(p[0], p[1]), [gapHere.gapWorldX, gapHere.gapDepth]);
-  await page.waitForTimeout(140);
-  await page.keyboard.down('ArrowUp');
-  const walkedBack = await reachedPage(page, 'yard.html?at=side', 9000);
-  await page.keyboard.up('ArrowUp').catch(() => {});
-  check('walking straight up past the corner of the house goes home', walkedBack, page.url());
+  await page.goto(ctx.url('driveway.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const startedAt = await readState(page);
+  await page.keyboard.down('ArrowLeft');
+  const walkedBack = await reachedPage(page, 'yard.html?at=side', 12000);
+  await page.keyboard.up('ArrowLeft').catch(() => {});
+  check('and holding left from where you arrive walks you home, with nothing in the way',
+    walkedBack, { from: { worldX: startedAt.worldX, depth: startedAt.depth }, url: page.url() });
   if (!walkedBack) return; // everything below reads the yard's own scene
   const landed = await page.evaluate(() => {
     const d = window.__yardDebug, s = d.scene, st = d.state();
@@ -399,28 +416,27 @@ harness.run(async (page, check, ctx) => {
     landed.mode === 'walk' && landed.past === false, landed);
   check('and beside the ship rather than inside it', landed.atShip === false, landed);
 
-  // ...and here too, the last thing you see is him going behind the
-  // house rather than fading out beside it.
+  // ...and the hand-off is a CUT. No fade, no walk-off: the player
+  // touches the border and is on the other screen, which is the whole
+  // point of doing it this way. Sampled hard, because an animated
+  // version of this would still arrive - just a beat later and with a
+  // mode nobody asked for in between.
   await page.goto(ctx.url('driveway.html'));
   await page.waitForTimeout(BOOT_MS);
-  const walkOff = await page.evaluate(() => new Promise(res => {
-    const d = window.__driveDebug, s = d.scene, frames = [];
-    const h = s.houseFront();
-    const depth = (h.y - 12 - s.horizonY()) / (s.scale.height - s.horizonY());
-    d.moveTo((h.right + 6 - s.scale.width / 2) / s.depthToHalfWidth(depth), depth);
-    s.leaveForYard();
-    const iv = setInterval(() => {
-      frames.push({
-        mode: s.mode, x: Math.round(s.you.x),
-        behind: s.you.x > h.left && s.you.x < h.right && s.you.depth < s.houseSprite.depth
-      });
-      if (frames.length >= 7) { clearInterval(iv); res(frames); }
-    }, 50);
-  }));
-  check('and he walks on behind the house while the screen fades',
-    walkOff.every(f => f.mode === 'leaving') &&
-    walkOff[walkOff.length - 1].x < walkOff[0].x - 8 &&
-    walkOff[walkOff.length - 1].behind === true, walkOff);
+  await page.evaluate(() => window.__driveDebug.moveTo(-0.9, 0.7));
+  await page.waitForTimeout(120);
+  const modes = [];
+  const sampler = setInterval(() => {
+    page.evaluate(() => window.__driveDebug.state().mode).then(m => modes.push(m), () => {});
+  }, 25);
+  const began = Date.now();
+  await page.keyboard.down('ArrowLeft');
+  const snapped = await reachedPage(page, 'yard.html?at=side', 9000);
+  const tookMs = Date.now() - began;
+  clearInterval(sampler);
+  await page.keyboard.up('ArrowLeft').catch(() => {});
+  check('and crossing the border cuts straight there, with no leaving sequence',
+    snapped && modes.every(m => m === 'walk'), { modes: [...new Set(modes)], tookMs: tookMs });
 
   // The button and the key do the same thing - away from the garage,
   // where the button is still the way out.
