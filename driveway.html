@@ -381,6 +381,14 @@
   var COLOR_GARAGE_LIGHT = 0xffd49a;
   var GARAGE_SPILL_LENGTH = 150;
 
+  // The drive itself: how far its apron spreads past the opening, how
+  // far its near end leans toward the garage, and where the one joint
+  // across it sits.
+  var DRIVE_APRON = 6;
+  var DRIVE_NEAR_LEAN = 0.1;
+  var DRIVE_JOINT_AT = 0.45;   // of the way down from the door to the camera
+  var DRIVE_JOINT_INSET = 2;   // px short of the concrete's edge at either end
+
   var WALL_STANDOFF = 3;   // px of drive you are stopped in, in front of the brick
 
   var GARAGE_DOORWAY_POCKET = 18; // how far into the garage the open doorway lets you
@@ -890,29 +898,23 @@
     // past the camera, with the lawn either side of it. Drawn as a
     // trapezoid in the same perspective everything else uses, so it
     // narrows toward the building rather than toward the screen.
-    var opening = this.garageRect();
-    var nearHalf = this.depthToHalfWidth(1) * 0.42;
-    // The near end leans the garage's way rather than sitting dead
-    // centre, so the slab reads as running up to the door instead of
-    // straight at the camera.
-    var nearCx = this.scale.width / 2 + 0.1 * nearHalf;
+    var slab = this.driveSlab();
     this.driveGfx.clear();
     this.driveGfx.fillStyle(0x2c2e3a, 1);
     this.driveGfx.beginPath();
-    this.driveGfx.moveTo(opening.left - 6, opening.bottom);
-    this.driveGfx.lineTo(opening.right + 6, opening.bottom);
-    this.driveGfx.lineTo(nearCx + nearHalf, H);
-    this.driveGfx.lineTo(nearCx - nearHalf, H);
+    this.driveGfx.moveTo(slab.topLeft, slab.topY);
+    this.driveGfx.lineTo(slab.topRight, slab.topY);
+    this.driveGfx.lineTo(slab.nearRight, slab.nearY);
+    this.driveGfx.lineTo(slab.nearLeft, slab.nearY);
     this.driveGfx.closePath();
     this.driveGfx.fillPath();
     // One expansion joint across it, which is the whole difference
-    // between concrete and a grey triangle.
+    // between concrete and a grey triangle. Its ends come off the
+    // slab's own edges - see driveSlab().
     this.driveGfx.lineStyle(1.5, 0x3a3d4c, 0.8);
-    var jointY = lerp(opening.bottom, H, 0.45);
-    var jointHalf = lerp((opening.right - opening.left) / 2 + 6, nearHalf, 0.45);
     this.driveGfx.beginPath();
-    this.driveGfx.moveTo(nearCx - jointHalf, jointY);
-    this.driveGfx.lineTo(nearCx + jointHalf, jointY);
+    this.driveGfx.moveTo(slab.jointLeft, slab.jointY);
+    this.driveGfx.lineTo(slab.jointRight, slab.jointY);
     this.driveGfx.strokePath();
 
     this.buildVignette(W, H);
@@ -955,6 +957,34 @@
     var me = this.placeAt(this.worldX, this.depth);
     var it = this.placeAt(prop.worldX, prop.depth);
     return Math.hypot(me.x - it.x, me.y - it.y);
+  };
+
+  // The slab of concrete, and the one joint across it. Both come out of
+  // the same four corners, which is the point of having this: the joint
+  // used to be centred on the slab's NEAR end at every depth, while the
+  // slab's own centre line runs from the garage door down to that near
+  // end. At the joint's height those two are forty pixels apart, so the
+  // line hung out over the lawn on one side and stopped short of the
+  // concrete on the other - a stray line floating in the middle of the
+  // drive. Interpolating its ends between the corners cannot do that.
+  MainScene.prototype.driveSlab = function () {
+    var opening = this.garageRect();
+    var nearHalf = this.depthToHalfWidth(1) * 0.42;
+    // The near end leans the garage's way rather than sitting dead
+    // centre, so the slab reads as running up to the door instead of
+    // straight at the camera.
+    var nearCx = this.scale.width / 2 + DRIVE_NEAR_LEAN * nearHalf;
+    var topLeft = opening.left - DRIVE_APRON, topRight = opening.right + DRIVE_APRON;
+    var nearLeft = nearCx - nearHalf, nearRight = nearCx + nearHalf;
+    var t = DRIVE_JOINT_AT;
+    return {
+      topY: opening.bottom, nearY: this.scale.height,
+      topLeft: topLeft, topRight: topRight,
+      nearLeft: nearLeft, nearRight: nearRight,
+      jointY: lerp(opening.bottom, this.scale.height, t),
+      jointLeft: lerp(topLeft, nearLeft, t) + DRIVE_JOINT_INSET,
+      jointRight: lerp(topRight, nearRight, t) - DRIVE_JOINT_INSET
+    };
   };
 
   // The garage's opening, worked back through the sprite's own
@@ -1438,6 +1468,7 @@
         return { you: box(self.you), garage: box(self.garageSprite),
                  car: box(self.carSprite), house: box(self.houseSprite) };
       },
+      slab: function () { return self.driveSlab(); },
       moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
       leave: function () { self.leaveForYard(); }
     };

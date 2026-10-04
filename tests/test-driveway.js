@@ -239,6 +239,62 @@ harness.run(async (page, check, ctx) => {
   check('and there is a car in there, not just a lit rectangle',
     withCar.bright > without.bright + 40, { withCar, without });
 
+  // --- the drive is drawn on the drive -------------------------------------
+  // The slab has one expansion joint across it, and it used to be drawn
+  // centred on the slab's NEAR end at a height where the slab's own
+  // centre line is forty pixels away - so it hung out over the lawn on
+  // the left and stopped short of the concrete on the right, a stray
+  // line floating in the middle of the screen. Checked twice: once
+  // against the slab's own corners, and once in pixels, because the
+  // first version of this bug passed every state check in this file.
+  const joint = await page.evaluate(() => {
+    const s = window.__driveDebug.slab();
+    const t = (s.jointY - s.topY) / (s.nearY - s.topY);
+    return {
+      jointLeft: s.jointLeft, jointRight: s.jointRight,
+      edgeLeft: s.topLeft + (s.nearLeft - s.topLeft) * t,
+      edgeRight: s.topRight + (s.nearRight - s.topRight) * t,
+      jointY: s.jointY
+    };
+  });
+  check('the joint across the drive starts and ends on the concrete',
+    joint.jointLeft >= joint.edgeLeft && joint.jointRight <= joint.edgeRight, joint);
+  check('and reaches most of the way across it, not a scratch in the middle',
+    (joint.jointRight - joint.jointLeft) > (joint.edgeRight - joint.edgeLeft) * 0.9, joint);
+
+  // ...and nothing is drawn on the grass beside it. Two patches of lawn
+  // at the joint's own height, one just off the concrete and one well
+  // clear of it: a line that overshoots lands in the first.
+  const lawn = await page.evaluate(() => {
+    const d = window.__driveDebug, s = d.scene, sl = d.slab();
+    const t = (sl.jointY - sl.topY) / (sl.nearY - sl.topY);
+    const edge = sl.topLeft + (sl.nearLeft - sl.topLeft) * t;
+    s.firefliesGfx.setVisible(false); // they wander; this is about the line
+    function mean(x, y, w, h) {
+      return new Promise(res => {
+        s.game.renderer.snapshotArea(Math.round(x), Math.round(y), Math.round(w), Math.round(h), img => {
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          c.getContext('2d').drawImage(img, 0, 0);
+          const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+          let sum = 0;
+          for (let i = 0; i < px.length; i += 4) sum += px[i] + px[i + 1] + px[i + 2];
+          res(+(sum / (px.length / 4) / 3).toFixed(2));
+        });
+      });
+    }
+    return new Promise(res => {
+      setTimeout(async () => {
+        const beside = await mean(edge - 24, sl.jointY - 2, 18, 5);
+        const further = await mean(edge - 62, sl.jointY - 2, 18, 5);
+        s.firefliesGfx.setVisible(true);
+        res({ beside: beside, further: further, edge: Math.round(edge) });
+      }, 120);
+    });
+  });
+  check('with nothing painted on the lawn beside it',
+    Math.abs(lawn.beside - lawn.further) < 2.5, lawn);
+
   // --- the buildings are buildings -----------------------------------------
   // Asked of the buildings' own fronts rather than of points picked by
   // eye: the first version of this probed twenty pixels left of the
