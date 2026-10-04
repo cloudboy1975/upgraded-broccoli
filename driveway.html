@@ -516,6 +516,39 @@
 
   // One door out - round the corner of the house, back to the yard and
   // the ship. Guarded so a double tap cannot fire two navigations.
+  // ==================================================================
+  // What this chapter remembers between screens.
+  //
+  // The scenes are separate pages, so "remembers" means storage.
+  // sessionStorage rather than localStorage: it keeps for as long as the
+  // tab is open - a sitting - and forgets afterwards, which is the scope
+  // this chapter has until there is something worth calling a save.
+  // Reloading the page keeps it; closing the tab does not.
+  //
+  // Every touch is wrapped. The first read can throw outright in private
+  // browsing, and a garage door is not worth a dead scene - without a
+  // memory it simply opens shut every time, which is what it did before.
+  // ==================================================================
+  var WORLD_KEY = 'broccoli-chapter1-v1';
+
+  function readWorld() {
+    try {
+      var raw = window.sessionStorage.getItem(WORLD_KEY);
+      var world = raw ? JSON.parse(raw) : null;
+      return (world && typeof world === 'object') ? world : {};
+    } catch (e) { return {}; }
+  }
+
+  function rememberWorld(patch) {
+    try {
+      var world = readWorld();
+      for (var key in patch) {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) world[key] = patch[key];
+      }
+      window.sessionStorage.setItem(WORLD_KEY, JSON.stringify(world));
+    } catch (e) { /* no memory this session; the door still works */ }
+  }
+
   function goYard() {
     if (navigated) return;
     navigated = true;
@@ -555,8 +588,12 @@
     this.bobPhase = 0;
     this.idlePhase = Math.random() * 10;
     this.prompt = null;
-    this.garageOpen = 0; // 0 shut, 1 rolled up - see updateGarageDoor()
-    this.garageWant = 0; // what the switch was last set to, 0 or 1
+    // However you left it. Drawn already there rather than rolled into
+    // place on arrival: the door has been open since you pressed it, and
+    // watching it open again every time you come back would say the
+    // opposite of what the switch is for.
+    this.garageWant = readWorld().garageOpen ? 1 : 0; // the switch, 0 or 1
+    this.garageOpen = this.garageWant;                // ...and the door itself
     this.buttonVerb = null; // what the corner button says - see syncActionButton()
     this.clock = 0;
 
@@ -1197,6 +1234,7 @@
   MainScene.prototype.workGarageDoor = function () {
     if (this.mode !== 'walk' || !this.nearGarage()) return false;
     this.garageWant = this.garageWant ? 0 : 1;
+    rememberWorld({ garageOpen: this.garageWant === 1 });
     Sound.ensureAudio();
     return true;
   };
@@ -1469,6 +1507,10 @@
                  car: box(self.carSprite), house: box(self.houseSprite) };
       },
       slab: function () { return self.driveSlab(); },
+      world: function () { return readWorld(); },
+      forgetWorld: function () {
+        try { window.sessionStorage.removeItem(WORLD_KEY); } catch (e) {}
+      },
       moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
       leave: function () { self.leaveForYard(); }
     };

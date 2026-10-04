@@ -121,8 +121,11 @@ is the one thing in the chapter you have to work for. Stand at it and
 the corner button stops saying *Back* and starts saying **Open**; press
 it and the door rolls up on your father's convertible, a low, wide,
 pointed thing from the years when cars were drawn by the same people
-drawing rockets. No keys in it yet. It stays however you left it, which
-is what makes it a switch rather than a motion sensor.
+drawing rockets. No keys in it yet. It stays however you left it — including
+after you walk out of the scene and come back, which is what makes it a
+switch rather than a motion sensor. (Remembered for as long as the tab
+is open; closing it forgets, until there is something worth calling a
+save.)
 
 Neither screen puts you down at a spot of its own: you arrive at the
 door you came through. Walk past the house in the yard and you come in

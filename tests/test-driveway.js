@@ -270,6 +270,7 @@ harness.run(async (page, check, ctx) => {
     const t = (sl.jointY - sl.topY) / (sl.nearY - sl.topY);
     const edge = sl.topLeft + (sl.nearLeft - sl.topLeft) * t;
     s.firefliesGfx.setVisible(false); // they wander; this is about the line
+    s.garageWant = 0; s.garageOpen = 0; // ...and so does the light out of the garage
     function mean(x, y, w, h) {
       return new Promise(res => {
         s.game.renderer.snapshotArea(Math.round(x), Math.round(y), Math.round(w), Math.round(h), img => {
@@ -519,6 +520,65 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(BOOT_MS);
   await page.keyboard.press('Escape');
   check('and so does Escape', await reachedPage(page, 'yard.html?at=side', 9000), page.url());
+
+  // --- the garage stays how you left it ------------------------------------
+  // The screens are separate pages, so a door that is open when you
+  // walk out is a door that has to be remembered somewhere to still be
+  // open when you walk back in. Walked rather than asked: out to the
+  // yard, round the house, and back in.
+  await page.goto(ctx.url('driveway.html'));
+  await page.evaluate(() => window.__driveDebug.forgetWorld());
+  await page.reload();
+  await page.waitForTimeout(BOOT_MS);
+  const firstVisit = await readState(page);
+  check('a first visit finds the garage shut',
+    firstVisit.garageOpen === 0 && firstVisit.garageWant === 0, firstVisit);
+
+  await standAtTheGarage();
+  await page.click('#backBtn');
+  await page.waitForTimeout(2200);
+  const opened = await readState(page);
+  check('and pressing it is remembered, not just drawn',
+    opened.garageOpen > 0.9 && (await page.evaluate(() => window.__driveDebug.world())).garageOpen === true,
+    opened);
+
+  await page.evaluate(() => window.__driveDebug.moveTo(-0.98, 0.72));
+  const leftIt = await reachedPage(page, 'yard.html?at=side', 9000);
+  check('walking out of the scene with it open', leftIt, page.url());
+  if (leftIt) {
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => {
+      const d = window.__yardDebug, s = d.scene, f = s.houseFront();
+      const depth = (f.y - 20 - s.horizonY()) / (s.scale.height - s.horizonY());
+      d.moveTo((f.right + 18 - s.scale.width / 2) / s.depthToHalfWidth(depth), depth);
+    });
+    const cameBack = await reachedPage(page, 'driveway.html', 9000);
+    check('and straight back in again', cameBack, page.url());
+    if (cameBack) {
+      // Read early, on the first frames: the door must already BE open,
+      // not roll open while you watch. It has been open the whole time.
+      await page.waitForTimeout(260);
+      const early = await readState(page);
+      check('finds the garage still open, already open rather than opening',
+        early.garageOpen > 0.9 && early.garageWant === 1 && early.carVisible === true, early);
+
+      // ...and a reload is the same sitting, so it holds there too.
+      await page.reload();
+      await page.waitForTimeout(BOOT_MS);
+      const reloaded = await readState(page);
+      check('and holds across a reload', reloaded.garageOpen > 0.9, reloaded);
+
+      // The other way round, so this is a memory and not a default.
+      await standAtTheGarage();
+      await page.click('#backBtn');
+      await page.waitForTimeout(2200);
+      await page.reload();
+      await page.waitForTimeout(BOOT_MS);
+      const shutAgain = await readState(page);
+      check('shutting it is remembered the same way',
+        shutAgain.garageOpen === 0 && shutAgain.carVisible === false, shutAgain);
+    }
+  }
 
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'driveway.html' });
