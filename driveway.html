@@ -391,7 +391,20 @@
 
   var WALL_STANDOFF = 3;   // px of drive you are stopped in, in front of the brick
 
+  // The two things standing out on the drive are things, not paint. A
+  // box around each one's feet - in TEXTURE px, scaled by whatever the
+  // prop is drawn at, the way every other measurement here works -
+  // widened by half your own shoulders so you stop beside one rather
+  // than inside it. The same shape of rule the furniture indoors uses.
+  var YOUR_HALF_X = 7;  // px of you, at your own scale
+  var YOUR_HALF_Y = 4;
+  var PROP_SOLIDS = [
+    { prop: BIN, halfWidth: 17, body: 10 },    // the bin is 34 across and sits flat
+    { prop: MAILBOX, halfWidth: 10, body: 6 }  // the post is thin; what you walk into is the box
+  ];
+
   var GARAGE_DOORWAY_POCKET = 18; // how far into the garage the open doorway lets you
+  var CAR_LOOK_REACH = 70;        // ...and how far out in front of it still counts as at it
 
   // The way out is the left-hand border. Not a corner to find and not a
   // line to cross at one particular place: the yard is off that way, so
@@ -1056,8 +1069,12 @@
     if (this.garageOpen < 0.55) return false;
     var me = this.placeAt(this.worldX, this.depth);
     var r = this.garageRect();
-    if (me.y < r.bottom - 10) return false;
-    if (me.y > r.bottom + 70) return false;
+    // The far edge is the pocket's own back wall, not a number of its
+    // own: anywhere you can STAND in that opening is standing in the
+    // opening. Picked separately, the two disagreed by eight pixels and
+    // walking all the way in stopped counting as being there.
+    if (me.y < r.bottom - GARAGE_DOORWAY_POCKET) return false;
+    if (me.y > r.bottom + CAR_LOOK_REACH) return false; // still out on the drive
     return Math.abs(me.x - r.cx) < r.width * 0.55;
   };
 
@@ -1103,6 +1120,27 @@
     }
     var h = this.houseFront();
     return me.y < h.y + WALL_STANDOFF && me.x > h.left && me.x < h.right;
+  };
+
+  MainScene.prototype.insideProp = function (worldX, depth) {
+    var me = this.placeAt(worldX, depth);
+    for (var i = 0; i < PROP_SOLIDS.length; i++) {
+      var solid = PROP_SOLIDS[i];
+      var at = this.placeAt(solid.prop.worldX, solid.prop.depth);
+      var halfX = solid.halfWidth * at.scale + YOUR_HALF_X * me.scale;
+      var halfY = solid.body * at.scale + YOUR_HALF_Y * me.scale;
+      if (Math.abs(me.x - at.x) < halfX && Math.abs(me.y - at.y) < halfY) return true;
+    }
+    return false;
+  };
+
+  // Everything you cannot stand in, in one place: the buildings, the
+  // shut garage door, and the two things out on the drive. This is what
+  // walking asks - insideBuilding() is kept separate because the walls
+  // and the props fail in different ways and are worth asking about
+  // separately.
+  MainScene.prototype.blockedAt = function (worldX, depth) {
+    return this.insideBuilding(worldX, depth) || this.insideProp(worldX, depth);
   };
 
   // The way back is the left-hand border, straight off the side of the
@@ -1167,11 +1205,11 @@
       // One axis at a time, so a wall is something you slide along
       // rather than stick to - and with the same escape hatch, so being
       // inside one is never a trap.
-      var stuck = this.insideBuilding(this.worldX, this.depth);
+      var stuck = this.blockedAt(this.worldX, this.depth);
       var nextX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
-      if (stuck || !this.insideBuilding(nextX, this.depth)) this.worldX = nextX;
+      if (stuck || !this.blockedAt(nextX, this.depth)) this.worldX = nextX;
       var nextDepth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.12, 1);
-      if (stuck || !this.insideBuilding(this.worldX, nextDepth)) this.depth = nextDepth;
+      if (stuck || !this.blockedAt(this.worldX, nextDepth)) this.depth = nextDepth;
       if (moveX > 0.08) this.flipX = false;
       else if (moveX < -0.08) this.flipX = true;
       this.bobPhase += dt * (6 + magnitude * 6);
@@ -1472,6 +1510,13 @@
           atLeftEdge: self.atLeftEdge(), nearLeftEdge: self.nearLeftEdge(),
           leftEdgeX: LEFT_EDGE_X,
           inBuilding: self.insideBuilding(self.worldX, self.depth),
+          inProp: self.insideProp(self.worldX, self.depth),
+          blocked: self.blockedAt(self.worldX, self.depth),
+          props: PROP_SOLIDS.map(function (solid) {
+            var at = self.placeAt(solid.prop.worldX, solid.prop.depth);
+            return { x: at.x, y: at.y,
+                     halfX: solid.halfWidth * at.scale, halfY: solid.body * at.scale };
+          }),
           garageFront: self.buildingFront(GARAGE, GARAGE_TEX_W, GARAGE_TEX_H, GARAGE_SIZE,
                                           GARAGE_WALL_LEFT, GARAGE_WALL_RIGHT, GARAGE_DOOR_BOTTOM),
           houseFront: self.houseFront(),

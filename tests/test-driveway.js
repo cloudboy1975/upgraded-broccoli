@@ -580,5 +580,72 @@ harness.run(async (page, check, ctx) => {
     }
   }
 
+  // --- the things on the drive are things ----------------------------------
+  // The bin and the mailbox were paint: you walked through both. Walked
+  // rather than asked, and walked along each prop's OWN worldX - the
+  // perspective pulls a fixed worldX toward the middle of the screen as
+  // you go up the drive, so a probe that aims by screen x walks neatly
+  // past the thing it is aiming at and reports it solid.
+  //
+  // The garage door joins them: shut, it is a wall like any other.
+  // (The last block left it shut and remembered.)
+  const walkInto = async (spot, keys, ms) => {
+    await page.evaluate(s => window.__driveDebug.moveTo(s[0], s[1]), spot);
+    await page.waitForTimeout(140);
+    for (const k of keys) await page.keyboard.down(k);
+    await page.waitForTimeout(ms === undefined ? 1800 : ms);
+    for (const k of keys) await page.keyboard.up(k).catch(() => {});
+    return page.evaluate(() => {
+      const d = window.__driveDebug, s = d.scene, st = d.state();
+      const me = s.placeAt(st.worldX, st.depth);
+      return { x: Math.round(me.x), y: Math.round(me.y), inProp: st.inProp,
+               blocked: st.blocked, mode: st.mode, atCar: st.atCar };
+    });
+  };
+  const propWalk = async (which) => {
+    const spec = await page.evaluate(w => {
+      const d = window.__driveDebug, s = d.scene, prop = d.state().props[w];
+      const depthOf = y => (y - s.horizonY()) / (s.scale.height - s.horizonY());
+      return { prop: prop, from: depthOf(prop.y + 80),
+               worldX: (prop.x - s.scale.width / 2) / s.depthToHalfWidth(depthOf(prop.y)) };
+    }, which);
+    const end = await walkInto([spec.worldX, spec.from], ['ArrowUp']);
+    return { prop: spec.prop, end: end, gap: end.y - spec.prop.y };
+  };
+
+  // Six pixels is the bumper, not a derived number: it is what the eye
+  // reads as stopping BESIDE the thing rather than scuffing it. Any
+  // smaller and the figure's feet are in the bin, which is the state
+  // this was meant to fix - and a footprint shrunk to nothing still
+  // stops you, on your own shoulders alone, by about three.
+  const STOP_CLEAR = 6;
+  const bin = await propWalk(0);
+  check('the bin stops you rather than letting you through it',
+    bin.gap > STOP_CLEAR && bin.end.inProp === false, bin);
+  const mailbox = await propWalk(1);
+  check('and so does the mailbox',
+    mailbox.gap > STOP_CLEAR && mailbox.end.inProp === false, mailbox);
+
+  const shutDoor = await page.evaluate(() => {
+    const d = window.__driveDebug, s = d.scene, r = s.garageRect();
+    const depthOf = y => (y - s.horizonY()) / (s.scale.height - s.horizonY());
+    return { from: depthOf(r.bottom + 70),
+             worldX: (r.cx - s.scale.width / 2) / s.depthToHalfWidth(depthOf(r.bottom)),
+             sill: r.bottom };
+  });
+  const atShut = await walkInto([shutDoor.worldX, shutDoor.from], ['ArrowUp']);
+  check('and the shut garage door is a wall you stop at',
+    atShut.y > shutDoor.sill && atShut.mode === 'walk', { atShut, sill: Math.round(shutDoor.sill) });
+
+  // ...and with it up, the same walk takes you in to the car. The point
+  // of the solids is to stop you walking through things, not to seal
+  // the one thing on this screen worth standing in front of.
+  await standAtTheGarage();
+  await page.click('#backBtn');
+  await page.waitForTimeout(2200);
+  const atOpen = await walkInto([shutDoor.worldX, shutDoor.from], ['ArrowUp']);
+  check('while with it up, that same walk puts you in the doorway',
+    atOpen.atCar === true, atOpen);
+
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'driveway.html' });

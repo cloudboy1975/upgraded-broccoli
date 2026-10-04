@@ -116,6 +116,10 @@ Coming back is simpler still: the yard is off to the left, so walking
 left is how you get there. Hold left from where you land and you walk
 in front of the house and straight out of the scene.
 
+The things standing on the drive are things: the bin, the mailbox and
+the garage door while it is down all stop you, the same way the
+buildings do.
+
 The garage here does **not** open because you walked at it — it
 is the one thing in the chapter you have to work for. Stand at it and
 the corner button stops saying *Back* and starts saying **Open**; press
