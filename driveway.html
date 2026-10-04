@@ -221,7 +221,7 @@
      of small type, and a browser sets type better than a graphics buffer
      does at any screen density. The control bar sits ABOVE it, so the
      corner button - which now says Close - keeps working. */
-  .letter {
+  .panel {
     position: fixed;
     inset: 0;
     z-index: 40;
@@ -234,7 +234,7 @@
     pointer-events: none;
     transition: opacity 0.2s ease;
   }
-  .letter.open { opacity: 1; pointer-events: auto; }
+  .panel.open { opacity: 1; pointer-events: auto; }
   .letter-stack {
     display: flex;
     flex-direction: column;
@@ -261,7 +261,41 @@
     transform: translateY(10px) rotate(-0.5deg);
     transition: transform 0.2s ease;
   }
-  .letter.open .letter-paper { transform: translateY(0) rotate(-0.5deg); }
+  .panel.open .letter-paper { transform: translateY(0) rotate(-0.5deg); }
+
+  /* The other close-up on this screen: what is in the bin. A picture
+     rather than a page, so it gets a dark card and the body font, and
+     the drawing carries it. */
+  .bin-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 380px;
+    max-height: 100%;
+    min-height: 0;
+  }
+  .bin-card {
+    width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    background: #141a24;
+    border: 1px solid rgba(241, 233, 220, 0.14);
+    border-radius: 10px;
+    padding: 16px 16px 18px;
+    box-shadow: 0 20px 44px rgba(0, 0, 0, 0.65);
+    transform: translateY(10px);
+    transition: transform 0.2s ease;
+  }
+  .panel.open .bin-card { transform: translateY(0); }
+  .bin-art { display: block; width: 100%; height: auto; }
+  .bin-line {
+    margin: 12px 0 0;
+    color: var(--text);
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+  .bin-line.quiet { color: rgba(241, 233, 220, 0.62); }
   .letter-form {
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -333,10 +367,68 @@
 
   <!-- Filled from LETTER at boot, so the words live in one list in the
        script rather than in two places. Tapping it closes it. -->
-  <div class="letter" id="letter" aria-hidden="true">
+  <div class="panel letter" id="letter" aria-hidden="true">
     <div class="letter-stack">
       <div class="letter-paper" id="letterPaper"></div>
       <div class="letter-close" id="letterClose"></div>
+    </div>
+  </div>
+
+  <!-- What is in the bin. The drawing is static art and lives here; the
+       words live in BIN_LOOK, so rewriting them is editing a list. -->
+  <div class="panel" id="rubbish" aria-hidden="true">
+    <div class="bin-stack">
+      <div class="bin-card">
+        <svg class="bin-art" viewBox="0 0 300 186" role="img"
+             aria-label="Inside the bin: a pizza box with one slice left, and an empty ice cream tub">
+          <defs>
+            <clipPath id="binInside"><rect x="10" y="12" width="280" height="166" rx="12"/></clipPath>
+          </defs>
+          <g clip-path="url(#binInside)">
+            <rect x="10" y="12" width="280" height="166" rx="12" fill="#10161e"/>
+            <!-- liner, bunched over the rim -->
+            <path d="M10 34c22-14 40 6 62-5 20-10 34 8 56 0 24-9 40 9 62 1 20-7 36 10 60 2V12H10z"
+                  fill="#222b36"/>
+
+            <!-- the box: lid leaning back, base open to the camera -->
+            <path d="M40 118 150 94 154 52 44 76Z" fill="#8d6c45"/>
+            <path d="M48 112 146 90 149 60 51 82Z" fill="#9c7a50"/>
+            <path d="M40 118 150 94 215 110 105 136Z" fill="#b98f5c"/>
+            <path d="M40 118 105 136 105 149 40 131Z" fill="#7d5e3b"/>
+            <path d="M105 136 215 110 215 123 105 149Z" fill="#6d5133"/>
+            <path d="M54 118 148 98 201 111 107 131Z" fill="#cda876"/>
+
+            <!-- one slice left, cheese side up, crust at the wide end -->
+            <path d="M94 128 156 101 171 117Z" fill="#e8c173"/>
+            <path d="M156 101 171 117 180 112 165 97Z" fill="#cf9b4e"/>
+            <circle cx="126" cy="117" r="5" fill="#ac3328"/>
+            <circle cx="147" cy="110" r="4.4" fill="#ac3328"/>
+            <circle cx="143" cy="121" r="3.8" fill="#ac3328"/>
+
+            <!-- the tub, upright and empty, lid off and the spoon still in -->
+            <path d="M227 150 233 97 268 97 262 150Z" fill="#e4ddcd"/>
+            <path d="M231 124 266 124 264 139 233 139Z" fill="#43618c"/>
+            <path d="M236 106 263 106 262 115 237 115Z" fill="#b9b0a0" opacity="0.45"/>
+            <ellipse cx="250" cy="97" rx="18" ry="6" fill="#f2ece0"/>
+            <ellipse cx="250" cy="98" rx="13" ry="4" fill="#2a3340"/>
+            <path d="M244 96 240 70 246 69 249 95Z" fill="#dcd6c8"/>
+            <ellipse cx="208" cy="158" rx="19" ry="6.5" fill="#cfc8b8"/>
+            <ellipse cx="208" cy="156" rx="13" ry="4.5" fill="#f2ece0"/>
+
+            <!-- napkins, and the can that went with it -->
+            <path d="M58 146c9-12 20-7 28-13 8-5 17 2 13 11-4 10-19 15-30 11-8-3-15-5-11-9Z"
+                  fill="#cfc7b6"/>
+            <path d="M96 160 124 152 127 163 99 171Z" fill="#8f9aa6"/>
+            <path d="M99 161 124 154 125 158 100 165Z" fill="#aab4bf"/>
+          </g>
+          <!-- the rim of the bin, over everything -->
+          <rect x="10" y="12" width="280" height="166" rx="12" fill="none"
+                stroke="#3d4a58" stroke-width="7"/>
+          <rect x="6" y="6" width="288" height="18" rx="9" fill="#4a5663"/>
+        </svg>
+        <div id="binWords"></div>
+      </div>
+      <div class="letter-close" id="binClose"></div>
     </div>
   </div>
 
@@ -489,12 +581,12 @@
   // prop is drawn at, the way every other measurement here works -
   // widened by half your own shoulders so you stop beside one rather
   // than inside it. The same shape of rule the furniture indoors uses.
-  // How close you have to be to the mailbox to open it, in texture px at
-  // its own scale. Forward of it mostly: the props stop you about ten
-  // pixels short, so the reach has to cover where you actually end up.
-  var MAILBOX_REACH_X = 30;
-  var MAILBOX_REACH_FRONT = 46;
-  var MAILBOX_REACH_BACK = 12;
+  // How close you have to be to a prop to use it, in texture px at that
+  // prop's own scale. Forward of it mostly: the solids stop you about
+  // ten pixels short, so the reach has to cover where you end up.
+  var PROP_REACH_X = 30;
+  var PROP_REACH_FRONT = 46;
+  var PROP_REACH_BACK = 12;
 
   var YOUR_HALF_X = 7;  // px of you, at your own scale
   var YOUR_HALF_Y = 4;
@@ -526,6 +618,15 @@
     { kind: 'sign' }
   ];
   var LETTER_CLOSE_HINT = 'Tap anywhere to put it back';
+
+  // What is in the bin, and what you think about it. A draft like the
+  // letter: the drawing is in the markup, these are the words.
+  var BIN_LOOK = [
+    { kind: 'line', text: 'Last night, the night before a war: one large, one tub, one person.' },
+    { kind: 'line', text: 'There is a slice left in the box. You left it there on purpose \u2014 something to come back for.' },
+    { kind: 'quiet', text: 'The ice cream did not get the same treatment.' }
+  ];
+  var BIN_CLOSE_HINT = 'Tap anywhere to shut the lid';
 
   var GARAGE_DOORWAY_POCKET = 18; // how far into the garage the open doorway lets you
   var CAR_LOOK_REACH = 70;        // ...and how far out in front of it still counts as at it
@@ -737,6 +838,19 @@
     if (close) close.textContent = LETTER_CLOSE_HINT;
   }
 
+  function buildBinWords() {
+    var words = document.getElementById('binWords');
+    if (!words) return;
+    var html = '';
+    for (var i = 0; i < BIN_LOOK.length; i++) {
+      html += '<p class="bin-line' + (BIN_LOOK[i].kind === 'quiet' ? ' quiet' : '') + '">' +
+              BIN_LOOK[i].text + '</p>';
+    }
+    words.innerHTML = html;
+    var close = document.getElementById('binClose');
+    if (close) close.textContent = BIN_CLOSE_HINT;
+  }
+
   function MainScene() {
     Phaser.Scene.call(this, { key: 'Main' });
   }
@@ -763,6 +877,7 @@
     this.garageWant = readWorld().garageOpen ? 1 : 0; // the switch, 0 or 1
     this.garageOpen = this.garageWant;                // ...and the door itself
     this.buttonVerb = null; // what the corner button says - see syncActionButton()
+    this.panel = null;      // which close-up is up, if any - see openPanel()
     this.clock = 0;
 
     this.mountainLayers = {
@@ -798,6 +913,7 @@
     this.shots = [];
 
     buildLetterPage();
+    buildBinWords();
     this.buildTextures();
     this.buildLayers();
     this.buildProps();
@@ -1247,11 +1363,23 @@
   // reach than the garage's because a mailbox is a thing you stand at
   // rather than a building you come up to.
   MainScene.prototype.atMailbox = function () {
+    return this.standingAt(MAILBOX);
+  };
+
+  // Standing at the bin is the same question asked of the other prop,
+  // so it is the same function: close enough across, and in front of it
+  // rather than behind - the props stop you about ten pixels short, and
+  // the reach has to cover where you actually end up.
+  MainScene.prototype.atBin = function () {
+    return this.standingAt(BIN);
+  };
+
+  MainScene.prototype.standingAt = function (prop) {
     var me = this.placeAt(this.worldX, this.depth);
-    var at = this.placeAt(MAILBOX.worldX, MAILBOX.depth);
-    return Math.abs(me.x - at.x) < MAILBOX_REACH_X * at.scale &&
-           me.y > at.y - MAILBOX_REACH_BACK * at.scale &&
-           me.y < at.y + MAILBOX_REACH_FRONT * at.scale;
+    var at = this.placeAt(prop.worldX, prop.depth);
+    return Math.abs(me.x - at.x) < PROP_REACH_X * at.scale &&
+           me.y > at.y - PROP_REACH_BACK * at.scale &&
+           me.y < at.y + PROP_REACH_FRONT * at.scale;
   };
 
   // Both buildings are solid, by the same rule the house uses in the
@@ -1408,6 +1536,7 @@
         : this.atMailbox() ? (readWorld().letterRead
             ? 'The mailbox. The letter you signed this morning.'
             : 'The mailbox. There is something in it.')
+        : this.atBin() ? 'The bin. Last night went in there.'
         : this.nearGarage() ? (this.garageWant
             ? 'The garage door. Shut it again?'
             : 'The garage door. There is a switch on the frame.')
@@ -1427,6 +1556,7 @@
   MainScene.prototype.actionVerb = function () {
     if (this.mode === 'reading') return 'Close';
     if (this.atMailbox()) return 'Read';
+    if (this.atBin()) return 'Look';
     if (!this.nearGarage()) return null;
     return this.garageWant ? 'Close' : 'Open';
   };
@@ -1435,43 +1565,57 @@
   // cannot drift. Returns whether it did something: if it did not, the
   // button falls back to being the way out of the scene.
   MainScene.prototype.useAction = function () {
-    if (this.mode === 'reading') { this.closeLetter(); return true; }
+    if (this.mode === 'reading') { this.closePanel(); return true; }
     if (this.mode !== 'walk') return false;
     if (this.atMailbox()) return this.readLetter();
+    if (this.atBin()) return this.lookInBin();
     return this.workGarageDoor();
   };
 
-  // Reading it stops the walking, which is the whole of the mode: the
-  // scene keeps running underneath - the sky still moves - but nothing
-  // takes input until the paper goes away.
-  MainScene.prototype.readLetter = function () {
-    if (this.mode !== 'walk' || !this.atMailbox()) return false;
+  // Looking at something close up stops the walking, which is the whole
+  // of the mode: the scene keeps running underneath - the sky still
+  // moves - but nothing takes input until the panel goes away. Both
+  // close-ups on this screen go through here, so they open, close and
+  // hold the scene in exactly the same way.
+  MainScene.prototype.openPanel = function (id) {
     this.mode = 'reading';
     this.modeAge = 0;
+    this.panel = id;
     this.setPrompt(null);
     document.getElementById('hint').classList.add('hidden');
     forceReleaseAllInput();
-    var el = document.getElementById('letter');
+    var el = document.getElementById(id);
     if (el) { el.classList.add('open'); el.setAttribute('aria-hidden', 'false'); }
     this.syncActionButton('Close');
+    Sound.ensureAudio();
+    return true;
+  };
+
+  MainScene.prototype.closePanel = function () {
+    if (this.mode !== 'reading') return false;
+    this.mode = 'walk';
+    this.modeAge = 0;
+    var el = this.panel && document.getElementById(this.panel);
+    if (el) { el.classList.remove('open'); el.setAttribute('aria-hidden', 'true'); }
+    this.panel = null;
+    forceReleaseAllInput();
+    return true;
+  };
+
+  MainScene.prototype.readLetter = function () {
+    if (this.mode !== 'walk' || !this.atMailbox()) return false;
     // Read once, and the flag goes down for good - the one thing on this
     // screen that visibly knows something has happened.
     if (!readWorld().letterRead) {
       rememberWorld({ letterRead: true });
       this.mailboxSprite.setTexture('mailboxReadTex');
     }
-    Sound.ensureAudio();
-    return true;
+    return this.openPanel('letter');
   };
 
-  MainScene.prototype.closeLetter = function () {
-    if (this.mode !== 'reading') return false;
-    this.mode = 'walk';
-    this.modeAge = 0;
-    var el = document.getElementById('letter');
-    if (el) { el.classList.remove('open'); el.setAttribute('aria-hidden', 'true'); }
-    forceReleaseAllInput();
-    return true;
+  MainScene.prototype.lookInBin = function () {
+    if (this.mode !== 'walk' || !this.atBin()) return false;
+    return this.openPanel('rubbish');
   };
 
   // The corner button, relabelled for whatever is in reach - the same
@@ -1732,6 +1876,7 @@
           garageWant: self.garageWant, buttonVerb: self.buttonVerb,
           nearGarage: self.nearGarage(), atCar: self.atCar(),
           atMailbox: self.atMailbox(), letterRead: !!readWorld().letterRead,
+          atBin: self.atBin(), panel: self.panel || null,
           letterOpen: self.mode === 'reading',
           atLeftEdge: self.atLeftEdge(), nearLeftEdge: self.nearLeftEdge(),
           leftEdgeX: LEFT_EDGE_X,
@@ -1937,7 +2082,7 @@
       // With the letter up, Escape puts the letter down - leaving the
       // scene from behind a page you are reading is nobody's intent.
       if (!e.repeat) {
-        if (mainScene && mainScene.closeLetter()) return;
+        if (mainScene && mainScene.closePanel()) return;
         if (mainScene) mainScene.leaveForYard(); else goYard();
       }
       return;
@@ -1973,13 +2118,15 @@
   });
   window.addEventListener('blur', forceReleaseAllInput);
 
+  // Tapping either close-up puts it away.
   (function () {
-    var el = document.getElementById('letter');
-    if (!el) return;
-    el.addEventListener('pointerdown', function (e) {
-      e.preventDefault();
-      if (mainScene) mainScene.closeLetter();
-    });
+    var panels = document.querySelectorAll('.panel');
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        if (mainScene) mainScene.closePanel();
+      });
+    }
   })();
 
   var controlBar = document.getElementById('controlBar');

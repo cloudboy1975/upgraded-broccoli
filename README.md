@@ -130,6 +130,10 @@ are one list near the top of `driveway.html`, so rewriting it is
 editing that list, and the tests check the letter's shape rather than
 its prose. Read it once and the mailbox's flag goes down for good.
 
+The bin opens the same way, with **Look**: inside is last night's
+feast, the night before a war — a pizza box with one slice still in
+it, and a tub of ice cream that got no such mercy.
+
 The garage here does **not** open because you walked at it — it
 is the one thing in the chapter you have to work for. Stand at it and
 the corner button stops saying *Back* and starts saying **Open**; press

@@ -769,5 +769,60 @@ harness.run(async (page, check, ctx) => {
   check('and its flag is down for good',
     laterOn.letterRead === true && laterOn.texture === 'mailboxReadTex', laterOn);
 
+  // --- what is in the bin --------------------------------------------------
+  // The other close-up on this screen, and the same machinery: a panel
+  // that holds the scene while it is up and goes away on a tap, the
+  // button or Escape. Shape again rather than prose - the words are a
+  // draft - plus one check that the picture is a picture.
+  await propWalk(0);
+  const atBin = await readState(page);
+  check('standing at the bin says last night is in it',
+    atBin.atBin === true && /bin/i.test(atBin.prompt || ''), atBin);
+  check('and the corner button offers a look', atBin.buttonVerb === 'Look', atBin);
+
+  await page.click('#backBtn');
+  await page.waitForTimeout(400);
+  const looking = await page.evaluate(() => {
+    if (!window.__driveDebug || !document.getElementById('binWords')) {
+      return { gone: true, url: location.pathname };
+    }
+    const st = window.__driveDebug.state();
+    const art = document.querySelector('.bin-art');
+    const box = art.getBoundingClientRect();
+    return {
+      mode: st.mode, panel: st.panel,
+      shown: document.getElementById('rubbish').classList.contains('open'),
+      letterShown: document.getElementById('letter').classList.contains('open'),
+      label: document.getElementById('backLabel').textContent.trim(),
+      lines: document.querySelectorAll('#binWords .bin-line').length,
+      shapes: art.querySelectorAll('path, circle, ellipse, rect').length,
+      artWidth: Math.round(box.width),
+      words: document.getElementById('binWords').innerText.replace(/\s+/g, ' ').trim()
+    };
+  });
+  check('looking opens the bin rather than the letter',
+    looking.shown === true && looking.letterShown === false &&
+    looking.panel === 'rubbish', looking);
+  check('with the scene held, and the button offering to shut the lid',
+    looking.mode === 'reading' && looking.label === 'Close', looking);
+  check('and there is a picture in it, not an empty card',
+    looking.shapes > 12 && looking.artWidth > 150, looking);
+  check('with something said about it', looking.lines >= 2, looking);
+  // THE DRAFT, same as the letter's: update this when the words change.
+  check('the draft says what it was asked to: a slice left, and the tub done for',
+    /slice left/i.test(looking.words) && /ice cream/i.test(looking.words),
+    looking.words);
+
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  const lidShut = await page.evaluate(() => ({
+    mode: window.__driveDebug.state().mode,
+    shown: document.getElementById('rubbish').classList.contains('open'),
+    url: location.pathname
+  }));
+  check('and the lid shuts without leaving the drive',
+    lidShut.mode === 'walk' && lidShut.shown === false &&
+    /driveway/.test(lidShut.url), lidShut);
+
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'driveway.html' });
