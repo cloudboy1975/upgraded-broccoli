@@ -53,22 +53,30 @@ harness.run(async (page, check, ctx) => {
     const me = s.placeAt(st.worldX, st.depth);
     st.meX = Math.round(me.x);
     st.meY = Math.round(me.y);
+    st.borderX = Math.round(s.scale.width / 2 + st.leftEdgeX * s.depthToHalfWidth(st.depth));
+    st.middleX = Math.round(s.scale.width / 2);
     return st;
   });
   check('no page errors on load', errors.length === 0, errors);
-  // You get here by walking round the back of the house in the yard, so
-  // you come out beside the house here - at its corner, in front of its
-  // front wall. Two screens that hand the player over in different
-  // poses are two screens that do not join up.
-  check('the drive boots on foot, at the corner of the house you came round',
-    start.mode === 'walk' && start.meX > start.houseFront.right &&
-    start.meX < start.houseFront.right + 90, start);
-  check('out in front of its wall rather than inside it',
+  // You get here through the left-hand border, so that is where you
+  // come in - not in the middle of the drive and not at some spot of
+  // its own. The way in and the way out are the same door, and standing
+  // somewhere else on arrival is the thing that tells a player the two
+  // screens are not really next to each other.
+  check('the drive boots on foot, in at the border you came through',
+    start.mode === 'walk' && start.meX < start.middleX &&
+    start.meX - start.borderX < 90, start);
+  // ...but not ON it. A player who lands a step from the border and
+  // looks around is a player who gets sent straight home for it.
+  check('and a walk clear of it, not balanced on the edge',
+    start.meX - start.borderX > 28 && start.atLeftEdge === false, start);
+  check('out in front of the house wall rather than inside it',
     start.meY > start.houseFront.y && start.inBuilding === false, start);
   check('with the garage shut and nothing to see in it',
     start.garageOpen === 0 && start.carVisible === false, start);
-  check('and no prompt until you are standing at something',
-    start.prompt === null, start);
+  // Standing in the doorway, the doorway says where it goes.
+  check('and the way you came in is signposted from where you land',
+    typeof start.prompt === 'string' && /back .*to the yard/i.test(start.prompt), start);
   check('and the corner button is still the way out',
     start.buttonVerb === null, start);
   // There is one way onto this screen and it is a cut, so arriving is a
@@ -112,18 +120,20 @@ harness.run(async (page, check, ctx) => {
     !layout.garageOnStick && !layout.garageOnBack &&
     !layout.houseOnStick && !layout.houseOnBack, layout);
 
-  // --- the drive is not the way out ----------------------------------------
-  // The way out of this screen is crossing the line of the house's
-  // front wall, and the drive runs UP past that same line to the
-  // garage. So the way out has a right-hand edge, and if it ever stops
-  // having one, walking to the door you came here for sends you home
-  // instead. Walked rather than asked, because that is how it would
-  // happen: a thumb held up.
+  // --- you can get from the door to the garage -----------------------------
+  // The thing you came here for is up the drive, and you come in at the
+  // far side of the screen from it. Walked rather than asked: out onto
+  // the drive, then up it, which is the route a thumb takes - and the
+  // test is that it ends at the garage rather than walled in or back in
+  // the yard.
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(1700);
+  await page.keyboard.up('ArrowRight').catch(() => {});
   await page.keyboard.down('ArrowUp');
   await page.waitForTimeout(2600);
   await page.keyboard.up('ArrowUp').catch(() => {});
   const upTheDrive = await readState(page);
-  check('walking straight up the drive reaches the garage rather than leaving',
+  check('walking out onto the drive and up it reaches the garage',
     upTheDrive.gone !== true && upTheDrive.mode === 'walk' &&
     upTheDrive.nearGarage === true, upTheDrive);
 
@@ -435,8 +445,11 @@ harness.run(async (page, check, ctx) => {
   const tookMs = Date.now() - began;
   clearInterval(sampler);
   await page.keyboard.up('ArrowLeft').catch(() => {});
+  // 'gone' is the one frame between touching the border and the page
+  // going; what must never appear is a sequence being played.
   check('and crossing the border cuts straight there, with no leaving sequence',
-    snapped && modes.every(m => m === 'walk'), { modes: [...new Set(modes)], tookMs: tookMs });
+    snapped && modes.every(m => m === 'walk' || m === 'gone'),
+    { modes: [...new Set(modes)], tookMs: tookMs });
 
   // The button and the key do the same thing - away from the garage,
   // where the button is still the way out.

@@ -343,10 +343,13 @@
   // Up the drive rather than down at the kerb: the kerb is where the
   // thumbstick is, and the yard taught that lesson once already.
   var MAILBOX = { worldX: 0.88, depth: 0.68 };
-  // Stepping out from behind the house, at its right-hand corner -
-  // which is exactly where coming back the other way puts you in the
-  // yard, so the two screens hand you over in the same pose.
-  var START = { worldX: 0.18, depth: 0.70 };
+  // You come in by the same door you go out by: just inside the
+  // left-hand border, in front of the house. Not a spot written down in
+  // worldX - the border and the house decide it, the same way they
+  // decide the way out - and one stride in, so that stepping left to
+  // look around does not put you straight back in the yard.
+  var ARRIVE_IN = 45;    // px right of the border, at the arrival's own depth
+  var ARRIVE_FRONT = 22; // ...and px in front of the house's front line
 
   // The garage as a texture, and where its door sits on it - one set of
   // fractions shared by the bake, the rolling door and the light, the
@@ -537,8 +540,9 @@
     this.mode = 'walk'; // 'walk' -> 'gone'; leaving here is a cut, not a sequence
     this.modeAge = 0;
 
-    this.worldX = START.worldX;
-    this.depth = START.depth;
+    var spot = this.arrivalSpot();
+    this.worldX = spot.worldX;
+    this.depth = spot.depth;
     this.flipX = false;
     this.bobPhase = 0;
     this.idlePhase = Math.random() * 10;
@@ -1041,6 +1045,19 @@
   // you arrive walks you out, in front of the house, every time.
   MainScene.prototype.atLeftEdge = function () {
     return this.worldX <= LEFT_EDGE_X;
+  };
+
+  // Where you land coming the other way: a stride in from that same
+  // border, in front of the house, which is the one stretch of it you
+  // can stand on. Asked of the geometry so that the way in and the way
+  // out stay the same door.
+  MainScene.prototype.arrivalSpot = function () {
+    var h = this.houseFront();
+    var depth = (h.y + ARRIVE_FRONT - this.horizonY()) /
+                (this.scale.height - this.horizonY());
+    var halfWidth = this.depthToHalfWidth(depth);
+    var x = this.scale.width / 2 + LEFT_EDGE_X * halfWidth + ARRIVE_IN;
+    return { worldX: (x - this.scale.width / 2) / halfWidth, depth: depth };
   };
 
   // Coming up on it, which is where the hint belongs - and only where

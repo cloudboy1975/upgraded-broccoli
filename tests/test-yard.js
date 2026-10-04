@@ -373,8 +373,10 @@ harness.run(async (page, check, ctx) => {
   const cut = await reachedPage(page, 'driveway.html', 9000);
   clearInterval(watch);
   await page.keyboard.up('ArrowUp').catch(() => {});
+  // 'gone' is the one frame between touching the line and the page
+  // going; what must never appear is a sequence being played.
   check('crossing the line cuts straight to the drive, with no leaving sequence',
-    cut && crossing.length > 0 && crossing.every(m => m === 'walk'),
+    cut && crossing.length > 0 && crossing.every(m => m === 'walk' || m === 'gone'),
     { modes: [...new Set(crossing)], url: page.url() });
 
   // Coming back the other way lands you beside the house you just went
@@ -397,11 +399,17 @@ harness.run(async (page, check, ctx) => {
     cameBack.mode === 'walk' && cameBack.pastTheHouse === false, cameBack);
   check('standing out in front of its front wall, not inside it',
     cameBack.meY > cameBack.houseFront.y && cameBack.inWall === false, cameBack);
-  // ...and far enough in front of the line that the scene is not
-  // already telling you to go back out of it. One step toward the
-  // house brings the hint on; arriving under it is nagging.
-  check('and not already being told the way back out',
-    cameBack.prompt === null && cameBack.besideTheHouse === false, cameBack);
+  // Right AT the line he crossed, not a walk away from it: this is the
+  // same doorway from the other side, and the walk back down to the
+  // ship is the walk he just did in reverse. The old arrival sat 80px
+  // down the lawn, which read as being put somewhere rather than
+  // coming back out.
+  check('and right at the line he crossed, not a walk away from it',
+    cameBack.meY - cameBack.houseFront.y < 60, cameBack);
+  // Standing in the doorway, the doorway still says where it goes.
+  check('with the way he came in still signposted',
+    typeof cameBack.prompt === 'string' && /side of the house/i.test(cameBack.prompt),
+    cameBack);
   // ...and not underneath a thumb. The arrival spot is the one position
   // in the scene the player cannot walk out of if it is wrong.
   const backLayout = await page.evaluate(() => {
@@ -672,6 +680,75 @@ harness.run(async (page, check, ctx) => {
   });
   check('walking away from the ship does not board it',
     wander.mode === 'walk' && !wander.atShip && wander.distance > wander.radius, wander);
+
+  // --- there and back ------------------------------------------------------
+  // The two arrival spots are one claim - that this is a map and not two
+  // pages - so it is walked end to end: out past the house, in at the
+  // drive's border, back out of that border, in at the house again, and
+  // then down the lawn to the ship, which is the walk the scene opens
+  // with. Every leg is a held key. A round trip that only works when the
+  // test teleports is not a round trip.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene, f = s.houseFront();
+    const depth = (f.y + 60 - s.horizonY()) / (s.scale.height - s.horizonY());
+    d.moveTo((f.right + 18 - s.scale.width / 2) / s.depthToHalfWidth(depth), depth);
+  });
+  await page.waitForTimeout(140);
+  await page.keyboard.down('ArrowUp');
+  const wentOut = await reachedPage(page, 'driveway.html', 9000);
+  await page.keyboard.up('ArrowUp').catch(() => {});
+  check('walking up past the house lands you on the drive', wentOut, page.url());
+
+  let landed = null;
+  if (wentOut) {
+    await page.waitForTimeout(BOOT_MS);
+    landed = await page.evaluate(() => {
+      const d = window.__driveDebug, s = d.scene, st = d.state();
+      const me = s.placeAt(st.worldX, st.depth);
+      return { meX: Math.round(me.x), half: Math.round(s.scale.width / 2),
+               borderX: Math.round(s.scale.width / 2 + st.leftEdgeX * s.depthToHalfWidth(st.depth)),
+               mode: st.mode };
+    });
+    check('over at the border you came through, on the left of the screen',
+      landed.mode === 'walk' && landed.meX < landed.half &&
+      landed.meX - landed.borderX > 28 && landed.meX - landed.borderX < 90, landed);
+
+    await page.keyboard.down('ArrowLeft');
+    const cameHome = await reachedPage(page, 'yard.html?at=side', 12000);
+    await page.keyboard.up('ArrowLeft').catch(() => {});
+    check('and holding left there walks you back out again', cameHome, page.url());
+
+    if (cameHome) {
+      await page.waitForTimeout(BOOT_MS);
+      const home = await page.evaluate(() => {
+        const d = window.__yardDebug, s = d.scene, st = d.state();
+        const me = s.placeAt(st.worldX, st.depth);
+        return { meX: Math.round(me.x), meY: Math.round(me.y), mode: st.mode,
+                 houseRight: Math.round(st.houseFront.right), houseY: Math.round(st.houseFront.y) };
+      });
+      check('putting you back at the house, at the line you crossed',
+        home.mode === 'walk' && home.meX > home.houseRight &&
+        home.meY - home.houseY < 60, home);
+
+      // ...and the ship is where it always was: down the lawn, to the
+      // right. Held right, because that is the whole of the walk back.
+      await page.keyboard.down('ArrowRight');
+      let mode = 'walk';
+      for (let i = 0; i < 90; i++) {
+        mode = await page.evaluate(() => window.__yardDebug.state().mode).catch(() => 'gone');
+        if (mode !== 'walk') break;
+        await page.waitForTimeout(50);
+      }
+      await page.keyboard.up('ArrowRight').catch(() => {});
+      check('and from there, walking back down the lawn still reaches the ship',
+        mode === 'board', mode);
+      // That one is mid-takeoff; off the page before it flies away.
+      await page.goto(ctx.url('yard.html'));
+      await page.waitForTimeout(BOOT_MS);
+    }
+  }
 
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'yard.html' });

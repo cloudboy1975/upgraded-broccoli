@@ -347,13 +347,16 @@
   // You start between the two, because the choice is the scene: the ship
   // is a second to the right, the front door a second to the left.
   var START = { worldX: -0.16, depth: 0.64 };
-  // Coming back round the corner puts you where you left: out at the
-  // side of the house, a stride in front of the line you just crossed -
-  // ?at=side, the same idea the room uses. Far enough in front of it
-  // that the hint is not already up as you arrive (one step back toward
-  // it brings the hint on), clear of the ship by 70px against a 46px
-  // boarding radius, and nowhere near the controls.
-  var SIDE_RETURN = { worldX: 0.16, depth: 0.68 };
+  // Coming back round the side of the house puts you ON the spot you
+  // would leave by - at the house's corner, one stride in front of the
+  // line - and the walk back to the ship is the walk you just did, in
+  // reverse. Worked out from the house's own rectangle rather than
+  // written down as a worldX, because the two sides of this doorway are
+  // the same doorway: pin one of them to a number and the day the house
+  // moves they are two different places.
+  var SIDE_RETURN_ACROSS = 12; // px right of the house's right-hand corner
+  var SIDE_RETURN_FRONT = 45;  // ...and px in front of its front line, so one
+                               //    step does not put you straight back through
 
 
 
@@ -559,9 +562,10 @@
   }
 
   // Where you start, which is the middle of the lawn unless you have
-  // just come back round the side of the house.
-  function startSpot() {
-    return cameFromTheSide() ? SIDE_RETURN : START;
+  // just come back round the side of the house - in which case it is
+  // the doorway itself, worked out from where the house is standing.
+  function startSpot(scene) {
+    return cameFromTheSide() ? scene.sideReturnSpot() : START;
   }
 
   // Clears the arrival fade once there is a frame to look at. Named and
@@ -591,7 +595,7 @@
     this.mode = 'walk'; // 'walk' -> 'board' -> 'liftoff' -> 'gone'
     this.modeAge = 0;
 
-    var spot = startSpot();
+    var spot = startSpot(this);
     this.worldX = spot.worldX;
     this.depth = spot.depth;
     this.flipX = false;
@@ -1107,6 +1111,21 @@
     var f = this.houseFront();
     var me = this.placeAt(this.worldX, this.depth);
     return me.x > f.right && me.y < f.y - PASS_PLANE;
+  };
+
+  // The doorway from the other side: where you stand when you walk back
+  // in. The same corner and the same line, a stride short of crossing
+  // it - so the hint is up, saying what you just came through, and the
+  // ship is a walk back down the lawn.
+  MainScene.prototype.sideReturnSpot = function () {
+    var f = this.houseFront();
+    var depth = (f.y + SIDE_RETURN_FRONT - this.horizonY()) /
+                (this.scale.height - this.horizonY());
+    return {
+      worldX: (f.right + SIDE_RETURN_ACROSS - this.scale.width / 2) /
+              this.depthToHalfWidth(depth),
+      depth: depth
+    };
   };
 
   // Coming up to that line on the right-hand side, which is where the

@@ -124,9 +124,13 @@ pointed thing from the years when cars were drawn by the same people
 drawing rockets. No keys in it yet. It stays however you left it, which
 is what makes it a switch rather than a motion sensor.
 
-Each screen hands you over in the same pose — you step out at the
-corner of the house you just walked round — so the two agree about
-which way round the house you are going.
+Neither screen puts you down at a spot of its own: you arrive at the
+door you came through. Walk past the house in the yard and you come in
+at the drive's left-hand border, a stride in from it; walk back out of
+that border and you are at the house's corner again, right at the line
+you crossed, with the ship a walk back down the lawn. Both spots are
+worked out from where the buildings are standing rather than written
+down as coordinates, so the two sides of a doorway cannot drift apart.
 And if you look up while you are round there,
 something is moving in the sky over the ridges: three lights in loose
 formation, one of which will roll through a loop now and then, or put a
