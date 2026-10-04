@@ -101,7 +101,8 @@
     justify-content: space-between;
     padding: 10px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
     touch-action: none;
-    z-index: 10;
+    /* Above the letter, so the corner button still closes it. */
+    z-index: 50;
     pointer-events: none;
     transition: opacity 0.4s ease;
   }
@@ -216,6 +217,89 @@
     pointer-events: none;
   }
   .fly-btn:active .fly-icon, .fly-btn.active .fly-icon { border-bottom-color: rgba(43, 31, 8, 0.85); }
+  /* The letter out of the mailbox. DOM rather than canvas: it is a page
+     of small type, and a browser sets type better than a graphics buffer
+     does at any screen density. The control bar sits ABOVE it, so the
+     corner button - which now says Close - keeps working. */
+  .letter {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(env(safe-area-inset-top) + 40px) 14px 96px;
+    background: rgba(4, 6, 14, 0.74);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .letter.open { opacity: 1; pointer-events: auto; }
+  .letter-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 430px;
+    max-height: 100%;
+    min-height: 0;
+  }
+  .letter-paper {
+    width: 100%;
+    max-width: 430px;
+    max-height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #e7e0cf;
+    color: #2b2621;
+    padding: 20px 18px 22px;
+    border-radius: 2px;
+    box-shadow: 0 20px 44px rgba(0, 0, 0, 0.65);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.74rem;
+    line-height: 1.55;
+    transform: translateY(10px) rotate(-0.5deg);
+    transition: transform 0.2s ease;
+  }
+  .letter.open .letter-paper { transform: translateY(0) rotate(-0.5deg); }
+  .letter-form {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+  }
+  .letter-office {
+    letter-spacing: 0.04em;
+    color: #6b6052;
+    font-size: 0.66rem;
+    margin-bottom: 12px;
+  }
+  .letter-rule { border-top: 1px solid rgba(43, 38, 33, 0.35); margin: 12px 0; }
+  .letter-body { margin: 0 0 11px; }
+  .letter-order { margin: 0 0 6px; padding-left: 22px; text-indent: -22px; }
+  .letter-note { margin: 11px 0 0; }
+  .letter-sign { margin-top: 18px; }
+  .letter-scrawl { display: block; color: #26354e; }
+  .letter-cap {
+    letter-spacing: 0.06em;
+    font-size: 0.62rem;
+    color: #6b6052;
+    border-top: 1px solid rgba(43, 38, 33, 0.45);
+    padding-top: 4px;
+    display: inline-block;
+  }
+  /* Outside the paper, on the scrim: inside it, in this colour, it was
+     invisible on cream - and it is an instruction to the player rather
+     than a line of the letter. */
+  .letter-close {
+    text-align: center;
+    color: rgba(231, 224, 207, 0.7);
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    margin-top: 12px;
+    flex-shrink: 0;
+  }
+
   /* The way IN. Leaving is drawn inside the scene; arriving cannot be,
      because there is no scene yet when the page first paints - so the
      page starts black and clears itself once the first frame is up. */
@@ -246,6 +330,15 @@
   </div>
 
   <div class="hint" id="hint">The front of the house</div>
+
+  <!-- Filled from LETTER at boot, so the words live in one list in the
+       script rather than in two places. Tapping it closes it. -->
+  <div class="letter" id="letter" aria-hidden="true">
+    <div class="letter-stack">
+      <div class="letter-paper" id="letterPaper"></div>
+      <div class="letter-close" id="letterClose"></div>
+    </div>
+  </div>
 
   <div class="control-bar" id="controlBar">
     <div class="stick-zone" id="stickZone" aria-label="Walk (press anywhere and drag)">
@@ -396,12 +489,43 @@
   // prop is drawn at, the way every other measurement here works -
   // widened by half your own shoulders so you stop beside one rather
   // than inside it. The same shape of rule the furniture indoors uses.
+  // How close you have to be to the mailbox to open it, in texture px at
+  // its own scale. Forward of it mostly: the props stop you about ten
+  // pixels short, so the reach has to cover where you actually end up.
+  var MAILBOX_REACH_X = 30;
+  var MAILBOX_REACH_FRONT = 46;
+  var MAILBOX_REACH_BACK = 12;
+
   var YOUR_HALF_X = 7;  // px of you, at your own scale
   var YOUR_HALF_Y = 4;
   var PROP_SOLIDS = [
     { prop: BIN, halfWidth: 17, body: 10 },    // the bin is 34 across and sits flat
     { prop: MAILBOX, halfWidth: 10, body: 6 }  // the post is thin; what you walk into is the box
   ];
+
+  // ==================================================================
+  // The letter in the mailbox.
+  //
+  // It is a DRAFT, like the broadcast indoors: what is built to last is
+  // the shape - a form number, a receipt, three numbered orders and a
+  // signature that is yours - and rewriting it is editing this list.
+  // The scrawl is drawn rather than written out, because the player has
+  // no name yet and a letter you signed should not have to invent one.
+  // ==================================================================
+  var LETTER = [
+    { kind: 'form', text: 'FORM 7-B \u2014 RECEIPT AND STANDING ORDERS' },
+    { kind: 'office', text: 'Orbital Defence Command \u00b7 Civil Auxiliary' },
+    { kind: 'rule' },
+    { kind: 'body', text: 'Received, one (1) interceptor. Single seat. Left on the lawn at this address at 04:20 this morning. Tanks full, guns loaded, no manual enclosed.' },
+    { kind: 'body', text: 'The undersigned, having signed for it, accepts the following orders:' },
+    { kind: 'order', text: '1.  Fly it to the world the flat ones are coming from.' },
+    { kind: 'order', text: '2.  Look at it. Write down what is actually there.' },
+    { kind: 'order', text: '3.  Try to talk to them before you shoot.' },
+    { kind: 'note', text: 'Item three is not a courtesy. It is the whole reason for items one and two. Nobody has managed it yet. You will be closer than anybody has been.' },
+    { kind: 'note', text: 'If you are reading this on the step: the ship is behind you and the kettle is still warm. Both will keep. Item three will not.' },
+    { kind: 'sign' }
+  ];
+  var LETTER_CLOSE_HINT = 'Tap anywhere to put it back';
 
   var GARAGE_DOORWAY_POCKET = 18; // how far into the garage the open doorway lets you
   var CAR_LOOK_REACH = 70;        // ...and how far out in front of it still counts as at it
@@ -582,6 +706,37 @@
     el.classList.remove('visible');
   }
 
+  // The paper, written out of LETTER. The signature is an inline squiggle
+  // rather than a font: a cursive typeface would have to be loaded, and
+  // would still be somebody's handwriting rather than yours.
+  function buildLetterPage() {
+    var paper = document.getElementById('letterPaper');
+    if (!paper) return;
+    var html = '';
+    for (var i = 0; i < LETTER.length; i++) {
+      var line = LETTER[i];
+      if (line.kind === 'rule') { html += '<div class="letter-rule"></div>'; continue; }
+      if (line.kind === 'sign') {
+        html += '<div class="letter-sign">' +
+                '<svg class="letter-scrawl" width="150" height="34" viewBox="0 0 150 34" ' +
+                'aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+                'stroke-linecap="round">' +
+                '<path d="M4 25c8-14 13-18 16-11 3 8-3 15 1 16 5 1 9-19 13-19 3 0 1 13 5 13 ' +
+                '5 0 8-16 12-16 3 0 2 12 6 12 6 0 10-18 16-18 4 0 3 14 8 14 6 0 9-9 13-9 ' +
+                '5 0 5 8 11 8 7 0 12-7 16-10"/>' +
+                '<path d="M28 30c30 3 66 2 96-3"/>' +
+                '</svg>' +
+                '<span class="letter-cap">SIGNATURE OF RECIPIENT \u2014 this morning, at the mailbox</span>' +
+                '</div>';
+        continue;
+      }
+      html += '<p class="letter-' + line.kind + '">' + line.text + '</p>';
+    }
+    paper.innerHTML = html;
+    var close = document.getElementById('letterClose');
+    if (close) close.textContent = LETTER_CLOSE_HINT;
+  }
+
   function MainScene() {
     Phaser.Scene.call(this, { key: 'Main' });
   }
@@ -642,9 +797,11 @@
     this.shootAt = UFO_SHOOT_EVERY * 0.8;
     this.shots = [];
 
+    buildLetterPage();
     this.buildTextures();
     this.buildLayers();
     this.buildProps();
+    if (readWorld().letterRead) this.mailboxSprite.setTexture('mailboxReadTex');
     this.redrawAll();
 
     var self = this;
@@ -801,19 +958,27 @@
       g.generateTexture('binTex', w, h);
       g.destroy();
     })();
+    // Twice: flag up, and flag down once you have read what was in it.
+    // The scene swaps the texture - which is the one bit of this chapter
+    // that visibly knows something has happened.
     (function () {
-      var w = 30, h = 64;
-      var g = self.make.graphics({ x: 0, y: 0, add: false });
-      g.fillStyle(0x000000, 0.28);
-      g.fillEllipse(w / 2, h - 3, w * 0.7, 6);
-      g.fillStyle(0x3a2f26, 1);
-      g.fillRect(w * 0.42, h * 0.3, w * 0.16, h * 0.68);
-      g.fillStyle(0x4a5663, 1);
-      g.fillRoundedRect(w * 0.1, h * 0.12, w * 0.8, h * 0.22, 5);
-      g.fillStyle(0xd05c4a, 1);                                   // the little flag
-      g.fillRect(w * 0.84, h * 0.04, w * 0.1, h * 0.12);
-      g.generateTexture('mailboxTex', w, h);
-      g.destroy();
+      function mailbox(name, flagUp) {
+        var w = 30, h = 64;
+        var g = self.make.graphics({ x: 0, y: 0, add: false });
+        g.fillStyle(0x000000, 0.28);
+        g.fillEllipse(w / 2, h - 3, w * 0.7, 6);
+        g.fillStyle(0x3a2f26, 1);
+        g.fillRect(w * 0.42, h * 0.3, w * 0.16, h * 0.68);
+        g.fillStyle(0x4a5663, 1);
+        g.fillRoundedRect(w * 0.1, h * 0.12, w * 0.8, h * 0.22, 5);
+        g.fillStyle(0xd05c4a, 1);
+        if (flagUp) g.fillRect(w * 0.84, h * 0.04, w * 0.1, h * 0.12);
+        else g.fillRect(w * 0.84, h * 0.2, w * 0.1, h * 0.1);  // folded down
+        g.generateTexture(name, w, h);
+        g.destroy();
+      }
+      mailbox('mailboxTex', true);
+      mailbox('mailboxReadTex', false);
     })();
   };
 
@@ -1078,6 +1243,17 @@
     return Math.abs(me.x - r.cx) < r.width * 0.55;
   };
 
+  // Standing at the mailbox: close enough to open it, which is a smaller
+  // reach than the garage's because a mailbox is a thing you stand at
+  // rather than a building you come up to.
+  MainScene.prototype.atMailbox = function () {
+    var me = this.placeAt(this.worldX, this.depth);
+    var at = this.placeAt(MAILBOX.worldX, MAILBOX.depth);
+    return Math.abs(me.x - at.x) < MAILBOX_REACH_X * at.scale &&
+           me.y > at.y - MAILBOX_REACH_BACK * at.scale &&
+           me.y < at.y + MAILBOX_REACH_FRONT * at.scale;
+  };
+
   // Both buildings are solid, by the same rule the house uses in the
   // yard: anything at their width and further up the drive than their
   // feet is inside a building, and nobody walks in there. The garage
@@ -1229,12 +1405,15 @@
 
     this.setPrompt(
       this.atCar() ? 'Your father\'s convertible. No keys in it.'
+        : this.atMailbox() ? (readWorld().letterRead
+            ? 'The mailbox. The letter you signed this morning.'
+            : 'The mailbox. There is something in it.')
         : this.nearGarage() ? (this.garageWant
             ? 'The garage door. Shut it again?'
             : 'The garage door. There is a switch on the frame.')
         : (this.nearLeftEdge() ? 'Back round to the yard ←' : null)
     );
-    this.syncActionButton(this.garageVerb());
+    this.syncActionButton(this.actionVerb());
 
     this.mtnFarGfx.x = -this.worldX * 8;
     this.mtnMidGfx.x = -this.worldX * 22;
@@ -1245,9 +1424,54 @@
 
   // What the corner button would do if you pressed it now: work the
   // door if you are standing at it, otherwise go back round the corner.
-  MainScene.prototype.garageVerb = function () {
+  MainScene.prototype.actionVerb = function () {
+    if (this.mode === 'reading') return 'Close';
+    if (this.atMailbox()) return 'Read';
     if (!this.nearGarage()) return null;
     return this.garageWant ? 'Close' : 'Open';
+  };
+
+  // One way in for the corner button and the action key, so the two
+  // cannot drift. Returns whether it did something: if it did not, the
+  // button falls back to being the way out of the scene.
+  MainScene.prototype.useAction = function () {
+    if (this.mode === 'reading') { this.closeLetter(); return true; }
+    if (this.mode !== 'walk') return false;
+    if (this.atMailbox()) return this.readLetter();
+    return this.workGarageDoor();
+  };
+
+  // Reading it stops the walking, which is the whole of the mode: the
+  // scene keeps running underneath - the sky still moves - but nothing
+  // takes input until the paper goes away.
+  MainScene.prototype.readLetter = function () {
+    if (this.mode !== 'walk' || !this.atMailbox()) return false;
+    this.mode = 'reading';
+    this.modeAge = 0;
+    this.setPrompt(null);
+    document.getElementById('hint').classList.add('hidden');
+    forceReleaseAllInput();
+    var el = document.getElementById('letter');
+    if (el) { el.classList.add('open'); el.setAttribute('aria-hidden', 'false'); }
+    this.syncActionButton('Close');
+    // Read once, and the flag goes down for good - the one thing on this
+    // screen that visibly knows something has happened.
+    if (!readWorld().letterRead) {
+      rememberWorld({ letterRead: true });
+      this.mailboxSprite.setTexture('mailboxReadTex');
+    }
+    Sound.ensureAudio();
+    return true;
+  };
+
+  MainScene.prototype.closeLetter = function () {
+    if (this.mode !== 'reading') return false;
+    this.mode = 'walk';
+    this.modeAge = 0;
+    var el = document.getElementById('letter');
+    if (el) { el.classList.remove('open'); el.setAttribute('aria-hidden', 'true'); }
+    forceReleaseAllInput();
+    return true;
   };
 
   // The corner button, relabelled for whatever is in reach - the same
@@ -1261,7 +1485,7 @@
     if (!btn || !label) return;
     label.textContent = verb || 'Back';
     btn.classList.toggle('acts', !!verb);
-    btn.setAttribute('aria-label', verb ? verb + ' the garage door' : 'Back round to the yard');
+    btn.setAttribute('aria-label', verb ? verb + ' what you are standing at' : 'Back round to the yard');
   };
 
   // Pressing it. Everything else in this chapter opens because you
@@ -1507,6 +1731,8 @@
           garageOpen: self.garageOpen, garageRect: self.garageRect(),
           garageWant: self.garageWant, buttonVerb: self.buttonVerb,
           nearGarage: self.nearGarage(), atCar: self.atCar(),
+          atMailbox: self.atMailbox(), letterRead: !!readWorld().letterRead,
+          letterOpen: self.mode === 'reading',
           atLeftEdge: self.atLeftEdge(), nearLeftEdge: self.nearLeftEdge(),
           leftEdgeX: LEFT_EDGE_X,
           inBuilding: self.insideBuilding(self.worldX, self.depth),
@@ -1680,9 +1906,9 @@
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault();
       el.classList.add('active');
-      // Whatever the button currently says. Standing at the garage it
-      // works the door; anywhere else it is still the way out.
-      if (mainScene && mainScene.workGarageDoor()) return;
+      // Whatever the button currently says: the garage's switch, the
+      // letter, or - when it says none of those - the way out.
+      if (mainScene && mainScene.useAction()) return;
       if (mainScene) mainScene.leaveForYard(); else goYard();
     });
     function release() { el.classList.remove('active'); }
@@ -1704,11 +1930,16 @@
     Sound.startWind();
     if (isUpKey(e.code) || isDownKey(e.code)) e.preventDefault();
     if (isActionKey(e.code)) {
-      if (!e.repeat && mainScene) mainScene.workGarageDoor();
+      if (!e.repeat && mainScene) mainScene.useAction();
       return;
     }
     if (isBackKey(e.code)) {
-      if (!e.repeat) { if (mainScene) mainScene.leaveForYard(); else goYard(); }
+      // With the letter up, Escape puts the letter down - leaving the
+      // scene from behind a page you are reading is nobody's intent.
+      if (!e.repeat) {
+        if (mainScene && mainScene.closeLetter()) return;
+        if (mainScene) mainScene.leaveForYard(); else goYard();
+      }
       return;
     }
     if (e.repeat) return;
@@ -1741,6 +1972,15 @@
     if (document.hidden) forceReleaseAllInput();
   });
   window.addEventListener('blur', forceReleaseAllInput);
+
+  (function () {
+    var el = document.getElementById('letter');
+    if (!el) return;
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      if (mainScene) mainScene.closeLetter();
+    });
+  })();
 
   var controlBar = document.getElementById('controlBar');
   controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });

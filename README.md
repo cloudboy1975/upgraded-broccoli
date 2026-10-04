@@ -120,6 +120,16 @@ The things standing on the drive are things: the bin, the mailbox and
 the garage door while it is down all stop you, the same way the
 buildings do.
 
+#### The letter in the mailbox
+
+Stand at the mailbox and the corner button says **Read**. Inside is
+Form 7-B: a receipt for the ship on the lawn — signed by you, this
+morning — and three standing orders, of which the third is to try
+talking to them before you shoot. It is a **first draft**: the words
+are one list near the top of `driveway.html`, so rewriting it is
+editing that list, and the tests check the letter's shape rather than
+its prose. Read it once and the mailbox's flag goes down for good.
+
 The garage here does **not** open because you walked at it — it
 is the one thing in the chapter you have to work for. Stand at it and
 the corner button stops saying *Back* and starts saying **Open**; press

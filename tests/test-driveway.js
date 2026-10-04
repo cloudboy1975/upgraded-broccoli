@@ -647,5 +647,127 @@ harness.run(async (page, check, ctx) => {
   check('while with it up, that same walk puts you in the doorway',
     atOpen.atCar === true, atOpen);
 
+  // --- the letter in the mailbox -------------------------------------------
+  // Most of these are about SHAPE - a header, three numbered orders, a
+  // signature - because the words are a draft and are expected to be
+  // rewritten; a test that fails when someone edits the prose is a test
+  // that gets deleted. The one check that does read the words says so in
+  // its name, and is the place to update when the draft changes.
+  await page.goto(ctx.url('driveway.html'));
+  await page.evaluate(() => window.__driveDebug.forgetWorld());
+  await page.reload();
+  await page.waitForTimeout(BOOT_MS);
+
+  const toMailbox = async () => {
+    const spec = await page.evaluate(() => {
+      const d = window.__driveDebug, s = d.scene, prop = d.state().props[1];
+      const depthOf = y => (y - s.horizonY()) / (s.scale.height - s.horizonY());
+      return { worldX: (prop.x - s.scale.width / 2) / s.depthToHalfWidth(depthOf(prop.y)),
+               from: depthOf(prop.y + 80) };
+    });
+    await page.evaluate(sp => window.__driveDebug.moveTo(sp.worldX, sp.from), spec);
+    await page.waitForTimeout(140);
+    await page.keyboard.down('ArrowUp');
+    await page.waitForTimeout(1800);
+    await page.keyboard.up('ArrowUp').catch(() => {});
+    return readState(page);
+  };
+
+  const atBox = await toMailbox();
+  check('standing at the mailbox says there is something in it',
+    atBox.atMailbox === true && typeof atBox.prompt === 'string' &&
+    /mailbox/i.test(atBox.prompt), atBox);
+  check('and the corner button offers to read it', atBox.buttonVerb === 'Read', atBox);
+
+  await page.click('#backBtn');
+  await page.waitForTimeout(400);
+  // Read defensively. A button that does not know about the letter
+  // falls through to being the way out, and this block would then be
+  // asking the YARD about its letter - which dies as a broken test file
+  // instead of failing the check that is actually wrong.
+  const reading = await page.evaluate(() => {
+    if (!window.__driveDebug || !document.getElementById('letterPaper')) {
+      return { gone: true, url: location.pathname };
+    }
+    const d = window.__driveDebug, st = d.state();
+    const paper = document.getElementById('letterPaper');
+    const text = paper.innerText.replace(/\s+/g, ' ').trim();
+    return {
+      mode: st.mode, letterOpen: st.letterOpen, letterRead: st.letterRead,
+      shown: document.getElementById('letter').classList.contains('open'),
+      label: document.getElementById('backLabel').textContent.trim(),
+      orders: paper.querySelectorAll('.letter-order').length,
+      signed: paper.querySelectorAll('.letter-sign svg').length,
+      head: paper.querySelectorAll('.letter-form').length,
+      words: text.split(' ').length,
+      text: text
+    };
+  });
+  check('pressing it puts the letter up', reading.shown && reading.letterOpen === true, reading);
+  check('with the scene held while you read', reading.mode === 'reading', reading);
+  check('and the button offering to put it down again', reading.label === 'Close', reading);
+  check('it is a form, with three numbered orders, signed',
+    reading.head === 1 && reading.orders === 3 && reading.signed === 1, reading);
+  check('and a letter rather than a label', reading.words > 60, reading.words);
+  // THE DRAFT. Update this when the words change - it is the one check
+  // here that reads them, and what it reads is what the letter was
+  // asked for: a receipt for the ship, where to take it, and talking
+  // before shooting.
+  check('the draft says what it was asked to: received, where to go, and talk first',
+    /received[^.]*interceptor/i.test(reading.text) &&
+    /(fly it to the world|home ?world)/i.test(reading.text) &&
+    /(talk to them|communicat)/i.test(reading.text), reading.text.slice(0, 220));
+
+  // Held means held: the stick does nothing behind the paper.
+  const held = await page.evaluate(() => new Promise(res => {
+    const d = window.__driveDebug, before = d.state().worldX;
+    window.__driveInput.x = -1;
+    setTimeout(() => {
+      const after = d.state();
+      window.__driveInput.x = 0;
+      res({ moved: +(after.worldX - before).toFixed(3), mode: after.mode });
+    }, 700);
+  }));
+  check('and the stick does nothing behind the paper',
+    held.moved === 0 && held.mode === 'reading', held);
+
+  // Escape puts the letter down. It must NOT walk you out of the scene
+  // from behind a page you are reading.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  const afterEscape = await page.evaluate(() => ({
+    mode: window.__driveDebug.state().mode,
+    shown: document.getElementById('letter').classList.contains('open'),
+    url: location.pathname
+  }));
+  check('escape puts it down rather than leaving the scene',
+    afterEscape.mode === 'walk' && afterEscape.shown === false &&
+    /driveway/.test(afterEscape.url), afterEscape);
+
+  // Tapping the paper closes it too.
+  await page.click('#backBtn');
+  await page.waitForTimeout(350);
+  await page.click('#letterPaper', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(350);
+  const afterTap = await page.evaluate(() => ({
+    mode: window.__driveDebug.state().mode,
+    shown: document.getElementById('letter').classList.contains('open')
+  }));
+  check('and so does tapping it', afterTap.mode === 'walk' && afterTap.shown === false, afterTap);
+
+  // Having read it, the mailbox knows: the flag goes down, and stays
+  // down - the same memory the garage door uses.
+  const read = await readState(page);
+  check('the mailbox says what it is once you have read it',
+    read.letterRead === true && /signed/i.test(read.prompt || ''), read);
+  await page.reload();
+  await page.waitForTimeout(BOOT_MS);
+  const laterOn = await page.evaluate(() => ({
+    letterRead: window.__driveDebug.state().letterRead,
+    texture: window.__driveDebug.scene.mailboxSprite.texture.key
+  }));
+  check('and its flag is down for good',
+    laterOn.letterRead === true && laterOn.texture === 'mailboxReadTex', laterOn);
+
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'driveway.html' });
