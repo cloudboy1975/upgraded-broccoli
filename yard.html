@@ -287,21 +287,24 @@
   // Nothing asks you to walk round the back - crossing the line is the
   // whole move, and the fade carries the last two strides of it.
   var DRIVE_PAGE = 'driveway.html';
-  // Off the bottom-left corner of the lawn are the trees. Not past the
-  // house the way the drive is: you cannot GET past the house on that
-  // side - the world narrows toward the horizon and its left-hand wall
-  // is outside it at every depth up the garden - so the way in is the
-  // one bit of the left-hand edge that is clear of the building, which
-  // is the near corner, down by the camera. Which is also where a lawn
-  // actually runs out into a wood.
+  // Off the left-hand side of the lawn are the trees, and off ALL of
+  // it: walk left from anywhere you can stand and you end up in them.
+  // The only thing that stops you is the house itself, which is solid -
+  // up past its front line you are walking into brick long before you
+  // reach the edge, and that is the existing wall rule rather than
+  // anything this has to say.
+  //
+  // Worth knowing while reading these: the lawn is a trapezoid, so its
+  // left-hand EDGE is not the screen's. At the back of the garden the
+  // whole world is only a couple of hundred pixels wide, and worldX -1
+  // is a third of the way across the picture; down by the camera it is
+  // off the side of it. "Walk left until you cannot" is the rule, and
+  // where that leaves you on screen is the perspective's business.
   var WOOD_PAGE = 'wood.html';
   var WOOD_EDGE = 0.985;  // how far across the lawn counts as into the trees
-  var WOOD_PAST = 14;     // ...and px clear of the house's near corner, so the
-                          //    exit is the corner of the garden and not the wall
-  var WOOD_HINT = 0.6;    // ...and where the lawn starts telling you it is there
-  var WOOD_HINT_FRONT = 60; // ...but only this far down the garden, so walking up
-                            //    the front of the house toward the door never
-                            //    offers you the woods instead
+  var WOOD_HINT = 0.88;   // ...and where the lawn starts telling you it is there.
+                          //    Clear of the front door, which sits around -0.63
+                          //    to -0.78 depending how far up the path you are
   var WOOD_ENTER = 0.8;   // how far in you land coming back out of them
   var PASS_PLANE = 6;        // px past the front line before you count as round it
   var PASS_HINT_FRONT = 110; // ...and how far short of it the hint starts
@@ -1169,24 +1172,27 @@
   // The far corner of the lawn, past the near end of the house, where
   // the grass runs out into trees. Asked of the HOUSE's own rectangle
   // rather than of worldX, for the same reason the drive is: the house
-  // is what you are walking past, and it is the only landmark down
-  // there. Being clear of its corner is what makes this the corner of
-  // the garden rather than a walk into the brickwork.
+  // The whole left-hand side of the lawn, at whatever depth you walked
+  // to it. Asked of worldX alone - the house needs no mention here,
+  // because the house is SOLID: anywhere its wall is between you and
+  // the edge you were stopped by brick several strides ago, and the
+  // band of lawn you can actually reach the edge from is whatever is
+  // left over. One rule, enforced in one place.
   MainScene.prototype.pastTheTrees = function () {
-    var f = this.houseFront();
-    var me = this.placeAt(this.worldX, this.depth);
-    return this.worldX <= -WOOD_EDGE && me.x < f.left - WOOD_PAST;
+    return this.worldX <= -WOOD_EDGE;
   };
 
   // Coming up to it, which is where the hint belongs: once you have
-  // crossed it you have already gone. Wider than the line itself and
-  // only in FRONT of the house, so walking up the left-hand side of
-  // the lawn toward the front door never offers you the woods.
+  // crossed it you have already gone. Close to the edge rather than
+  // anywhere on the left-hand half of the lawn - a prompt that is up
+  // for a third of the scene is wallpaper.
+  //
+  // It needs no guard against the front door, which is the other thing
+  // over on this side. update() asks atDoor() FIRST and goes inside, so
+  // by the time anything looks at this you are not at the door. One
+  // place decides, and it is not this function.
   MainScene.prototype.nearTheTrees = function () {
-    var f = this.houseFront();
-    var me = this.placeAt(this.worldX, this.depth);
-    return this.worldX <= -WOOD_HINT && me.y > f.y + WOOD_HINT_FRONT &&
-           me.x < f.left + 70;
+    return this.worldX <= -WOOD_HINT;
   };
 
   // Crossing it is the cut, the same as the drive's line: you touch the

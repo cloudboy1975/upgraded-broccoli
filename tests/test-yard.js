@@ -26,7 +26,12 @@ async function walkUntilBoarded(page, keys, budgetMs) {
   const started = Date.now();
   for (const k of held) await page.keyboard.down(k);
   while (Date.now() - started < budgetMs) {
-    const mode = await page.evaluate(() => window.__yardDebug.state().mode);
+    // Defensively, like readState: a walk that ENDS the scene navigates
+    // out from under this poll, and a raw evaluate there takes the whole
+    // file with it - which reads as a broken test rather than as the
+    // thing it was there to catch.
+    const mode = await page.evaluate(() => window.__yardDebug.state().mode)
+      .catch(() => 'gone');
     if (mode !== 'walk') break;
     await page.waitForTimeout(60);
   }
@@ -145,7 +150,7 @@ harness.run(async (page, check, ctx) => {
   // understand that on the first screen of the game, the opening has
   // taught a lesson nobody asked for.
   const walkMs = await walkUntilBoarded(page, 'ArrowRight', 8000);
-  const boarded = await page.evaluate(() => window.__yardDebug.state());
+  const boarded = await readState(page);
   check('holding right alone reaches the ship', boarded.mode !== 'walk', { walkMs, boarded });
   check('and touching it boards - no button, no confirm', boarded.mode === 'board', boarded);
   check('the walk is short enough never to become a chore', walkMs < 3500, { walkMs });
@@ -234,7 +239,7 @@ harness.run(async (page, check, ctx) => {
   // the house asks for a deliberate walk to its door, which is what the
   // path on the grass is there to teach.
   const doorMs = await walkUntilBoarded(page, ['ArrowLeft', 'ArrowUp'], 8000);
-  const entering = await page.evaluate(() => window.__yardDebug.state());
+  const entering = await readState(page);
   check('walking up the path and into the doorway goes in',
     entering.mode === 'entering', { doorMs, entering });
   check('and it is as short a walk as the one to the ship', doorMs < 3500, { doorMs });
@@ -246,15 +251,20 @@ harness.run(async (page, check, ctx) => {
   // Coming back out must not put you straight back in. The start point
   // is where you land on the way out, so if it sat inside the doorstep's
   // zone the two scenes would bounce off each other forever.
-  const inside = await page.evaluate(() => window.__houseDebug.state());
+  // Read defensively: if the walk above did not end up in the house,
+  // this hook is not there, and a raw evaluate would take the file with
+  // it - which reads as a broken test rather than as the door failing.
+  const inside = await page.evaluate(() => window.__houseDebug.state())
+    .catch(e => ({ gone: true, why: String(e).slice(0, 120) }));
   check('and the house is a real scene, not a dead end', inside.mode === 'walk', inside);
 
-  await page.evaluate(() => { const d = window.__houseDebug; d.moveTo(d.props.door.worldX, 0.08); });
+  await page.evaluate(() => { const d = window.__houseDebug; d.moveTo(d.props.door.worldX, 0.08); })
+    .catch(() => {});
   check('whose own door comes back out to the yard',
     await reachedPage(page, 'yard.html', 6000), page.url());
   await page.waitForTimeout(BOOT_MS);
 
-  const backOutside = await page.evaluate(() => window.__yardDebug.state());
+  const backOutside = await readState(page);
   check('landing outside the doorstep, not on it',
     backOutside.mode === 'walk' && !backOutside.atDoor, backOutside);
   await page.waitForTimeout(900);
@@ -752,73 +762,75 @@ harness.run(async (page, check, ctx) => {
     }
   }
 
-  // --- the woods, off the bottom-left corner ---------------------------------
-  // The drive is reached by walking PAST the house on its right. The
-  // woods cannot be reached the same way on its left, and that is a
-  // fact about the geometry rather than a choice: the world narrows
-  // toward the horizon, so at every depth UP the garden worldX -1 is
-  // still inside the house's own width. The only part of the left-hand
-  // edge that is clear of the building is the near corner, down by the
-  // camera - which is also where a lawn actually runs out into a wood.
+  // --- the woods, off the whole left-hand side -------------------------------
+  // Walk left from anywhere on the lawn and you end up in the trees.
+  // The rule is worldX alone; what makes it safe is that the house is
+  // already SOLID, so anywhere its wall is between you and the edge you
+  // were stopped by brick several strides ago.
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
 
-  const corner = await page.evaluate(() => {
-    const d = window.__yardDebug, s = d.scene;
-    const f = s.houseFront();
-    const rows = [];
-    for (let depth = 0.4; depth <= 0.9; depth += 0.04) {
-      const me = s.placeAt(-1, depth);
-      rows.push({ depth: +depth.toFixed(2), clearOfTheHouse: me.x < f.left });
-    }
-    return { rows, front: { left: Math.round(f.left), y: Math.round(f.y) } };
-  });
-  check('the left-hand edge is inside the house up the garden',
-    corner.rows.filter(r => r.depth < 0.6).every(r => !r.clearOfTheHouse), corner);
-  check('and only clear of it down by the camera',
-    corner.rows.filter(r => r.depth > 0.7).every(r => r.clearOfTheHouse), corner);
-
-  // ...so the left-hand edge UP the garden must not be a way out. It is
-  // the front of the house: walking at it is walking into brick, and an
-  // exit there would put the woods on the other side of a wall.
-  //
-  // Read inside ONE evaluate and put back where it was found: standing
-  // at (-1, 0.8) IS through the line, so leaving the figure there lets
+  // Read inside ONE evaluate and put the figure back where it was
+  // found: standing on the edge IS through it, so leaving it there lets
   // the next frame navigate out from under the rest of this file.
-  const edgeUpTheGarden = await page.evaluate(() => {
-    const d = window.__yardDebug, s = d.scene;
+  const leftEdge = await page.evaluate(() => {
+    const s = window.__yardDebug.scene;
     const was = { worldX: s.worldX, depth: s.depth };
-    const out = [];
-    [0.44, 0.5, 0.56, 0.8].forEach(depth => {
-      s.worldX = -1; s.depth = depth;
-      out.push({ depth: depth, past: s.pastTheTrees() });
-    });
+    const rows = [];
+    for (let depth = 0.4; depth <= 0.9; depth += 0.02) {
+      s.worldX = -0.985; s.depth = depth;
+      rows.push({
+        depth: +depth.toFixed(2),
+        inTheWall: s.insideHouse(-0.985, depth),
+        out: s.pastTheTrees()
+      });
+    }
+    s.worldX = was.worldX; s.depth = was.depth;
+    return rows;
+  });
+  check('the left-hand edge of the lawn is a way into the woods at every depth',
+    leftEdge.every(r => r.out === true), leftEdge);
+  // ...and the only reason you cannot use all of it is the building.
+  // That is the wall rule doing its job, not a second rule about woods.
+  check('except up past the house, where you cannot stand on it at all',
+    leftEdge.filter(r => r.depth < 0.43).every(r => r.inTheWall === true) &&
+    leftEdge.filter(r => r.depth > 0.45).every(r => r.inTheWall === false), leftEdge);
+
+  // The hint is the only thing telling you the lawn carries on, and it
+  // must not fight the front door for the same corner.
+  const atTheCorner = await page.evaluate(() => {
+    const s = window.__yardDebug.scene;
+    const was = { worldX: s.worldX, depth: s.depth };
+    const at = (x, d) => { s.worldX = x; s.depth = d; return s.nearTheTrees(); };
+    const out = {
+      corner: at(-0.93, 0.74),
+      halfWay: at(-0.6, 0.74),
+      middle: at(-0.2, 0.74)
+    };
     s.worldX = was.worldX; s.depth = was.depth;
     return out;
   });
-  check('the edge of the lawn in front of the house is not a way out',
-    edgeUpTheGarden.filter(r => r.depth < 0.6).every(r => r.past === false),
-    edgeUpTheGarden);
-  check('but the corner past the end of it is',
-    edgeUpTheGarden[edgeUpTheGarden.length - 1].past === true, edgeUpTheGarden);
+  check('standing in the corner of the lawn says the woods are through it',
+    atTheCorner.corner === true, atTheCorner);
+  // A prompt that is up for a third of the scene is wallpaper, and the
+  // lawn has two other things on it that want saying.
+  check('but most of the lawn does not',
+    atTheCorner.halfWay === false && atTheCorner.middle === false, atTheCorner);
 
-  // The hint is the only thing telling you the lawn carries on, and it
-  // must not offer the woods while you are walking up to the front door.
-  const atTheDoorEnd = await page.evaluate(() => {
-    const d = window.__yardDebug;
-    d.moveTo(-0.9, 0.5);
-    return new Promise(res => setTimeout(() => res(d.state()), 240));
-  });
-  check('walking up the front of the house does not offer you the woods',
-    atTheDoorEnd.nearTheTrees === false, atTheDoorEnd);
-  const atTheCorner = await page.evaluate(() => {
-    const d = window.__yardDebug;
-    d.moveTo(-0.8, 0.78);
-    return new Promise(res => setTimeout(() => res(d.state()), 240));
-  });
-  check('but standing in the corner of the lawn does',
-    atTheCorner.nearTheTrees === true && /wood/i.test(atTheCorner.prompt || ''), atTheCorner);
-  check('and you are not through it yet', atTheCorner.pastTheTrees === false, atTheCorner);
+  // Which is the other half of the same bargain: walking left at the
+  // door's own height goes INSIDE, because the door is standing there.
+  // Worth pinning down - it is the one part of the left-hand side that
+  // is not the woods, and it would be very easy to "fix" by accident.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const leftAtTheDoor = await walkUntilStopped(page, [-0.2, 0.46], ['ArrowLeft'], 4000);
+  check('walking left at the door’s own height still goes in the front door',
+    leftAtTheDoor.end.gone === true || leftAtTheDoor.end.mode === 'entering', leftAtTheDoor);
+  check('and that is the house, not the woods',
+    await reachedPage(page, 'house.html', 6000), page.url());
+
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
 
   // Crossing the line is the cut, the same as the drive's.
   const intoTheTrees = await (async () => {
@@ -861,14 +873,14 @@ harness.run(async (page, check, ctx) => {
       back.pastTheTrees === false, back);
   }
 
-  // And the two other ways out of this scene still work with a third
-  // one in it - the woods must not have become a way to miss the door.
+  // And the ship still works with a third way out of the scene in it -
+  // the woods must not have become a way to miss the rest of it.
   await page.goto(ctx.url('yard.html'));
   await page.waitForTimeout(BOOT_MS);
-  const toDoor = await walkUntilStopped(page, [-0.5, 0.55], ['ArrowLeft', 'ArrowUp'], 4000);
-  check('the front door is still reachable with the woods there',
-    toDoor.end.gone === true || toDoor.end.mode === 'entering' ||
-    toDoor.end.atDoor === true, toDoor);
+  const toShip = await walkUntilStopped(page, [0.0, 0.62], ['ArrowRight'], 4000);
+  check('the ship is still reachable with the woods there',
+    toShip.end.gone === true || toShip.end.mode === 'board' ||
+    toShip.end.atShip === true, toShip);
 
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'yard.html' });

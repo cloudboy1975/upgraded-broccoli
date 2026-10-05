@@ -196,6 +196,40 @@ harness.run(async (page, check, ctx) => {
   check('and so does the whole picture',
     pixels.litWhole > pixels.unlitWhole + 0.8, pixels);
 
+  // ...and there is NO MOON. The light has a source - everything in
+  // here is lit from up and to the right - and you never see it, which
+  // is the whole mood of the place. A disc in the sky is the one thing
+  // that would undo it, and it is also the easiest thing to put back by
+  // accident, so it gets a number: the brightest patch of sky reads
+  // around 30 as it stands and around 180 with a moon in it.
+  const sky = await page.evaluate(() => new Promise(res => {
+    const s = window.__woodDebug.scene;
+    const h = Math.round(window.__woodDebug.bounds().horizon);
+    s.game.renderer.snapshotArea(0, 0, window.innerWidth, h, img => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      // The brightest 16x16 tile, because that is the shape of a moon.
+      let best = 0;
+      for (let ty = 0; ty + 16 <= c.height; ty += 8) {
+        for (let tx = 0; tx + 16 <= c.width; tx += 8) {
+          let t = 0;
+          for (let y = ty; y < ty + 16; y++) {
+            for (let x = tx; x < tx + 16; x++) {
+              const i = (y * c.width + x) * 4;
+              t += (px[i] + px[i + 1] + px[i + 2]) / 3;
+            }
+          }
+          if (t / 256 > best) best = t / 256;
+        }
+      }
+      res({ brightestTile: +best.toFixed(1) });
+    });
+  }));
+  check('and nothing in the sky is bright enough to be the moon making them',
+    sky.brightestTile < 70, sky);
+
   // --- something is looking at you ------------------------------------------
   // It comes and goes on its own. What can be WRONG about it rather than
   // merely random is where it is drawn: up in the sky it is a star, down

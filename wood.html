@@ -309,8 +309,8 @@
   // garden that disagree about the colour of the sky is the fastest
   // way to make a walk feel like a page load.
   var SKY_TOP = 0x05061a;
-  var SKY_BOTTOM = 0x0d1430;
-  var MOON = 0xcfd8ff;
+  var SKY_BOTTOM = 0x0a0f26;   // darker than the yard's: nothing up there lighting it
+  var STARS = 0xcfd8ff;      // the only thing left in the sky
   var CANOPY_FAR = 0x0a1120;
   var CANOPY_NEAR = 0x04070f;
   var GROUND_FAR = 0x0a0e0b;
@@ -803,21 +803,24 @@
     var horizon = this.horizonY();
     var self = this;
 
-    // Sky, and the moon low in it - the same moon as the yard, seen
-    // from under the trees rather than over the lawn.
+    // Sky, and NO MOON in it. The light has a source - everything in
+    // here is lit from up and to the right, the shafts lean away from
+    // it, every trunk has one bright edge - and you never see it. That
+    // is the whole mood of the place: out on the lawn the moon is the
+    // friendliest thing in the sky, and in here it is something you can
+    // only tell is there by what it does.
+    //
+    // Which also means the light has to carry the sky on its own, so
+    // there are stars in the gaps and nothing else.
     this.skyGfx.clear();
     this.skyGfx.fillGradientStyle(SKY_TOP, SKY_TOP, SKY_BOTTOM, SKY_BOTTOM, 1);
     this.skyGfx.fillRect(0, 0, W, horizon + 2);
-    var moonX = W * 0.78, moonY = horizon * 0.52, moonR = Math.min(W * 0.07, 34);
-    for (var halo = 5; halo >= 1; halo--) {
-      this.skyGfx.fillStyle(MOON, 0.035 * (6 - halo) / 5);
-      this.skyGfx.fillCircle(moonX, moonY, moonR * (1 + halo * 0.8));
+    for (var st = 0; st < 40; st++) {
+      var sx = ((st * 71) % 100) / 100 * W;
+      var sy = ((st * 43) % 100) / 100 * horizon * 0.86;
+      this.skyGfx.fillStyle(STARS, 0.18 + ((st * 19) % 50) / 100 * 0.5);
+      this.skyGfx.fillCircle(sx, sy, 0.6 + (st % 3) * 0.35);
     }
-    this.skyGfx.fillStyle(MOON, 0.92);
-    this.skyGfx.fillCircle(moonX, moonY, moonR);
-    this.skyGfx.fillStyle(0xa8b4d8, 0.5);                  // a sea or two on it
-    this.skyGfx.fillCircle(moonX - moonR * 0.3, moonY - moonR * 0.25, moonR * 0.26);
-    this.skyGfx.fillCircle(moonX + moonR * 0.22, moonY + moonR * 0.3, moonR * 0.19);
 
     // The wall of trunks at the back. Not props - you can never reach
     // them - so they are paint, drawn straight onto the backdrop at a

@@ -94,8 +94,7 @@ chapter of a longer game about two-dimensional aliens.
   carries on in both directions, with a kitchen at one end of it and a
   bed at the other. Walk up past the
   right-hand side of the house instead and you come out on the drive;
-  walk down to the bottom-left corner of the lawn and you are in the
-  woods.
+  walk left off the lawn and you are in the woods.
   The bottom-right button skips straight to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
@@ -106,27 +105,37 @@ chapter of a longer game about two-dimensional aliens.
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
 
-#### Down the garden, into the trees
+#### Left off the lawn, into the trees
 
-Off the **bottom-left corner of the lawn** is a wood. Not past the house
-the way the drive is: you cannot *get* past the house on that side. The
-world narrows toward the horizon, so at every depth up the garden the
-left-hand edge is still inside the building's own width — the only part
-of that edge clear of the house is the near corner, down by the camera,
-which is also where a lawn actually runs out into trees. Walk down and
-left and the lawn tells you they are there; keep going and you are in
-them. A cut, like every other doorway in the chapter, carrying the depth
-you were walking at.
+**Walk left from anywhere on the lawn** and you end up in the trees.
+The rule is one line — the left-hand edge of the world — and what keeps
+it honest is that the house is already solid: anywhere its wall is
+between you and the edge, you were stopped by brick several strides ago.
+The one part of that side that is *not* the woods is the front door,
+which stands in its own band and catches you when you walk into it,
+exactly as it always did. A cut, like every other doorway in the
+chapter, carrying the depth you were walking at.
 
-[`wood.html`](wood.html) exists for its **light**. The moon is up and to
-the right, there are four gaps in the canopy, and a shaft hangs under
-each one — leaning left, because that is the way light from a moon on
-the right actually falls, and because the lit edge of every trunk leans
-the same way. (The first draft had them leaning *into* the moon, which
-is two moons, and looks fine in a still.) The canopy and the shafts are
-drawn from **one list**: a beam with no gap over it is a torch nobody is
-holding. Motes are invisible until one drifts through a shaft, which is
-the whole reason the shafts read as air rather than paint.
+(The lawn is a trapezoid, so its left-hand edge is not the screen's. At
+the back of the garden the whole world is a couple of hundred pixels
+wide and the edge is a third of the way across the picture; down by the
+camera it is off the side of it. "Walk left until you cannot" is the
+rule; where that leaves you on screen is the perspective's business.)
+
+[`wood.html`](wood.html) exists for its **light**, and there is **no
+moon in it**. Everything is lit from up and to the right — four gaps in
+the canopy with a shaft under each, leaning left, every trunk bright
+down one edge — and you never see what is doing it. Out on the lawn the
+moon is the friendliest thing in the sky; in here you can only tell it
+is there by what it does. The sky gets stars and nothing else.
+
+The canopy and the shafts are drawn from **one list**: the canopy is a
+dark mass with a notch bitten out of it at each gap and a shaft hanging
+under the notch, so a beam with no gap over it is not a thing that can
+happen. (An early draft had them leaning *into* the light, which is two
+moons, and looks fine in a still.) Motes are invisible until one drifts
+through a shaft, which is the whole reason the shafts read as air rather
+than paint.
 
 The rest is quiet: bare trunks you walk round, a fallen one soft with
 rot, the old boundary stone where the garden ends and the wood does not

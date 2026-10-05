@@ -774,20 +774,28 @@ harness.run(async (page, check, ctx) => {
   // middle of a walk would pass every end-of-walk check there is.
   const watched = await (async () => {
     const rested = new Set(), places = new Set();
-    let insideAt = null, walked = false;
+    // Counted as ARRIVALS - walk, then rest - rather than as a tally
+    // of distinct spots. The spots are the same question asked less
+    // precisely: a cat that rests the full eight seconds and then
+    // sets off on a long walk reaches its second spot after the
+    // window closes, and the check went red for a cat behaving
+    // exactly as designed.
+    let insideAt = null, walked = false, arrivals = 0, wasWalking = false;
     const started = Date.now();
     while (Date.now() - started < 26000) {
       const c = await page.evaluate(() => window.__houseDebug.cat().at);
       if (c.insideFurniture) insideAt = c;
       if (c.mode === 'walk') walked = true;
-      if (c.mode === 'rest') rested.add(c.at);
+      if (c.mode === 'rest') { rested.add(c.at); if (wasWalking) arrivals++; }
+      wasWalking = c.mode === 'walk';
       places.add(c.worldX.toFixed(2) + ',' + c.depth.toFixed(2));
       await page.waitForTimeout(120);
     }
-    return { rested: rested.size, positions: places.size, walked, insideAt };
+    return { rested: rested.size, arrivals, positions: places.size, walked, insideAt };
   })();
   check('the cat gets up and walks about the room', watched.walked, watched);
-  check('and arrives somewhere other than where it started', watched.rested >= 2, watched);
+  check('and gets where it was going, rather than only setting off',
+    watched.arrivals >= 1, watched);
   check('having moved through more than a handful of places on the way',
     watched.positions > 12, watched);
   check('and is never found standing inside the furniture',
