@@ -390,20 +390,26 @@
             <path d="M10 34c22-14 40 6 62-5 20-10 34 8 56 0 24-9 40 9 62 1 20-7 36 10 60 2V12H10z"
                   fill="#222b36"/>
 
-            <!-- the box: lid leaning back, base open to the camera -->
-            <path d="M40 118 150 94 154 52 44 76Z" fill="#8d6c45"/>
-            <path d="M48 112 146 90 149 60 51 82Z" fill="#9c7a50"/>
-            <path d="M40 118 150 94 215 110 105 136Z" fill="#b98f5c"/>
-            <path d="M40 118 105 136 105 149 40 131Z" fill="#7d5e3b"/>
-            <path d="M105 136 215 110 215 123 105 149Z" fill="#6d5133"/>
-            <path d="M54 118 148 98 201 111 107 131Z" fill="#cda876"/>
+            <!-- the box: lid leaning back, base open to the camera.
+                 Cardboard reads warm and light, with the lid's INNER
+                 face the lightest thing on it - it is the surface facing
+                 the room. -->
+            <path d="M40 118 150 94 154 52 44 76Z" fill="#a9793f"/>
+            <path d="M47 113 147 91 150 58 50 80Z" fill="#c69a60"/>
+            <path d="M40 118 150 94 215 110 105 136Z" fill="#c08f54"/>
+            <path d="M40 118 105 136 105 150 40 132Z" fill="#8e6436"/>
+            <path d="M105 136 215 110 215 124 105 150Z" fill="#7d5730"/>
+            <path d="M52 118 148 97 203 111 107 132Z" fill="#d9ab6e"/>
+            <path d="M60 118 146 100 190 111 110 128Z" fill="#e2b87d" opacity="0.65"/>
 
-            <!-- one slice left, cheese side up, crust at the wide end -->
-            <path d="M94 128 156 101 171 117Z" fill="#e8c173"/>
-            <path d="M156 101 171 117 180 112 165 97Z" fill="#cf9b4e"/>
-            <circle cx="126" cy="117" r="5" fill="#ac3328"/>
-            <circle cx="147" cy="110" r="4.4" fill="#ac3328"/>
-            <circle cx="143" cy="121" r="3.8" fill="#ac3328"/>
+            <!-- one slice left, cheese side up, crust at the wide end,
+                 and the grease it left behind when it was a whole one -->
+            <path d="M118 124 170 99 186 113 136 130Z" fill="#dba963" opacity="0.5"/>
+            <path d="M90 130 160 99 177 118Z" fill="#f0c84b"/>
+            <path d="M160 99 177 118 187 113 170 94Z" fill="#d9a95c"/>
+            <circle cx="124" cy="119" r="5.4" fill="#b3291f"/>
+            <circle cx="148" cy="110" r="4.8" fill="#b3291f"/>
+            <circle cx="142" cy="122" r="4.2" fill="#b3291f"/>
 
             <!-- the half gallon: a brick of a carton standing in the
                  corner, flap hinged open, scraped out. Drawn on the same
@@ -411,7 +417,7 @@
                  rather than as two drawings. A half gallon is a big
                  thing, so it is scaled up as a group rather than by
                  moving forty numbers. -->
-            <g transform="translate(-34.3 -12.4) scale(1.12)">
+            <g transform="translate(-53.5 -24.5) scale(1.2)">
             <path d="M206 112 252 102 242 72 196 82Z" fill="#e8e1d2"/>
             <path d="M209 110 249 101 241 77 201 86Z" fill="#d4cbb7"/>
             <path d="M206 112 206 152 238 162 238 122Z" fill="#dcd5c4"/>
@@ -432,14 +438,14 @@
                  wall, out of sight - which is the bit that says the
                  carton is empty. Its lower end is cut along the rim's
                  own line, so there is no end of a spoon to see. -->
-            <path d="M251 119.1 255.4 118.2 273 81.2 268.6 79.4Z" fill="#f3eee2"/>
-            <path d="M253.6 118.6 255.4 118.2 273 81.2 271.2 80.4Z" fill="#c0b8a4" opacity="0.5"/>
+            <path d="M248.6 119.6 255.8 118.1 276 76.5 269.4 73.7Z" fill="#f3eee2"/>
+            <path d="M253.4 118.6 255.8 118.1 276 76.5 273.6 75.5Z" fill="#bdb5a0" opacity="0.5"/>
             </g>
             <!-- napkins, and the can that went with it -->
-            <path d="M58 146c9-12 20-7 28-13 8-5 17 2 13 11-4 10-19 15-30 11-8-3-15-5-11-9Z"
-                  fill="#cfc7b6"/>
-            <path d="M96 160 124 152 127 163 99 171Z" fill="#8f9aa6"/>
-            <path d="M99 161 124 154 125 158 100 165Z" fill="#aab4bf"/>
+            <path d="M50 152c10-15 24-8 34-16 10-7 22 2 17 14-5 13-24 19-38 14-10-4-19-6-13-12Z"
+                  fill="#ddd6c4"/>
+            <path d="M92 164 124 155 128 167 96 176Z" fill="#8f9aa6"/>
+            <path d="M95 165 124 157 125 162 96 170Z" fill="#aab4bf"/>
           </g>
           <!-- the rim of the bin, over everything -->
           <rect x="10" y="12" width="280" height="166" rx="12" fill="none"
