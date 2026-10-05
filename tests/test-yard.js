@@ -40,7 +40,9 @@ async function walkUntilBoarded(page, keys, budgetMs) {
 // through here instead, and a failure to arrive is just false.
 async function reachedPage(page, name, timeout) {
   try {
-    await page.waitForURL('**/' + name, { timeout: timeout });
+    // The trailing * matters: walking between scenes carries a query
+    // string, and a pattern without it matches neither.
+    await page.waitForURL('**/' + name + '*', { timeout: timeout });
     return true;
   } catch (e) {
     return false;
@@ -749,6 +751,124 @@ harness.run(async (page, check, ctx) => {
       await page.waitForTimeout(BOOT_MS);
     }
   }
+
+  // --- the woods, off the bottom-left corner ---------------------------------
+  // The drive is reached by walking PAST the house on its right. The
+  // woods cannot be reached the same way on its left, and that is a
+  // fact about the geometry rather than a choice: the world narrows
+  // toward the horizon, so at every depth UP the garden worldX -1 is
+  // still inside the house's own width. The only part of the left-hand
+  // edge that is clear of the building is the near corner, down by the
+  // camera - which is also where a lawn actually runs out into a wood.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+
+  const corner = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const f = s.houseFront();
+    const rows = [];
+    for (let depth = 0.4; depth <= 0.9; depth += 0.04) {
+      const me = s.placeAt(-1, depth);
+      rows.push({ depth: +depth.toFixed(2), clearOfTheHouse: me.x < f.left });
+    }
+    return { rows, front: { left: Math.round(f.left), y: Math.round(f.y) } };
+  });
+  check('the left-hand edge is inside the house up the garden',
+    corner.rows.filter(r => r.depth < 0.6).every(r => !r.clearOfTheHouse), corner);
+  check('and only clear of it down by the camera',
+    corner.rows.filter(r => r.depth > 0.7).every(r => r.clearOfTheHouse), corner);
+
+  // ...so the left-hand edge UP the garden must not be a way out. It is
+  // the front of the house: walking at it is walking into brick, and an
+  // exit there would put the woods on the other side of a wall.
+  //
+  // Read inside ONE evaluate and put back where it was found: standing
+  // at (-1, 0.8) IS through the line, so leaving the figure there lets
+  // the next frame navigate out from under the rest of this file.
+  const edgeUpTheGarden = await page.evaluate(() => {
+    const d = window.__yardDebug, s = d.scene;
+    const was = { worldX: s.worldX, depth: s.depth };
+    const out = [];
+    [0.44, 0.5, 0.56, 0.8].forEach(depth => {
+      s.worldX = -1; s.depth = depth;
+      out.push({ depth: depth, past: s.pastTheTrees() });
+    });
+    s.worldX = was.worldX; s.depth = was.depth;
+    return out;
+  });
+  check('the edge of the lawn in front of the house is not a way out',
+    edgeUpTheGarden.filter(r => r.depth < 0.6).every(r => r.past === false),
+    edgeUpTheGarden);
+  check('but the corner past the end of it is',
+    edgeUpTheGarden[edgeUpTheGarden.length - 1].past === true, edgeUpTheGarden);
+
+  // The hint is the only thing telling you the lawn carries on, and it
+  // must not offer the woods while you are walking up to the front door.
+  const atTheDoorEnd = await page.evaluate(() => {
+    const d = window.__yardDebug;
+    d.moveTo(-0.9, 0.5);
+    return new Promise(res => setTimeout(() => res(d.state()), 240));
+  });
+  check('walking up the front of the house does not offer you the woods',
+    atTheDoorEnd.nearTheTrees === false, atTheDoorEnd);
+  const atTheCorner = await page.evaluate(() => {
+    const d = window.__yardDebug;
+    d.moveTo(-0.8, 0.78);
+    return new Promise(res => setTimeout(() => res(d.state()), 240));
+  });
+  check('but standing in the corner of the lawn does',
+    atTheCorner.nearTheTrees === true && /wood/i.test(atTheCorner.prompt || ''), atTheCorner);
+  check('and you are not through it yet', atTheCorner.pastTheTrees === false, atTheCorner);
+
+  // Crossing the line is the cut, the same as the drive's.
+  const intoTheTrees = await (async () => {
+    await page.evaluate(() => window.__yardDebug.moveTo(-0.5, 0.76));
+    await page.waitForTimeout(160);
+    await page.keyboard.down('ArrowLeft');
+    const seen = new Set();
+    const started = Date.now();
+    while (Date.now() - started < 4000) {
+      const st = await readState(page);
+      if (st.gone) break;
+      seen.add(st.mode);
+      if (st.mode === 'gone') break;
+      await page.waitForTimeout(40);
+    }
+    await page.keyboard.up('ArrowLeft').catch(() => {});
+    return [...seen];
+  })();
+  check('crossing it cuts straight to the woods, with no leaving sequence',
+    intoTheTrees.indexOf('entering') === -1 && intoTheTrees.indexOf('board') === -1,
+    intoTheTrees);
+  check('and lands in them', await reachedPage(page, 'wood.html', 6000), page.url());
+  const handover = new URL(page.url());
+  check('carrying the depth you were walking at across with you',
+    handover.searchParams.get('from') === 'yard' &&
+    Math.abs(parseFloat(handover.searchParams.get('d')) - 0.76) < 0.08, page.url());
+
+  // Coming back out of them puts you at the corner you left by, at the
+  // depth you left at - not on the doorstep and not in the brickwork.
+  for (const d of [0.66, 0.8]) {
+    await page.goto(ctx.url(`yard.html?from=wood&d=${d}`));
+    await page.waitForTimeout(BOOT_MS);
+    const back = await readState(page);
+    check(`coming back out at depth ${d} puts you on that side of the lawn`,
+      back.gone !== true && back.worldX < -0.6, back);
+    check(`...out on the grass rather than in the wall`,
+      back.inWall === false && back.atDoor === false, back);
+    check(`...at the depth you left at`, Math.abs(back.depth - d) < 0.02, back);
+    check(`...and not one step from walking straight back in`,
+      back.pastTheTrees === false, back);
+  }
+
+  // And the two other ways out of this scene still work with a third
+  // one in it - the woods must not have become a way to miss the door.
+  await page.goto(ctx.url('yard.html'));
+  await page.waitForTimeout(BOOT_MS);
+  const toDoor = await walkUntilStopped(page, [-0.5, 0.55], ['ArrowLeft', 'ArrowUp'], 4000);
+  check('the front door is still reachable with the woods there',
+    toDoor.end.gone === true || toDoor.end.mode === 'entering' ||
+    toDoor.end.atDoor === true, toDoor);
 
   check('no page errors after full run', errors.length === 0, errors);
 }, { page: 'yard.html' });

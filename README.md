@@ -93,7 +93,9 @@ chapter of a longer game about two-dimensional aliens.
   the flight tutorial and the TV is showing the news — and the house
   carries on in both directions, with a kitchen at one end of it and a
   bed at the other. Walk up past the
-  right-hand side of the house instead and you come out on the drive.
+  right-hand side of the house instead and you come out on the drive;
+  walk down to the bottom-left corner of the lawn and you are in the
+  woods.
   The bottom-right button skips straight to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
@@ -103,6 +105,38 @@ chapter of a longer game about two-dimensional aliens.
   arrives and he rises out of the planet. Three belly cores answer only
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
+
+#### Down the garden, into the trees
+
+Off the **bottom-left corner of the lawn** is a wood. Not past the house
+the way the drive is: you cannot *get* past the house on that side. The
+world narrows toward the horizon, so at every depth up the garden the
+left-hand edge is still inside the building's own width — the only part
+of that edge clear of the house is the near corner, down by the camera,
+which is also where a lawn actually runs out into trees. Walk down and
+left and the lawn tells you they are there; keep going and you are in
+them. A cut, like every other doorway in the chapter, carrying the depth
+you were walking at.
+
+[`wood.html`](wood.html) exists for its **light**. The moon is up and to
+the right, there are four gaps in the canopy, and a shaft hangs under
+each one — leaning left, because that is the way light from a moon on
+the right actually falls, and because the lit edge of every trunk leans
+the same way. (The first draft had them leaning *into* the moon, which
+is two moons, and looks fine in a still.) The canopy and the shafts are
+drawn from **one list**: a beam with no gap over it is a torch nobody is
+holding. Motes are invisible until one drifts through a shaft, which is
+the whole reason the shafts read as air rather than paint.
+
+The rest is quiet: bare trunks you walk round, a fallen one soft with
+rot, the old boundary stone where the garden ends and the wood does not
+— and, every half-minute or so, a pair of eyes somewhere out past the
+trunks that open, blink once, and are gone. Nothing comes of them and
+nothing is meant to. A wood you can see all of is a park.
+
+Walking **deeper in** is the one direction in the chapter that refuses.
+It says so rather than silently stopping you: a wall you can see is
+scenery, a wall you cannot is a bug.
 
 #### Round the side of the house
 
@@ -299,7 +333,7 @@ additionally share a centered-card page layout, while Asteroids II,
 Head-On and Painted Lands break out to layouts suited to their controls.
 Every screen links back to the games hub.
 
-`head-on.html`, `yard.html`, `house.html`, `kitchen.html`,
+`head-on.html`, `yard.html`, `wood.html`, `house.html`, `kitchen.html`,
 `bedroom.html` and `driveway.html` have a
 browser test suite in
 [`tests/`](tests/) — plain Node scripts driving a real Chromium through

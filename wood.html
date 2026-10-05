@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Head-On &mdash; The woods</title>
+<style>
+  :root {
+    --bg-1: #1a1116;
+    --text: #f1e9dc;
+    --muted: #b9ad98;
+    --accent: #e8c07a;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+  body {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100vw;
+    background: var(--bg-1);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #gameRoot { position: fixed; inset: 0; z-index: 0; }
+  #gameRoot canvas { display: block; }
+
+  .hud-bar {
+    position: fixed;
+    top: env(safe-area-inset-top);
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px max(12px, env(safe-area-inset-left));
+    z-index: 10;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    pointer-events: none;
+  }
+
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    pointer-events: auto;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  .back-link:hover { color: var(--text); }
+
+  .chapter-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: rgba(26, 17, 22, 0.45);
+    border: 1px solid rgba(241, 233, 220, 0.2);
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+
+  /* One line of text, top-centre. Doubles as the opening line and as the
+     proximity prompt for whatever you are standing next to, so there is
+     never more than one thing to read - see setPrompt(). */
+  .hint {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 46px);
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    z-index: 10;
+    pointer-events: none;
+    padding: 0 20px;
+    transition: opacity 0.5s ease;
+  }
+  .hint.hidden { opacity: 0; }
+
+  .hint.tappable {
+    pointer-events: auto;
+    cursor: pointer;
+    color: #bdf3e4;
+  }
+
+  .control-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    touch-action: none;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .control-bar > * { pointer-events: auto; }
+  .control-bar.gone { opacity: 0; pointer-events: none; }
+
+  /* The analog stick from yard.html, unchanged - wherever the thumb
+     lands becomes that press's neutral centre. */
+  .stick-zone {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: rgba(26, 17, 22, 0.4);
+    border: 1px solid rgba(241, 233, 220, 0.15);
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    overflow: visible;
+  }
+  /* Same invisible hit slop the game's controls got: a thumb arriving
+     from above lands high, and there is nothing above this but room. */
+  .stick-zone::before {
+    content: '';
+    position: absolute;
+    top: -22px;
+    bottom: -10px;
+    left: -12px;
+    right: -12px;
+  }
+  .stick-anchor {
+    position: absolute;
+    top: 0; left: 0;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-anchor.visible { opacity: 1; }
+
+  .stick-knob {
+    position: absolute;
+    top: 0; left: 0;
+    width: 50px;
+    height: 50px;
+    margin-left: -25px;
+    margin-top: -25px;
+    border-radius: 50%;
+    background: rgba(241, 233, 220, 0.16);
+    border: 2px solid rgba(241, 233, 220, 0.45);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-knob.visible { opacity: 1; }
+
+  /* Quiet by design, exactly like the yard's Fly button: an escape
+     hatch, not the thing to do. Same shape and position so the two
+     scenes feel like one place. */
+  /* The way IN. Leaving is drawn inside the scene; arriving cannot be,
+     because there is no scene yet when the page first paints - so the
+     page starts black and clears itself once the first frame is up. */
+  .blackout {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  .blackout.visible { opacity: 1; }
+  .blackout.instant { transition: none; }
+
+  .out-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    position: relative;
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 1px solid rgba(241, 233, 220, 0.22);
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.28), rgba(90, 70, 35, 0.16) 70%);
+    color: rgba(241, 233, 220, 0.72);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    font-family: inherit;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 0.08s, background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .out-btn::before {
+    content: '';
+    position: absolute;
+    top: -22px;
+    bottom: -10px;
+    left: -12px;
+    right: -12px;
+  }
+  /* Lit differently when it is an action rather than the exit, so the
+     change is visible from the corner of the eye and not only readable. */
+  .out-btn.acts {
+    border-color: rgba(125, 211, 252, 0.5);
+    background: radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.3), rgba(30, 64, 94, 0.2) 70%);
+    color: rgba(226, 246, 255, 0.92);
+  }
+  .out-btn.acts .out-icon { border-left-color: rgba(190, 233, 255, 0.85); }
+  .out-btn:active, .out-btn.active {
+    transform: scale(0.93);
+    background: radial-gradient(circle at 35% 30%, rgba(232, 192, 122, 0.85), rgba(90, 70, 35, 0.5) 70%);
+    border-color: rgba(241, 233, 220, 0.5);
+    color: #2b1f08;
+    text-shadow: none;
+  }
+  .out-icon {
+    width: 0; height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-left: 14px solid rgba(241, 233, 220, 0.6);
+    pointer-events: none;
+  }
+  .out-btn:active .out-icon, .out-btn.active .out-icon { border-left-color: rgba(43, 31, 8, 0.85); }
+</style>
+</head>
+<body>
+  <div id="gameRoot"></div>
+  <div class="blackout visible" id="blackout"></div>
+
+  <div class="hud-bar">
+    <a class="back-link" href="index.html">&larr; All</a>
+    <div class="chapter-tag">Chapter 1</div>
+  </div>
+
+  <div class="hint" id="hint">The woods</div>
+
+  <div class="control-bar" id="controlBar">
+    <div class="stick-zone" id="stickZone" aria-label="Walk (press anywhere and drag)">
+      <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
+      <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
+    </div>
+
+    <!-- One button, two jobs. In the open it is the way out; standing
+         at something that acts, it becomes that thing - see
+         syncActionButton(). The prompt line names what you are at, the
+         button says what pressing it will do. -->
+    <button type="button" class="out-btn" id="outBtn" aria-label="Go back outside">
+      <span class="out-icon" aria-hidden="true"></span>
+      <span id="outLabel">Out</span>
+    </button>
+  </div>
+
+<script src="phaser.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  // ==================================================================
+  // The woods - off the bottom-left corner of the yard.
+  //
+  // The same walk-on-a-trapezoid as the yard, and deliberately the same
+  // numbers doing it: the horizon, the perspective, the figure, the
+  // wind. This is the end of the garden rather than a different game,
+  // and the walk has to feel identical or it is not the same night.
+  //
+  // What it is FOR is the light. The yard is an open field under a
+  // moon; this is the same moon seen from under a canopy, which means
+  // shafts - and a shaft of moonlight is the one thing in this chapter
+  // drawn for its own sake. Everything else in here is in service of
+  // them: the canopy exists to have gaps in it, the mist exists to be
+  // something for them to land on, the motes exist to be visible when
+  // they drift through one.
+  //
+  // The way back is the way you came: keep walking right and you are
+  // on the lawn again. Crossing that line is a CUT, the same rule as
+  // every other doorway in the chapter.
+  // ==================================================================
+  var THIS_ROOM = 'wood';
+  var BACK_PAGE = 'yard.html';
+
+  // The same night as the yard, one stop darker. Every colour here is
+  // either lifted from yard.html or a shade of it - two halves of one
+  // garden that disagree about the colour of the sky is the fastest
+  // way to make a walk feel like a page load.
+  var SKY_TOP = 0x05061a;
+  var SKY_BOTTOM = 0x0d1430;
+  var MOON = 0xcfd8ff;
+  var CANOPY_FAR = 0x0a1120;
+  var CANOPY_NEAR = 0x04070f;
+  var GROUND_FAR = 0x0a0e0b;
+  var GROUND_NEAR = 0x040705;
+  var LITTER = 0x2a2a1c;
+  var PATH = 0x151a13;
+  var BARK = 0x1d1812;
+  var BARK_LIT = 0x3b3127;      // the side the moon is on, which is the right
+  var BEAM = 0xbcd0ff;
+  var MIST = 0x9fb0cf;
+  var EYES = 0xc8d87a;          // the one warm-ish thing out here, which is the point
+
+  // ==================================================================
+  // Perspective - identical model to yard.html
+  // ==================================================================
+  var MOVE_SPEED_X = 0.62;     // worldX units/sec, worldX in [-1, 1]
+  var MOVE_SPEED_DEPTH = 0.44; // depth units/sec, depth in [0 far, 1 near]
+  var MIN_SCALE = 0.34;
+  var HORIZON_FRAC = 0.46;     // a touch lower than the yard's: less sky, more trees
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  // ==================================================================
+  // Where everything stands.
+  //
+  // Trunks, mostly. They are drawn as one texture at different depths
+  // and sizes rather than as a set of drawings, because what makes a
+  // wood is the REPETITION - the same tree at six distances is a wood,
+  // six different trees is an arboretum.
+  //
+  // Sized against the FIGURE, who is 1.75m and about 45px tall out
+  // here: these are 12-to-15 metre trees, which is why their tops are
+  // off above the horizon and their feet are the only part of them you
+  // ever walk up to.
+  // ==================================================================
+  var PROPS = {
+    treeA: { worldX: -0.88, depth: 0.20, size: 1.15 },
+    treeB: { worldX: -0.30, depth: 0.32, size: 1.3 },
+    treeC: { worldX: 0.46, depth: 0.24, size: 1.2 },
+    treeD: { worldX: 0.92, depth: 0.42, size: 1.45 },
+    treeE: { worldX: -0.78, depth: 0.56, size: 1.6 },
+    treeF: { worldX: 0.50, depth: 0.70, size: 1.75 },
+    log: { worldX: -0.40, depth: 0.64, size: 1.0 },
+    stone: { worldX: 0.76, depth: 0.54, size: 1.0 }
+  };
+
+  // Half-sizes in each prop's own texture px - x across the ground, y
+  // up it. A trunk is a narrow thing on the floor whatever its branches
+  // are doing overhead, so these are much tighter than the drawings.
+  var FOOTPRINTS = {
+    treeA: { x: 9, y: 4 },
+    treeB: { x: 9, y: 4 },
+    treeC: { x: 9, y: 4 },
+    treeD: { x: 9, y: 4 },
+    treeE: { x: 9, y: 4 },
+    treeF: { x: 9, y: 4 },
+    log: { x: 54, y: 9 },
+    stone: { x: 17, y: 7 }
+  };
+  var HUMAN_HALF_X = 7;
+  var HUMAN_HALF_Y = 3;
+
+  var REACH_X = 60;
+  var REACH_Y = 120;
+
+  // ==================================================================
+  // The canopy, and the gaps the light comes through.
+  //
+  // One list, read twice: the canopy is drawn as a dark mass hanging
+  // from the top of the screen with a notch cut at each of these, and
+  // each notch then has a shaft of moonlight hanging under it. That is
+  // the whole trick, and it is why they cannot drift apart - a beam
+  // with no gap over it is a torch nobody is holding.
+  //
+  //   at    - where the gap sits, as a fraction of the screen's width
+  //   width - how wide the gap is, likewise
+  //   lean  - how far the shaft slides by the time it reaches the
+  //           ground, as a fraction of the screen's width. NEGATIVE,
+  //           and every one of them: the moon is up and to the right,
+  //           so light from it travels down and to the LEFT. The first
+  //           draft had these leaning the other way, which put the
+  //           shafts and the lit edge of every trunk on opposite sides
+  //           of the sky - two moons, and the kind of thing that looks
+  //           fine in a still and wrong the moment you see the picture.
+  //   lit   - how bright, before the breathing
+  //
+  // They are spaced so that every shaft LANDS somewhere you can see it
+  // land. A shaft whose foot is off the side of a phone is half a
+  // drawing: the part that makes it light rather than a pale stripe is
+  // the part that hits the ground.
+  // ==================================================================
+  var GAPS = [
+    { at: 0.42, width: 0.1, lean: -0.26, lit: 0.85 },
+    { at: 0.62, width: 0.06, lean: -0.24, lit: 0.5 },
+    { at: 0.82, width: 0.14, lean: -0.3, lit: 1 },
+    { at: 0.96, width: 0.08, lean: -0.22, lit: 0.6 }
+  ];
+  var BEAM_SLICES = 16;        // how many bands each shaft is stacked from
+  var BEAM_TOP_ALPHA = 0.105;  // ...and how solid the top one is
+  var BEAM_BREATH = 0.22;      // how much the branches move, as a fraction
+  var MOTES = 26;
+  var MIST_BANDS = 5;
+
+  // ==================================================================
+  // Something is looking at you.
+  //
+  // One pair of eyes at a time, out in the dark past the trunks: up
+  // over a second or so, a blink, and gone again. Nothing comes of it
+  // and nothing is meant to - a wood you can see all of is a park.
+  // ==================================================================
+  var EYE_SPOTS = [
+    { x: 0.08, y: 0.1 }, { x: 0.31, y: 0.05 }, { x: 0.54, y: 0.13 },
+    { x: 0.72, y: 0.04 }, { x: 0.93, y: 0.11 }
+  ];
+  var EYE_UP = 1.1;            // seconds fading in
+  var EYE_HOLD = 2.4;          // ...open...
+  var EYE_DOWN = 0.9;          // ...and gone
+  var EYE_GAP_MIN = 5;         // and how long until the next pair, at least
+  var EYE_GAP_MAX = 13;
+  var EYE_BLINK_AT = 0.55;     // where in the hold the blink falls
+  var EYE_BLINK_FOR = 0.14;
+
+  var START = { worldX: 0.14, depth: 0.84 };
+  // How far across counts as out of the trees, and how far in you land
+  // coming the other way. The pair is what stops the two sides handing
+  // you back and forth forever.
+  var SIDE_EXIT = 0.985;
+  var SIDE_ENTER = 0.78;
+  // ...and the other end, which is not a way anywhere. Walking deeper
+  // in is the one direction this scene refuses, and it says so rather
+  // than silently stopping you: a wall you can see is scenery, a wall
+  // you cannot is a bug.
+  var DEEP_EDGE = 0.9;
+  var DEEP_LINE = 'Further in it is black. Not tonight.';
+  var LEAVE_FADE = 0.45; // seconds of black before the yard loads
+
+  // ==================================================================
+  // Scene
+  // ==================================================================
+  var mainScene = null;
+  var navigated = false;
+
+  function goPage(page) {
+    if (navigated) return;
+    navigated = true;
+    window.location.href = page || BACK_PAGE;
+  }
+  function goOutside() { goPage(BACK_PAGE); }
+
+  // Where you walked in from, and at what depth. There is no doorway
+  // between the lawn and the trees to work a landing spot out from, so
+  // the depth you were walking at comes across in the URL and you carry
+  // on from there - which is the whole of what continuity means here.
+  function cameFromTheSide() {
+    return /(?:^|[?&])from=yard(?:&|$)/.test(window.location.search || '');
+  }
+  function arrivalDepth(fallback) {
+    var m = /(?:^|[?&])d=([^&]*)/.exec(window.location.search || '');
+    var d = m ? parseFloat(decodeURIComponent(m[1])) : NaN;
+    return isFinite(d) ? clamp(d, 0.12, 0.9) : fallback;
+  }
+
+  // Arriving is a cut, because leaving was: the black goes the moment
+  // there is a frame, with no fade up. Coming in any other way - a
+  // bookmark, a reload - still gets the fade, because then there is
+  // nothing for it to be continuous with.
+  function clearArrivalFade() {
+    var el = document.getElementById('blackout');
+    if (!el) return;
+    if (cameFromTheSide()) el.classList.add('instant');
+    el.classList.remove('visible');
+  }
+
+  function MainScene() {
+    Phaser.Scene.call(this, { key: 'Main' });
+  }
+  MainScene.prototype = Object.create(Phaser.Scene.prototype);
+  MainScene.prototype.constructor = MainScene;
+
+  MainScene.prototype.create = function () {
+    mainScene = this;
+
+    this.mode = 'walk'; // 'walk' -> 'leaving' -> 'gone', or straight to 'gone'
+    this.modeAge = 0;
+    this.worldX = cameFromTheSide() ? SIDE_ENTER : START.worldX;
+    this.depth = cameFromTheSide() ? arrivalDepth(START.depth) : START.depth;
+    this.flipX = true;
+    this.bobPhase = 0;
+    this.idlePhase = Math.random() * 10;
+    this.prompt = null;
+    this.action = null;
+    this.exitPage = null;
+    this.buttonVerb = null;
+    this.age = 0;
+
+    // Motes, which exist to be invisible until one drifts through a
+    // shaft. Spread over the whole screen rather than seeded into the
+    // beams, because a mote that is only ever lit is a firefly.
+    this.motes = [];
+    for (var i = 0; i < MOTES; i++) {
+      this.motes.push({
+        xFrac: Math.random(), yFrac: 0.2 + Math.random() * 0.78,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.1 + Math.random() * 0.22,
+        drift: 0.4 + Math.random() * 0.9
+      });
+    }
+    this.eyes = { at: 0, age: 0, wait: 1.5 + Math.random() * 4, on: false };
+
+    this.buildTextures();
+    this.buildLayers();
+    this.buildProps();
+    // Whatever depth you came in at, you may not arrive standing in a
+    // tree. Stepping out toward the camera is the one direction that is
+    // always open along an edge.
+    this.depth = this.freeDepthFrom(this.worldX, this.depth);
+    this.redrawAll();
+
+    var self = this;
+    this.scale.on('resize', function () {
+      self.redrawAll();
+      self.layoutProps();
+    });
+
+    this.exposeDebugHooks();
+    clearArrivalFade();
+  };
+
+  // ---- Textures ------------------------------------------------------
+  MainScene.prototype.buildTextures = function () {
+    var self = this;
+
+    // The same figure as the yard and the house. Literally the same
+    // drawing code - this is the same person who just walked off the
+    // bottom of their own lawn.
+    (function () {
+      var w = 34, h = 56;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(w / 2, h - 3, w * 0.5, 7);
+      g.fillStyle(0x2f3f63, 1);
+      g.fillRect(w * 0.34, h * 0.6, w * 0.13, h * 0.36);
+      g.fillRect(w * 0.53, h * 0.6, w * 0.13, h * 0.36);
+      g.fillStyle(0x7d8fb5, 1);
+      g.fillRoundedRect(w * 0.26, h * 0.3, w * 0.48, h * 0.34, 4);
+      g.fillStyle(0x9fb0d4, 1);
+      g.fillRect(w * 0.18, h * 0.33, w * 0.1, h * 0.26);
+      g.fillRect(w * 0.72, h * 0.33, w * 0.1, h * 0.26);
+      g.fillStyle(0xe6c9a8, 1);
+      g.fillCircle(w / 2, h * 0.2, w * 0.17);
+      g.fillStyle(0x3a2d24, 1);
+      g.fillEllipse(w / 2, h * 0.145, w * 0.36, w * 0.22);
+      g.generateTexture('youTex', w, h);
+      g.destroy();
+    })();
+
+    // One trunk, used six times. It is lit hard down its right-hand
+    // edge and black everywhere else, because a cylinder in the dark is
+    // a line of light with a shape attached - and because every shaft
+    // in here leans the same way, so every trunk has to be lit from the
+    // same side or the wood has two moons in it.
+    (function () {
+      var w = 72, h = 470;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      var cx = w * 0.5, half = w * 0.13;
+
+      g.fillStyle(0x000000, 0.34);                       // the shadow it casts
+      g.fillEllipse(cx, h - 5, w * 0.46, 9);
+
+      g.fillStyle(BARK, 1);                              // roots, splaying out
+      [[-1, 0.26], [-1, 0.13], [1, 0.3], [1, 0.16]].forEach(function (r) {
+        g.beginPath();
+        g.moveTo(cx + r[0] * half, h - 46);
+        g.lineTo(cx + r[0] * w * r[1], h - 6);
+        g.lineTo(cx + r[0] * (w * r[1] - 7), h - 6);
+        g.lineTo(cx + r[0] * half * 0.3, h - 46);
+        g.closePath();
+        g.fillPath();
+      });
+
+      g.fillStyle(BARK, 1);                              // the trunk, tapering
+      g.beginPath();                                     // to nothing at the top
+      g.moveTo(cx - half, h - 8);
+      g.lineTo(cx + half, h - 8);
+      g.lineTo(cx + half * 0.1, 0);
+      g.lineTo(cx - half * 0.1, 0);
+      g.closePath();
+      g.fillPath();
+
+      g.fillStyle(BARK_LIT, 1);                          // the moon down one edge
+      g.beginPath();
+      g.moveTo(cx + half * 0.44, h - 10);
+      g.lineTo(cx + half, h - 10);
+      g.lineTo(cx + half * 0.1, 0);
+      g.lineTo(cx + half * 0.04, 0);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x000000, 0.4);                        // ...and bark, in it
+      for (var b = 0; b < 16; b++) {
+        var by = h * (0.04 + b * 0.058);
+        g.fillRect(cx + half * (0.38 + (b % 3) * 0.14), by, 1.6, h * 0.035);
+      }
+
+      // Branches, starting well up. Drawn as plain tapered strokes: at
+      // this size a branch is a direction, not a drawing.
+      [[-1, 0.4, 0.46, 5.5], [1, 0.33, 0.42, 5], [-1, 0.25, 0.36, 4.2],
+       [1, 0.2, 0.32, 3.6], [-1, 0.14, 0.26, 3], [1, 0.1, 0.22, 2.4],
+       [-1, 0.06, 0.16, 1.8], [1, 0.035, 0.12, 1.4]]
+        .forEach(function (br) {
+          g.lineStyle(br[3], BARK, 1);
+          g.beginPath();
+          g.moveTo(cx, h * br[1]);
+          g.lineTo(cx + br[0] * w * br[2], h * (br[1] - 0.08));
+          g.strokePath();
+          g.lineStyle(br[3] * 0.6, BARK, 1);               // ...and a fork off each
+          g.beginPath();
+          g.moveTo(cx + br[0] * w * br[2] * 0.55, h * (br[1] - 0.044));
+          g.lineTo(cx + br[0] * w * br[2] * 0.9, h * (br[1] - 0.13));
+          g.strokePath();
+        });
+      g.generateTexture('treeTex', w, h);
+      g.destroy();
+    })();
+
+    // A fallen trunk, lying across the ground and lit along its top.
+    (function () {
+      var w = 130, h = 46;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(w * 0.5, h - 4, w * 0.86, 8);
+      g.fillStyle(BARK, 1);
+      g.fillRoundedRect(w * 0.03, h * 0.38, w * 0.94, h * 0.48, 9);
+      g.fillStyle(BARK_LIT, 1);                          // the moon along the top
+      g.fillRoundedRect(w * 0.05, h * 0.36, w * 0.9, h * 0.14, 6);
+      g.fillStyle(0x2c2a1d, 1);                          // the broken end, end-on
+      g.fillEllipse(w * 0.94, h * 0.6, w * 0.07, h * 0.24);
+      g.fillStyle(0x1a1a12, 1);
+      g.fillEllipse(w * 0.94, h * 0.6, w * 0.04, h * 0.14);
+      g.fillStyle(0x33402a, 1);                          // moss, on the shaded side
+      [0.18, 0.34, 0.56, 0.72].forEach(function (f) {
+        g.fillEllipse(w * f, h * 0.78, w * 0.08, h * 0.1);
+      });
+      g.generateTexture('logTex', w, h);
+      g.destroy();
+    })();
+
+    // The boundary stone, which is the only thing out here anybody put
+    // where it is.
+    (function () {
+      var w = 44, h = 58;
+      var g = self.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(w * 0.5, h - 4, w * 0.6, 7);
+      g.fillStyle(0x2b2b2e, 1);
+      g.beginPath();
+      g.moveTo(w * 0.3, h - 5);
+      g.lineTo(w * 0.26, h * 0.26);
+      g.lineTo(w * 0.52, h * 0.12);
+      g.lineTo(w * 0.74, h * 0.3);
+      g.lineTo(w * 0.72, h - 5);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x45464c, 1);                          // the lit face
+      g.beginPath();
+      g.moveTo(w * 0.52, h * 0.12);
+      g.lineTo(w * 0.74, h * 0.3);
+      g.lineTo(w * 0.72, h - 5);
+      g.lineTo(w * 0.54, h - 5);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x33402a, 1);                          // lichen
+      g.fillEllipse(w * 0.4, h * 0.6, w * 0.14, h * 0.1);
+      g.fillEllipse(w * 0.62, h * 0.78, w * 0.1, h * 0.07);
+      g.generateTexture('stoneTex', w, h);
+      g.destroy();
+    })();
+  };
+
+  MainScene.prototype.buildLayers = function () {
+    this.skyGfx = this.add.graphics().setDepth(-40);
+    this.farGfx = this.add.graphics().setDepth(-34);   // the wall of trunks at the back
+    this.eyeGfx = this.add.graphics().setDepth(-32);   // ...and what is standing in it
+    this.groundGfx = this.add.graphics().setDepth(-28);
+    // The shafts sit behind everything you can walk round and in front
+    // of everything you cannot, which is what makes them AIR rather
+    // than paint: a near trunk occludes them, the far wall does not.
+    this.beamGfx = this.add.graphics().setDepth(-20);
+    this.mistGfx = this.add.graphics().setDepth(-16);
+    this.canopyGfx = this.add.graphics().setDepth(2000); // hangs over everything,
+                                                         // trunks included: it IS their tops
+    this.moteGfx = this.add.graphics().setDepth(-6);
+    this.fadeGfx = this.add.graphics().setDepth(10000);
+  };
+
+  // Everything standing on the ground is a sprite with its origin at
+  // its feet, sorted by screen Y - so walking in front of a trunk puts
+  // you in front of it, with no z bookkeeping at all.
+  MainScene.prototype.buildProps = function () {
+    var self = this;
+    this.sprites = {};
+    Object.keys(PROPS).forEach(function (key) {
+      var tex = key === 'log' ? 'logTex' : (key === 'stone' ? 'stoneTex' : 'treeTex');
+      self.sprites[key] = self.add.sprite(0, 0, tex).setOrigin(0.5, 1);
+    });
+    this.you = this.add.sprite(0, 0, 'youTex').setOrigin(0.5, 0.94);
+    this.layoutProps();
+  };
+
+  // ---- Geometry ------------------------------------------------------
+  MainScene.prototype.horizonY = function () { return this.scale.height * HORIZON_FRAC; };
+  MainScene.prototype.depthToScreenY = function (depth) {
+    return lerp(this.horizonY(), this.scale.height, depth);
+  };
+  MainScene.prototype.depthToScale = function (depth) { return lerp(MIN_SCALE, 1, depth); };
+  MainScene.prototype.depthToHalfWidth = function (depth) {
+    return lerp(this.scale.width * 0.05, this.scale.width * 0.48, depth);
+  };
+  MainScene.prototype.placeAt = function (worldX, depth) {
+    return {
+      x: this.scale.width / 2 + worldX * this.depthToHalfWidth(depth),
+      y: this.depthToScreenY(depth),
+      scale: this.depthToScale(depth)
+    };
+  };
+
+  // What you would be standing in at (worldX, depth), or null. Returns
+  // the prop's NAME rather than a bare true: the thing that stopped you
+  // is what a test - or a puzzled look at the debug state - wants.
+  //
+  // Tested in screen space rather than in world coordinates, because
+  // the ground is a trapezoid: the same worldX gap is a much smaller
+  // walk at the back than at the front, and it is what the player can
+  // see that has to decide whether they fit.
+  MainScene.prototype.blockedAt = function (worldX, depth, halfX, halfY) {
+    var me = this.placeAt(worldX, depth);
+    var myScale = this.depthToScale(depth);
+    var mineX = (halfX === undefined ? HUMAN_HALF_X : halfX) * myScale;
+    var mineY = (halfY === undefined ? HUMAN_HALF_Y : halfY) * myScale;
+    var keys = Object.keys(FOOTPRINTS);
+    for (var i = 0; i < keys.length; i++) {
+      var foot = FOOTPRINTS[keys[i]], prop = PROPS[keys[i]];
+      var it = this.placeAt(prop.worldX, prop.depth);
+      var s = this.depthToScale(prop.depth) * prop.size;
+      if (Math.abs(me.x - it.x) >= foot.x * s + mineX) continue;
+      if (Math.abs(me.y - it.y) >= foot.y * s + mineY) continue;
+      return keys[i];
+    }
+    return null;
+  };
+
+  // Walking in along an open edge, at whatever depth you were walking
+  // at on the lawn, can land you in a tree. Step toward the camera
+  // until there is ground: forward along an edge is the one direction
+  // that is always open.
+  MainScene.prototype.freeDepthFrom = function (worldX, depth) {
+    var d = clamp(depth, 0.12, 0.9);
+    for (var i = 0; i < 40; i++) {
+      if (this.blockedAt(worldX, d) === null) return d;
+      d = Math.min(0.92, d + 0.02);
+    }
+    return d;
+  };
+
+  MainScene.prototype.layoutProps = function () {
+    var self = this;
+    Object.keys(this.sprites).forEach(function (key) {
+      var prop = PROPS[key];
+      var p = self.placeAt(prop.worldX, prop.depth);
+      self.sprites[key].setPosition(p.x, p.y).setScale(p.scale * prop.size).setDepth(p.y);
+    });
+  };
+
+  // ---- The light -------------------------------------------------------
+  // Where one gap's shaft is, at a given height down the screen. The
+  // canopy and the beam both ask this, which is what keeps a shaft
+  // under the hole it comes through.
+  MainScene.prototype.gapSpan = function (gap, t) {
+    var W = this.scale.width;
+    var slide = gap.lean * W * t;
+    // Shafts widen as they fall, the way a torch beam does.
+    var half = gap.width * W * (0.5 + 0.42 * t);
+    var cx = gap.at * W + slide;
+    return { left: cx - half, right: cx + half, cx: cx };
+  };
+
+  // ---- Painting ---------------------------------------------------------
+  MainScene.prototype.redrawAll = function () {
+    var W = this.scale.width, H = this.scale.height;
+    var horizon = this.horizonY();
+    var self = this;
+
+    // Sky, and the moon low in it - the same moon as the yard, seen
+    // from under the trees rather than over the lawn.
+    this.skyGfx.clear();
+    this.skyGfx.fillGradientStyle(SKY_TOP, SKY_TOP, SKY_BOTTOM, SKY_BOTTOM, 1);
+    this.skyGfx.fillRect(0, 0, W, horizon + 2);
+    var moonX = W * 0.78, moonY = horizon * 0.52, moonR = Math.min(W * 0.07, 34);
+    for (var halo = 5; halo >= 1; halo--) {
+      this.skyGfx.fillStyle(MOON, 0.035 * (6 - halo) / 5);
+      this.skyGfx.fillCircle(moonX, moonY, moonR * (1 + halo * 0.8));
+    }
+    this.skyGfx.fillStyle(MOON, 0.92);
+    this.skyGfx.fillCircle(moonX, moonY, moonR);
+    this.skyGfx.fillStyle(0xa8b4d8, 0.5);                  // a sea or two on it
+    this.skyGfx.fillCircle(moonX - moonR * 0.3, moonY - moonR * 0.25, moonR * 0.26);
+    this.skyGfx.fillCircle(moonX + moonR * 0.22, moonY + moonR * 0.3, moonR * 0.19);
+
+    // The wall of trunks at the back. Not props - you can never reach
+    // them - so they are paint, drawn straight onto the backdrop at a
+    // size that reads as "further away than anywhere you can go".
+    this.farGfx.clear();
+    for (var f = 0; f < 26; f++) {
+      var fx = ((f * 61) % 100) / 100 * W;
+      var fw = 3 + ((f * 37) % 5);
+      var fh = horizon * (0.42 + ((f * 23) % 60) / 100 * 0.6);
+      this.farGfx.fillStyle(CANOPY_FAR, 0.55 + ((f * 17) % 40) / 100);
+      this.farGfx.fillRect(fx, horizon - fh, fw, fh + 4);
+    }
+    this.farGfx.fillStyle(CANOPY_NEAR, 0.55);              // ...and the dark under them,
+    this.farGfx.fillRect(0, horizon - horizon * 0.1, W, horizon * 0.1); // straddling the
+    for (var band = 0; band < 7; band++) {                  // line, so there is no line
+      this.farGfx.fillStyle(CANOPY_NEAR, 0.4 * (1 - band / 7));
+      this.farGfx.fillRect(0, horizon + band * (horizon * 0.03), W, horizon * 0.032);
+    }
+
+    // Ground: a gradient, a path worn along it, and leaf litter. The
+    // path runs left to right because that is the way you are walking;
+    // a path across the direction of travel is a fence.
+    this.groundGfx.clear();
+    this.groundGfx.fillGradientStyle(GROUND_FAR, GROUND_FAR, GROUND_NEAR, GROUND_NEAR, 1);
+    this.groundGfx.fillRect(0, horizon, W, H - horizon);
+    this.groundGfx.fillStyle(PATH, 0.4);
+    this.groundGfx.beginPath();
+    this.groundGfx.moveTo(0, this.depthToScreenY(0.5));
+    this.groundGfx.lineTo(W, this.depthToScreenY(0.42));
+    this.groundGfx.lineTo(W, this.depthToScreenY(0.72));
+    this.groundGfx.lineTo(0, this.depthToScreenY(0.84));
+    this.groundGfx.closePath();
+    this.groundGfx.fillPath();
+    // Scrub along the ground, in silhouette. Drawn from the back
+    // forward so the near clumps overlap the far ones, which is the
+    // only depth cue a black shape on a black floor gets.
+    for (var u = 0; u < 34; u++) {
+      var ud = 0.18 + ((u * 41) % 100) / 100 * 0.76;
+      var ux = ((u * 67) % 100) / 100 * W;
+      var uy = this.depthToScreenY(ud);
+      var us = this.depthToScale(ud);
+      this.groundGfx.fillStyle(CANOPY_NEAR, 0.55);
+      for (var frond = -2; frond <= 2; frond++) {
+        this.groundGfx.fillEllipse(ux + frond * 5 * us, uy - Math.abs(frond) * 1.5 * us,
+                                   4 * us, (16 - Math.abs(frond) * 4) * us);
+      }
+    }
+    for (var l = 0; l < 90; l++) {                          // litter
+      var ld = 0.08 + ((l * 29) % 100) / 100 * 0.88;
+      var lx = ((l * 53) % 100) / 100 * W;
+      var ly = this.depthToScreenY(ld);
+      this.groundGfx.fillStyle(LITTER, 0.1 + ((l * 13) % 30) / 100);
+      this.groundGfx.fillEllipse(lx, ly, 2 + ld * 5, 1 + ld * 2);
+    }
+
+    // The canopy: a dark mass hanging from the top of the screen with a
+    // notch bitten out of it at each gap. Drawn as one polygon so the
+    // notches are holes in a thing rather than four separate shapes
+    // that happen to be next to each other.
+    this.canopyGfx.clear();
+    this.canopyGfx.fillStyle(CANOPY_NEAR, 1);
+    this.canopyGfx.beginPath();
+    this.canopyGfx.moveTo(0, 0);
+    this.canopyGfx.lineTo(W, 0);
+    this.canopyGfx.lineTo(W, H * 0.3);
+    for (var s = 0; s < 120; s++) {
+      var t = 1 - s / 119;
+      var x = t * W;
+      var sag = H * (0.2 + 0.062 * Math.sin(t * 14.2) + 0.035 * Math.sin(t * 31.7 + 1.1));
+      // Each gap pulls the canopy's underside UP, which is what makes
+      // it a hole rather than a thin patch.
+      GAPS.forEach(function (gap) {
+        var span = self.gapSpan(gap, 0);
+        var mid = (span.left + span.right) / 2;
+        var reach = (span.right - span.left) * 0.9;
+        var near = Math.abs(x - mid) / reach;
+        if (near < 1) sag -= (1 - near * near) * H * 0.215 * gap.lit;
+      });
+      this.canopyGfx.lineTo(x, Math.max(H * 0.005, sag));
+    }
+    this.canopyGfx.lineTo(0, H * 0.3);
+    this.canopyGfx.closePath();
+    this.canopyGfx.fillPath();
+
+    this.buildVignette(W, H);
+  };
+
+  MainScene.prototype.buildVignette = function (W, H) {
+    var key = 'vignetteTex';
+    if (this.textures.exists(key)) this.textures.remove(key);
+    var tex = this.textures.createCanvas(key, W, H);
+    var ctx = tex.getContext();
+    var grad = ctx.createRadialGradient(W / 2, H * 0.5, H * 0.14, W / 2, H * 0.5, H * 0.8);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.62)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    tex.refresh();
+    if (this.vignetteImg) this.vignetteImg.destroy();
+    this.vignetteImg = this.add.image(0, 0, key).setOrigin(0, 0).setDepth(90)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY);
+  };
+
+  // The shafts themselves, redrawn every frame because they breathe.
+  //
+  // Phaser's graphics cannot gradient-fill a polygon, so each shaft is
+  // a stack of quads with the alpha coming off as it falls. Sixteen of
+  // them is enough that the banding is invisible at this alpha and few
+  // enough that four shafts cost sixty-four fills.
+  MainScene.prototype.drawBeams = function () {
+    var W = this.scale.width, H = this.scale.height;
+    var top = H * 0.04, floor = H * 0.96;
+    var self = this;
+    this.beamGfx.clear();
+    GAPS.forEach(function (gap, i) {
+      // Branches move. One slow sine per shaft, out of phase with the
+      // others, is the difference between moonlight and a spotlight.
+      var breath = 1 - BEAM_BREATH * (0.5 + 0.5 * Math.sin(self.age * 0.5 + i * 2.1));
+      for (var s = 0; s < BEAM_SLICES; s++) {
+        var t0 = s / BEAM_SLICES, t1 = (s + 1) / BEAM_SLICES;
+        var a = self.gapSpan(gap, t0), b = self.gapSpan(gap, t1);
+        // Falls off down the shaft, and faster near the ground, where
+        // a beam is light in the air rather than a thing on the floor.
+        var fade = (1 - t0) * (1 - t0 * 0.55);
+        self.beamGfx.fillStyle(BEAM, BEAM_TOP_ALPHA * gap.lit * breath * fade);
+        self.beamGfx.beginPath();
+        self.beamGfx.moveTo(a.left, lerp(top, floor, t0));
+        self.beamGfx.lineTo(a.right, lerp(top, floor, t0));
+        self.beamGfx.lineTo(b.right, lerp(top, floor, t1));
+        self.beamGfx.lineTo(b.left, lerp(top, floor, t1));
+        self.beamGfx.closePath();
+        self.beamGfx.fillPath();
+      }
+      // Where it lands. A shaft that stops in mid-air is a searchlight.
+      var foot = self.gapSpan(gap, 1);
+      self.beamGfx.fillStyle(BEAM, 0.05 * gap.lit * breath);
+      self.beamGfx.fillEllipse((foot.left + foot.right) / 2, floor,
+                               (foot.right - foot.left) * 1.1, H * 0.035);
+    });
+  };
+
+  // Is a point inside one of the shafts? Used by the motes, which is
+  // the whole reason the shafts read as air with something in it.
+  MainScene.prototype.inBeam = function (x, y) {
+    var H = this.scale.height;
+    var t = clamp((y - H * 0.04) / (H * 0.92), 0, 1);
+    for (var i = 0; i < GAPS.length; i++) {
+      var span = this.gapSpan(GAPS[i], t);
+      if (x > span.left && x < span.right) return GAPS[i].lit;
+    }
+    return 0;
+  };
+
+  MainScene.prototype.updateMotes = function (dt) {
+    var W = this.scale.width, H = this.scale.height, self = this;
+    this.moteGfx.clear();
+    this.motes.forEach(function (m) {
+      m.phase += dt * m.speed;
+      m.yFrac -= dt * 0.006 * m.drift;            // they rise, slowly
+      if (m.yFrac < 0.15) m.yFrac = 0.98;
+      var x = m.xFrac * W + Math.sin(m.phase) * 22;
+      var y = m.yFrac * H + Math.cos(m.phase * 0.7) * 9;
+      var lit = self.inBeam(x, y);
+      if (lit <= 0) return;                        // outside the light, it is dust
+      var a = (0.2 + 0.45 * (0.5 + 0.5 * Math.sin(m.phase * 2.4))) * lit;
+      self.moteGfx.fillStyle(BEAM, a);
+      self.moteGfx.fillCircle(x, y, 1.1);
+    });
+  };
+
+  MainScene.prototype.updateMist = function () {
+    var W = this.scale.width, H = this.scale.height;
+    this.mistGfx.clear();
+    for (var i = 0; i < MIST_BANDS; i++) {
+      var d = 0.3 + i * 0.14;
+      var y = this.depthToScreenY(d);
+      var drift = Math.sin(this.age * 0.09 + i * 1.7) * W * 0.07;
+      this.mistGfx.fillStyle(MIST, 0.011 + 0.007 * Math.sin(this.age * 0.21 + i));
+      this.mistGfx.fillEllipse(W * 0.5 + drift, y, W * (0.7 + i * 0.1), H * 0.022);
+    }
+  };
+
+  // ---- Something is looking at you -------------------------------------
+  MainScene.prototype.updateEyes = function (dt) {
+    var W = this.scale.width, horizon = this.horizonY();
+    var e = this.eyes;
+    this.eyeGfx.clear();
+    if (!e.on) {
+      e.wait -= dt;
+      if (e.wait > 0) return;
+      e.on = true;
+      e.age = 0;
+      e.at = Math.floor(Math.random() * EYE_SPOTS.length);
+      return;
+    }
+    e.age += dt;
+    var total = EYE_UP + EYE_HOLD + EYE_DOWN;
+    if (e.age >= total) {
+      e.on = false;
+      e.wait = EYE_GAP_MIN + Math.random() * (EYE_GAP_MAX - EYE_GAP_MIN);
+      return;
+    }
+    var a;
+    if (e.age < EYE_UP) a = e.age / EYE_UP;
+    else if (e.age < EYE_UP + EYE_HOLD) a = 1;
+    else a = 1 - (e.age - EYE_UP - EYE_HOLD) / EYE_DOWN;
+    // One blink, part way through the hold. Without it they are two
+    // lamps somebody left on.
+    var into = e.age - EYE_UP;
+    if (into > EYE_HOLD * EYE_BLINK_AT && into < EYE_HOLD * EYE_BLINK_AT + EYE_BLINK_FOR) a = 0;
+
+    var spot = EYE_SPOTS[e.at];
+    // Just above the ground line, in among the far trunks - any higher
+    // and they are a star, any lower and they are on the path. Kept on
+    // the scene so a check can ask where they ended up rather than
+    // working it out a second time and agreeing with itself.
+    var x = spot.x * W, y = horizon - horizon * (0.02 + spot.y * 0.2);
+    e.x = x;
+    e.y = y;
+    e.alpha = a;
+    var gap = Math.max(3.5, W * 0.013);
+    this.eyeGfx.fillStyle(EYES, 0.1 * a);                 // the faintest glow off them
+    this.eyeGfx.fillEllipse(x, y, gap * 3.4, 7);
+    this.eyeGfx.fillStyle(EYES, 0.8 * a);
+    this.eyeGfx.fillEllipse(x - gap, y, 3.6, 2.4);
+    this.eyeGfx.fillEllipse(x + gap, y, 3.6, 2.4);
+  };
+
+  // ---- Reaching things ------------------------------------------------
+  MainScene.prototype.isAt = function (key, rx, ry) {
+    var me = this.placeAt(this.worldX, this.depth);
+    var it = this.placeAt(PROPS[key].worldX, PROPS[key].depth);
+    var s = this.depthToScale(PROPS[key].depth);
+    var dx = (me.x - it.x) / (rx * s);
+    var dy = (me.y - it.y) / (ry * s);
+    return dx * dx + dy * dy <= 1;
+  };
+
+  // What you are standing at. Nothing out here acts, which is the
+  // honest state of it - but a prominent thing that ignores you reads
+  // as broken, where one that says something reads as a place.
+  MainScene.prototype.nearestThing = function () {
+    if (this.isAt('log', REACH_X, REACH_Y)) return { say: 'A fallen trunk, soft with rot. Something has been digging under it.' };
+    if (this.isAt('stone', REACH_X, REACH_Y)) return { say: 'The old boundary stone. The garden ends here. The wood does not.' };
+    if (this.isAt('treeE', REACH_X, REACH_Y) || this.isAt('treeF', REACH_X, REACH_Y)) {
+      return { say: 'Bark, wet and cold. The moon gets through in pieces.' };
+    }
+    return null;
+  };
+
+  MainScene.prototype.useThing = function () {
+    if (this.mode !== 'walk' || !this.action) return false;
+    this.goTo(this.action);
+    return true;
+  };
+
+  // ---- Leaving ---------------------------------------------------------
+  // Out is the lawn, with a fade, because the button is a teleport and
+  // a teleport needs covering. Walking out of the trees is a cut,
+  // because walking is already continuous and a fade in the middle of a
+  // stride is the thing that breaks it.
+  MainScene.prototype.leave = function () { this.goTo(BACK_PAGE); };
+
+  MainScene.prototype.goTo = function (page) {
+    if (this.mode !== 'walk') return;
+    this.exitPage = page || BACK_PAGE;
+    this.mode = 'leaving';
+    this.modeAge = 0;
+    this.setPrompt(null);
+    document.getElementById('hint').classList.add('hidden');
+    document.getElementById('controlBar').classList.add('gone');
+    forceReleaseAllInput(); // or a held stick keeps walking behind the fade
+  };
+
+  MainScene.prototype.updateLeaving = function () {
+    var t = clamp(this.modeAge / LEAVE_FADE, 0, 1);
+    this.fadeGfx.clear();
+    this.fadeGfx.fillStyle(0x000000, t);
+    this.fadeGfx.fillRect(0, 0, this.scale.width, this.scale.height);
+    if (t >= 1) { this.mode = 'gone'; goPage(this.exitPage); }
+  };
+
+  // Out of the trees and back onto the lawn, at the depth you were
+  // walking at. A cut, not a sequence.
+  MainScene.prototype.stepThrough = function () {
+    if (this.mode !== 'walk') return;
+    this.mode = 'gone';
+    this.setPrompt(null);
+    forceReleaseAllInput();
+    goPage(BACK_PAGE + '?from=' + THIS_ROOM + '&d=' + this.depth.toFixed(3));
+  };
+
+  // ---- Per-frame -------------------------------------------------------
+  MainScene.prototype.update = function (time, delta) {
+    var dt = Math.min(delta / 1000, 0.05);
+    this.modeAge += dt;
+    this.age += dt;
+
+    // The light does not stop for the fade: a scene that freezes the
+    // moment you press a button reads as a screenshot of itself.
+    this.drawBeams();
+    this.updateMist();
+    this.updateMotes(dt);
+
+    if (this.mode === 'leaving') { this.updateLeaving(); return; }
+    if (this.mode === 'gone') return;
+
+    this.updateEyes(dt);
+
+    var input = window.__houseInput;
+    var moveX = input.x, moveY = input.y;
+    var magnitude = Math.hypot(moveX, moveY);
+    var walking = magnitude > 0.04;
+
+    if (walking) {
+      // Each axis is tried on its own, which is what turns a trunk into
+      // something you SLIDE PAST rather than something you stick to.
+      // And if you are somehow already standing inside something - a
+      // resize moves every footprint out from under you - every move is
+      // allowed until you are out.
+      var stuck = this.blockedAt(this.worldX, this.depth) !== null;
+      var nextX = clamp(this.worldX + moveX * MOVE_SPEED_X * dt, -1, 1);
+      if (stuck || this.blockedAt(nextX, this.depth) === null) this.worldX = nextX;
+      var nextDepth = clamp(this.depth + moveY * MOVE_SPEED_DEPTH * dt, 0.12, 0.92);
+      if (stuck || this.blockedAt(this.worldX, nextDepth) === null) this.depth = nextDepth;
+      if (moveX > 0.08) this.flipX = false;
+      else if (moveX < -0.08) this.flipX = true;
+      this.bobPhase += dt * (6 + magnitude * 6);
+      this.idlePhase = 0;
+    } else {
+      this.idlePhase += dt;
+    }
+
+    var me = this.placeAt(this.worldX, this.depth);
+    var bob = walking ? Math.sin(this.bobPhase) * 2.4 * me.scale : Math.sin(this.idlePhase * 1.2) * 0.8;
+    this.you.setPosition(me.x, me.y + bob).setScale(me.scale).setFlipX(this.flipX).setDepth(me.y);
+
+    // Walking out of the right-hand side of the trees is how you get
+    // back, with no button - the same rule as every other doorway here.
+    if (this.worldX >= SIDE_EXIT) { this.stepThrough(); return; }
+
+    var thing = this.nearestThing();
+    this.action = thing ? (thing.go || null) : null;
+    this.setPrompt(thing ? thing.say : this.edgeHint());
+    this.syncActionButton(thing && this.action ? thing.verb : null);
+  };
+
+  // What the wood says when you are near one of its two ends and
+  // standing at nothing. One of them is the way home; the other is the
+  // only place in the chapter that tells you no.
+  MainScene.prototype.edgeHint = function () {
+    if (this.worldX <= -DEEP_EDGE) return DEEP_LINE;
+    if (this.worldX >= 0.78) return 'The yard →';
+    return null;
+  };
+
+  // The corner button, relabelled for whatever is in reach. Only
+  // touched when it actually changes - this runs every frame.
+  MainScene.prototype.syncActionButton = function (verb) {
+    if (this.buttonVerb === verb) return;
+    this.buttonVerb = verb;
+    var btn = document.getElementById('outBtn');
+    var label = document.getElementById('outLabel');
+    if (!btn || !label) return;
+    label.textContent = verb || 'Out';
+    btn.classList.toggle('acts', !!verb);
+    btn.setAttribute('aria-label', verb ? verb + ' this' : 'Back to the yard');
+  };
+
+  MainScene.prototype.setPrompt = function (text) {
+    var el = document.getElementById('hint');
+    if (el) el.classList.toggle('tappable', !!this.action);
+    if (this.prompt === text) return;
+    this.prompt = text;
+    if (!el) return;
+    if (text) {
+      el.textContent = text;
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  };
+
+  MainScene.prototype.exposeDebugHooks = function () {
+    var self = this;
+    window.__woodDebug = {
+      scene: this,
+      room: THIS_ROOM,
+      backPage: BACK_PAGE,
+      props: PROPS,
+      gaps: GAPS,
+      sideExit: SIDE_EXIT,
+      deepEdge: DEEP_EDGE,
+      state: function () {
+        return {
+          mode: self.mode, worldX: self.worldX, depth: self.depth,
+          prompt: self.prompt, action: self.action || null,
+          blockedBy: self.blockedAt(self.worldX, self.depth)
+        };
+      },
+      // Screen rectangles, for the layout checks - nothing may end up
+      // under the controls or off the side of the picture.
+      bounds: function () {
+        var out = {};
+        Object.keys(self.sprites).forEach(function (key) {
+          var b = self.sprites[key].getBounds();
+          out[key] = { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height };
+        });
+        var y = self.you.getBounds();
+        out.you = { left: y.x, top: y.y, right: y.x + y.width, bottom: y.y + y.height };
+        out.horizon = self.horizonY();
+        return out;
+      },
+      // The light, from outside: where each shaft is at the canopy and
+      // where it lands, and whether a point is inside one.
+      beams: function () {
+        return GAPS.map(function (g) {
+          return { at: g.at, lit: g.lit, top: self.gapSpan(g, 0), foot: self.gapSpan(g, 1) };
+        });
+      },
+      inBeam: function (x, y) { return self.inBeam(x, y); },
+      eyes: function () {
+        return {
+          on: self.eyes.on, at: self.eyes.at, age: self.eyes.age, wait: self.eyes.wait,
+          x: self.eyes.x, y: self.eyes.y, alpha: self.eyes.alpha,
+          spots: EYE_SPOTS.length
+        };
+      },
+      moveTo: function (worldX, depth) { self.worldX = worldX; self.depth = depth; },
+      leave: function () { self.leave(); },
+      use: function () { return self.useThing(); }
+    };
+  };
+
+  // Procedural ambience (Web Audio, no asset files) - wind from
+  // painted-lands, plus an engine that spools up for the takeoff.
+  // ==================================================================
+  var Sound = (function () {
+    var ctx = null;
+    var windSrc = null, windFilter = null, windGain = null, windOn = false;
+    var noiseBuffer = null;
+
+    function ensureAudio() {
+      if (!ctx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+
+    function getNoiseBuffer() {
+      if (noiseBuffer) return noiseBuffer;
+      var len = ctx.sampleRate * 2;
+      noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      var data = noiseBuffer.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return noiseBuffer;
+    }
+
+    function startWind() {
+      if (!ctx || windOn) return;
+      windOn = true;
+      windSrc = ctx.createBufferSource();
+      windSrc.buffer = getNoiseBuffer();
+      windSrc.loop = true;
+      windFilter = ctx.createBiquadFilter();
+      windFilter.type = 'lowpass';
+      windFilter.frequency.setValueAtTime(320, ctx.currentTime);
+      windGain = ctx.createGain();
+      windGain.gain.setValueAtTime(0, ctx.currentTime);
+      windGain.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 0.8);
+      windSrc.connect(windFilter).connect(windGain).connect(ctx.destination);
+      windSrc.start();
+    }
+
+    return { ensureAudio: ensureAudio, startWind: startWind };
+  })();
+
+
+
+  // ==================================================================
+  // Input: the analog stick and touch hardening from yard.html
+  // ==================================================================
+  var inputState = { x: 0, y: 0 };
+  window.__houseInput = inputState;
+
+  var touchX = 0, touchY = 0;
+  var kb = { up: false, down: false, left: false, right: false };
+  var kbX = 0, kbY = 0;
+
+  function composeInput() {
+    var x = touchX + kbX, y = touchY + kbY;
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    inputState.x = x;
+    inputState.y = y;
+  }
+
+  function updateKbVector() {
+    var x = (kb.right ? 1 : 0) - (kb.left ? 1 : 0);
+    var y = (kb.down ? 1 : 0) - (kb.up ? 1 : 0);
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    kbX = x; kbY = y;
+    composeInput();
+  }
+
+  var HOLD_WATCHDOG_MS = 12000;
+  var heldZoneResets = [];
+  var STICK_MAX_RADIUS_PX = 44;
+
+  function suppressCallout(el) {
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  }
+
+  function bindThumbstick(el, anchorEl, knobEl) {
+    var activeId = null;
+    var watchdogTimer = null;
+    var anchorX = 0, anchorY = 0;
+
+    suppressCallout(el);
+
+    function applyVector(clientX, clientY) {
+      var dx = clientX - anchorX, dy = clientY - anchorY;
+      var dist = Math.hypot(dx, dy);
+      var clamped = Math.min(dist, STICK_MAX_RADIUS_PX);
+      var kx = dist > 0 ? (dx / dist) * clamped : 0;
+      var ky = dist > 0 ? (dy / dist) * clamped : 0;
+      knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+      touchX = kx / STICK_MAX_RADIUS_PX;
+      touchY = ky / STICK_MAX_RADIUS_PX;
+      composeInput();
+    }
+
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      el.classList.remove('active');
+      anchorEl.classList.remove('visible');
+      knobEl.classList.remove('visible');
+      knobEl.style.transform = 'translate(0px, 0px)';
+      touchX = 0; touchY = 0;
+      composeInput();
+    }
+
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      Sound.startWind();
+      hardRelease();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      el.classList.add('active');
+      var rect = el.getBoundingClientRect();
+      anchorX = e.clientX;
+      anchorY = e.clientY;
+      var localX = clamp(anchorX - rect.left, 0, rect.width);
+      var localY = clamp(anchorY - rect.top, 0, rect.height);
+      anchorEl.style.left = localX + 'px';
+      anchorEl.style.top = localY + 'px';
+      knobEl.style.left = localX + 'px';
+      knobEl.style.top = localY + 'px';
+      knobEl.style.transform = 'translate(0px, 0px)';
+      anchorEl.classList.add('visible');
+      knobEl.classList.add('visible');
+      touchX = 0; touchY = 0;
+      composeInput();
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+
+    el.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== activeId) return;
+      applyVector(e.clientX, e.clientY);
+    });
+
+    function release(e) {
+      if (e.pointerId !== activeId) return;
+      hardRelease();
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+
+    heldZoneResets.push(hardRelease);
+  }
+
+  bindThumbstick(
+    document.getElementById('stickZone'),
+    document.getElementById('stickAnchor'),
+    document.getElementById('stickKnob')
+  );
+
+  (function bindOutButton() {
+    var el = document.getElementById('outBtn');
+    suppressCallout(el);
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      el.classList.add('active');
+      if (!mainScene) { goOutside(); return; }
+      // Whatever it currently says it does - see syncActionButton().
+      if (mainScene.action) mainScene.useThing(); else mainScene.leave();
+    });
+    function release() { el.classList.remove('active'); }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+  })();
+
+  function isUpKey(code) { return code === 'ArrowUp' || code === 'KeyW'; }
+  function isDownKey(code) { return code === 'ArrowDown' || code === 'KeyS'; }
+  function isLeftKey(code) { return code === 'ArrowLeft' || code === 'KeyA'; }
+  function isRightKey(code) { return code === 'ArrowRight' || code === 'KeyD'; }
+  function isOutKey(code) { return code === 'Escape' || code === 'KeyQ'; }
+  function isUseKey(code) { return code === 'Enter' || code === 'Space'; }
+
+  // The prompt line doubles as the button for whatever you are standing
+  // at - see useThing().
+  (function bindHintTap() {
+    var hint = document.getElementById('hint');
+    if (!hint) return;
+    hint.addEventListener('click', function () { if (mainScene) mainScene.useThing(); });
+  })();
+
+  document.addEventListener('keydown', function (e) {
+    Sound.ensureAudio();
+    Sound.startWind();
+    if (isUpKey(e.code) || isDownKey(e.code)) e.preventDefault();
+    if (isOutKey(e.code)) {
+      if (!e.repeat) { if (mainScene) mainScene.leave(); else goOutside(); }
+      return;
+    }
+    if (isUseKey(e.code)) {
+      e.preventDefault();
+      if (!e.repeat && mainScene) mainScene.useThing();
+      return;
+    }
+    if (e.repeat) return;
+    if (isUpKey(e.code)) { kb.up = true; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = true; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = true; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = true; updateKbVector(); }
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (isUpKey(e.code)) { kb.up = false; updateKbVector(); }
+    else if (isDownKey(e.code)) { kb.down = false; updateKbVector(); }
+    else if (isLeftKey(e.code)) { kb.left = false; updateKbVector(); }
+    else if (isRightKey(e.code)) { kb.right = false; updateKbVector(); }
+  });
+
+  function forceReleaseKeyboard() {
+    if (kb.up || kb.down || kb.left || kb.right) {
+      kb.up = kb.down = kb.left = kb.right = false;
+      updateKbVector();
+    }
+  }
+
+  function forceReleaseAllInput() {
+    heldZoneResets.forEach(function (fn) { fn(); });
+    forceReleaseKeyboard();
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) forceReleaseAllInput();
+  });
+  window.addEventListener('blur', forceReleaseAllInput);
+
+  var controlBar = document.getElementById('controlBar');
+  controlBar.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  controlBar.addEventListener('selectstart', function (e) { e.preventDefault(); });
+
+  // ==================================================================
+  // Prevent / auto-recover from accidental page pinch-zoom
+  // ==================================================================
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var resetTimer = null;
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+    function scheduleZoomCheck() {
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+  })();
+
+  setTimeout(function () {
+    var el = document.getElementById('hint');
+    if (el && mainScene && !mainScene.prompt) el.classList.add('hidden');
+  }, 4000);
+
+  // ==================================================================
+  // Boot
+  // ==================================================================
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'gameRoot',
+    backgroundColor: SKY_TOP,
+    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER },
+    scene: [MainScene],
+    disableContextMenu: true
+  });
+})();
+</script>
+</body>
+</html>

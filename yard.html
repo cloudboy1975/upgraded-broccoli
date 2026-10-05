@@ -287,6 +287,22 @@
   // Nothing asks you to walk round the back - crossing the line is the
   // whole move, and the fade carries the last two strides of it.
   var DRIVE_PAGE = 'driveway.html';
+  // Off the bottom-left corner of the lawn are the trees. Not past the
+  // house the way the drive is: you cannot GET past the house on that
+  // side - the world narrows toward the horizon and its left-hand wall
+  // is outside it at every depth up the garden - so the way in is the
+  // one bit of the left-hand edge that is clear of the building, which
+  // is the near corner, down by the camera. Which is also where a lawn
+  // actually runs out into a wood.
+  var WOOD_PAGE = 'wood.html';
+  var WOOD_EDGE = 0.985;  // how far across the lawn counts as into the trees
+  var WOOD_PAST = 14;     // ...and px clear of the house's near corner, so the
+                          //    exit is the corner of the garden and not the wall
+  var WOOD_HINT = 0.6;    // ...and where the lawn starts telling you it is there
+  var WOOD_HINT_FRONT = 60; // ...but only this far down the garden, so walking up
+                            //    the front of the house toward the door never
+                            //    offers you the woods instead
+  var WOOD_ENTER = 0.8;   // how far in you land coming back out of them
   var PASS_PLANE = 6;        // px past the front line before you count as round it
   var PASS_HINT_FRONT = 110; // ...and how far short of it the hint starts
   var ENTER_FADE = 0.4; // seconds of black before the interior loads
@@ -557,14 +573,36 @@
     window.location.href = DRIVE_PAGE;
   }
 
+  function goWood(depth) {
+    if (navigated) return;
+    navigated = true;
+    window.location.href = WOOD_PAGE + '?from=yard&d=' + depth.toFixed(3);
+  }
+
   function cameFromTheSide() {
     return /(?:^|[?&])at=side(?:&|$)/.test(window.location.search || '');
+  }
+
+  // Back out of the trees. There is no doorway down there to work a
+  // landing spot out from - it is a corner of a lawn - so the depth you
+  // were walking at comes across in the URL and you carry on from
+  // there, which is the whole of what continuity means here.
+  function cameFromTheWood() {
+    return /(?:^|[?&])from=wood(?:&|$)/.test(window.location.search || '');
+  }
+  function arrivalDepth(fallback) {
+    var m = /(?:^|[?&])d=([^&]*)/.exec(window.location.search || '');
+    var d = m ? parseFloat(decodeURIComponent(m[1])) : NaN;
+    return isFinite(d) ? clamp(d, 0.64, 0.9) : fallback;
   }
 
   // Where you start, which is the middle of the lawn unless you have
   // just come back round the side of the house - in which case it is
   // the doorway itself, worked out from where the house is standing.
   function startSpot(scene) {
+    if (cameFromTheWood()) {
+      return { worldX: -WOOD_ENTER, depth: arrivalDepth(0.76) };
+    }
     return cameFromTheSide() ? scene.sideReturnSpot() : START;
   }
 
@@ -579,7 +617,7 @@
     // is a cut too - fading up out of black after an instant exit is
     // the transition the exit was just made to avoid. Walking out of
     // the front door still fades, because going in faded.
-    if (cameFromTheSide()) el.classList.add('instant');
+    if (cameFromTheSide() || cameFromTheWood()) el.classList.add('instant');
     el.classList.remove('visible');
   }
 
@@ -1128,6 +1166,39 @@
     };
   };
 
+  // The far corner of the lawn, past the near end of the house, where
+  // the grass runs out into trees. Asked of the HOUSE's own rectangle
+  // rather than of worldX, for the same reason the drive is: the house
+  // is what you are walking past, and it is the only landmark down
+  // there. Being clear of its corner is what makes this the corner of
+  // the garden rather than a walk into the brickwork.
+  MainScene.prototype.pastTheTrees = function () {
+    var f = this.houseFront();
+    var me = this.placeAt(this.worldX, this.depth);
+    return this.worldX <= -WOOD_EDGE && me.x < f.left - WOOD_PAST;
+  };
+
+  // Coming up to it, which is where the hint belongs: once you have
+  // crossed it you have already gone. Wider than the line itself and
+  // only in FRONT of the house, so walking up the left-hand side of
+  // the lawn toward the front door never offers you the woods.
+  MainScene.prototype.nearTheTrees = function () {
+    var f = this.houseFront();
+    var me = this.placeAt(this.worldX, this.depth);
+    return this.worldX <= -WOOD_HINT && me.y > f.y + WOOD_HINT_FRONT &&
+           me.x < f.left + 70;
+  };
+
+  // Crossing it is the cut, the same as the drive's line: you touch the
+  // plane and you are on the next screen.
+  MainScene.prototype.leaveForWood = function () {
+    if (this.mode !== 'walk') return;
+    this.mode = 'gone';
+    this.setPrompt(null);
+    forceReleaseAllInput();
+    goWood(this.depth);
+  };
+
   // Coming up to that line on the right-hand side, which is where the
   // hint belongs: once you have crossed it you have already gone.
   MainScene.prototype.besideTheHouse = function () {
@@ -1291,13 +1362,14 @@
     // for the story.
     if (this.atDoor()) { this.enterHouse(); return; }
     if (this.pastTheHouse()) { this.leaveForDrive(); return; }
+    if (this.pastTheTrees()) { this.leaveForWood(); return; }
     // Nothing else in this scene announces itself, and the side of the
     // house looks like scenery until you are told it is not - an exit
     // nobody finds is an exit nobody has. It speaks up while you are
     // still short of the line, and the arrow points the way you walk:
     // straight on, past the house.
-    this.setPrompt(this.besideTheHouse()
-      ? 'Round the side of the house \u2191' : null);
+    this.setPrompt(this.besideTheHouse() ? 'Round the side of the house \u2191'
+      : (this.nearTheTrees() ? '\u2190 The woods' : null));
 
     // A little parallax on the ridges, and the ship idling.
     this.mtnFarGfx.x = -this.worldX * 8;
@@ -1421,7 +1493,8 @@
           doorOpen: self.doorOpen, doorRect: self.doorRect(),
           inWall: self.insideHouse(self.worldX, self.depth), houseFront: self.houseFront(),
           pastTheHouse: self.pastTheHouse(), besideTheHouse: self.besideTheHouse(),
-          passPlane: PASS_PLANE,
+          pastTheTrees: self.pastTheTrees(), nearTheTrees: self.nearTheTrees(),
+          passPlane: PASS_PLANE, woodPage: WOOD_PAGE,
           house: HOUSE,
           prompt: self.prompt,
           shipY: self.shipSprite.y, shipScale: self.shipSprite.scaleX,
