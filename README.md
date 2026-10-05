@@ -90,7 +90,9 @@ chapter of a longer game about two-dimensional aliens.
   the yard. Walk right into the ship and it takes off; walk left into
   the front door — it opens as you come up the path, with the light
   spilling onto the grass — and you are inside, where the computer runs
-  the flight tutorial and the TV is showing the news. Walk up past the
+  the flight tutorial and the TV is showing the news — and the house
+  carries on in both directions, with a kitchen at one end of it and a
+  bed at the other. Walk up past the
   right-hand side of the house instead and you come out on the drive.
   The bottom-right button skips straight to the game.
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
@@ -156,6 +158,62 @@ And if you look up while you are round there,
 something is moving in the sky over the ridges: three lights in loose
 formation, one of which will roll through a loop now and then, or put a
 couple of bolts down toward the horizon. Not much. Enough.
+
+#### One house, three rooms
+
+The front room is the middle one. There is no door at either end of it
+and no hallway to walk down: it is an **open plan**, so the way through
+is simply to keep walking. Off the left-hand end and you are in the
+**kitchen** — fridge, a run of worktop with the sink under the window,
+a cooker, the table with yesterday's paper still on it. Off the right
+and you are at the **bed end** — wardrobe, chest of drawers with a
+photograph on it, and a bed running away from you under the window,
+with a star chart and the cutaway of a ship on the wall above the
+drawers. Somebody wanted this long before it wanted him.
+
+Crossing either line is a **cut**, not a sequence, the same rule as
+crossing the house's front line out in the yard: a doorway earns an
+animation, an open end of a room does not. And you come in where you
+walked out — at the opposite end of the next room, **at the depth you
+were walking at**, so a stroll along the back wall stays a stroll along
+the back wall. The depth rides across in the URL, because unlike a
+doorway an open edge has no landmark to work a landing spot out from.
+If that depth would put you inside the worktop you are stepped forward
+onto floor, which is the one direction along an edge that is always
+open.
+
+The corner button and Escape still mean *out* in all three — out of
+the kitchen is the front room, out of the front room is the yard.
+
+#### The cat
+
+There is a cat, and it belongs to the **house** rather than to a room.
+Which room it is in lives in the chapter's scrap of memory next to
+whether the garage door is up, and it moves while you are not looking:
+find it on the kitchen floor, walk out and back, and it may be asleep
+at the foot of the bed. That is the whole of what it does, and all it
+is trying to be — the thing that makes three rooms one house rather
+than three pictures.
+
+In whichever room it is in, it walks a ring of places worth being and
+sits a while in each. It goes round the furniture the way you do, one
+axis at a time, so it slides along the sofa rather than sticking to it.
+Stand near it and the corner button says **Pet**; it stays put for a
+few seconds afterwards, which is the most it is prepared to commit to.
+Whatever it happens to be sitting in front of, the cat is what the room
+talks about — being told about the bookshelf while a cat sits on your
+feet is the wrong answer every time.
+
+The **order of each room's ring is load-bearing**, not decoration: the
+cat walks between neighbouring spots in a straight line, so two spots
+on opposite sides of one sofa are two spots it slides along that sofa
+between forever. The tests sit and watch it for half a minute in each
+room and check that it actually arrives somewhere.
+
+Because a roaming cat is the one thing in the house that cannot be
+checked, every room takes **`?cat=`** — `?cat=kitchen` pins it there,
+`?cat=away` pins it anywhere but here. Same bargain `?boss` and `?at=`
+already made.
 
 #### The six o'clock news
 
@@ -241,7 +299,8 @@ additionally share a centered-card page layout, while Asteroids II,
 Head-On and Painted Lands break out to layouts suited to their controls.
 Every screen links back to the games hub.
 
-`head-on.html`, `yard.html`, `house.html` and `driveway.html` have a
+`head-on.html`, `yard.html`, `house.html`, `kitchen.html`,
+`bedroom.html` and `driveway.html` have a
 browser test suite in
 [`tests/`](tests/) — plain Node scripts driving a real Chromium through
 Playwright. `./tests/run.sh` serves the repo and runs all of them.

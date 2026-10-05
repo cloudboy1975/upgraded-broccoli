@@ -234,6 +234,7 @@
     transition: opacity 0.45s ease;
   }
   .blackout.visible { opacity: 1; }
+  .blackout.instant { transition: none; }
 
   .out-btn {
     display: flex;
@@ -359,6 +360,19 @@
   // because the only honest way to teach flying is to hand someone the
   // ship.
   var TUTORIAL_PAGE = 'head-on.html?tutorial';
+  // The other two ends of the house. There is no door to either and no
+  // hallway between them - it is one open plan - so the way through is
+  // simply to keep walking: off the left-hand end of this room and you
+  // are in the kitchen, off the right-hand end and you are at the bed.
+  // Crossing that line cuts straight there, the same way crossing the
+  // house's front line in the yard cuts to the drive. A doorway earns a
+  // sequence; an open end of a room does not.
+  var THIS_ROOM = 'house';
+  var KITCHEN_PAGE = 'kitchen.html';
+  var BEDROOM_PAGE = 'bedroom.html';
+  var SIDE_EXIT = 0.985;   // how far across counts as through the opening
+  var SIDE_ENTER = 0.78;   // ...and how far in you land coming the other way
+  var SIDE_HINT = 0.78;    // ...and where the room starts telling you it is there
   // Not a page: the television plays in here. Carried in the same slot
   // as a page so one prompt, one tap and one key cover both.
   var WATCH_TV = 'watch:tv';
@@ -459,7 +473,28 @@
   // the yard without seeing the room, and it is this offset that stops
   // that rather than a list of things you may not arrive at.
   var RETURN_DEPTH = 0.2;
+  // ...and where you come in from next door. There is no doorway at
+  // either end of this room to work a landing spot out from, so the
+  // depth you were walking at comes across in the URL and you carry on
+  // from there - which is the whole of what continuity means here. You
+  // come in at the end you walked out of, which is the opposite end
+  // from the room you were in.
+  function cameFromTheSide() {
+    return /(?:^|[?&])from=(kitchen|bedroom)(?:&|$)/.exec(window.location.search || '');
+  }
+  function arrivalDepth(fallback) {
+    var m = /(?:^|[?&])d=([^&]*)/.exec(window.location.search || '');
+    var d = m ? parseFloat(decodeURIComponent(m[1])) : NaN;
+    return isFinite(d) ? clamp(d, 0.1, 0.9) : fallback;
+  }
   function startSpot() {
+    var side = cameFromTheSide();
+    if (side) {
+      return {
+        worldX: side[1] === 'kitchen' ? -SIDE_ENTER : SIDE_ENTER,
+        depth: arrivalDepth(START.depth)
+      };
+    }
     var m = /(?:^|[?&])at=([^&]*)/.exec(window.location.search || '');
     var key = m ? decodeURIComponent(m[1]) : '';
     if (PROPS.hasOwnProperty(key)) {
@@ -509,12 +544,51 @@
   var YOUR_HALF_X = 8;
   var YOUR_HALF_Y = 4;
 
+  // The ring the cat walks when it is in here: the rug in front of the
+  // TV, the floor by the bookshelf, the middle of the room where you
+  // are trying to walk, and right at the front watching you. All of
+  // them on this side of the sofa, which is not decoration - it walks
+  // between neighbours in a straight line, so a spot behind the sofa
+  // and a spot in front of it are two spots it slides along the sofa
+  // between forever.
+  var CAT_SPOTS = [
+    { worldX: -0.60, depth: 0.30, say: 'by the bookshelf' },
+    { worldX: -0.26, depth: 0.70, say: 'in the middle of the floor' },
+    { worldX: 0.10, depth: 0.86, say: 'right at the front' },
+    { worldX: 0.46, depth: 0.86, say: 'in front of the sofa' },
+    { worldX: 0.82, depth: 0.56, say: 'under the lamp' }
+  ];
+
   var REACH_X = 42;
   var REACH_Y = 84;
   var DOOR_REACH_X = 30;
   var DOOR_REACH_Y = 52;
 
   var LEAVE_FADE = 0.45; // seconds of black before the yard loads
+
+  // ==================================================================
+  // The chapter's scrap of memory - the same one the garage door is
+  // kept in. All the cat needs from it is which room it is in.
+  // ==================================================================
+  var WORLD_KEY = 'broccoli-chapter1-v1';
+
+  function readWorld() {
+    try {
+      var raw = window.sessionStorage.getItem(WORLD_KEY);
+      var world = raw ? JSON.parse(raw) : null;
+      return (world && typeof world === 'object') ? world : {};
+    } catch (e) { return {}; }
+  }
+
+  function rememberWorld(patch) {
+    try {
+      var world = readWorld();
+      for (var key in patch) {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) world[key] = patch[key];
+      }
+      window.sessionStorage.setItem(WORLD_KEY, JSON.stringify(world));
+    } catch (e) { /* no memory this session; the room still works */ }
+  }
 
   // ==================================================================
   // Procedural ambience - a room tone, where the yard had wind.
@@ -582,7 +656,13 @@
   // anybody could miss.
   function clearArrivalFade() {
     var el = document.getElementById('blackout');
-    if (el) el.classList.remove('visible');
+    if (!el) return;
+    // Walking in from next door was a cut, so arriving is one too.
+    // Coming in any other way - the yard, the tutorial, a bookmark -
+    // still gets the fade, because then there is nothing for it to be
+    // continuous with.
+    if (cameFromTheSide()) el.classList.add('instant');
+    el.classList.remove('visible');
   }
 
   function MainScene() {
@@ -620,6 +700,7 @@
 
     this.buildTextures();
     this.buildLayers();
+    this.startCat();
     this.buildProps();
     this.redrawAll();
 
@@ -843,6 +924,8 @@
       g.generateTexture('plantTex', w, h);
       g.destroy();
     })();
+
+    buildCatTextures(self);
   };
 
   MainScene.prototype.buildLayers = function () {
@@ -885,6 +968,8 @@
       plant: this.add.sprite(0, 0, 'plantTex').setOrigin(0.5, 1),
       sofa: this.add.sprite(0, 0, 'sofaTex').setOrigin(0.5, 1)
     };
+    this.catSprite = this.add.sprite(0, 0, 'catSitTex').setOrigin(0.5, 1)
+      .setVisible(!!this.cat);
     this.you = this.add.sprite(0, 0, 'youTex').setOrigin(0.5, 0.94);
     this.layoutProps();
   };
@@ -917,16 +1002,21 @@
   // the floor is a trapezoid: the same worldX gap is a much smaller
   // walk at the back of the room than at the front, and it is what the
   // player can see that has to decide whether they fit.
-  MainScene.prototype.blockedAt = function (worldX, depth) {
+  // halfX/halfY are the walker's own footprint in ITS texture px, and
+  // default to yours - the cat is the other thing in here that has to
+  // go round the sofa, and it is a quarter of your size.
+  MainScene.prototype.blockedAt = function (worldX, depth, halfX, halfY) {
     var me = this.placeAt(worldX, depth);
     var myScale = this.depthToScale(depth);
+    var mineX = (halfX === undefined ? YOUR_HALF_X : halfX) * myScale;
+    var mineY = (halfY === undefined ? YOUR_HALF_Y : halfY) * myScale;
     var keys = Object.keys(FOOTPRINTS);
     for (var i = 0; i < keys.length; i++) {
       var foot = FOOTPRINTS[keys[i]], prop = PROPS[keys[i]];
       var it = this.placeAt(prop.worldX, prop.depth);
       var s = this.depthToScale(prop.depth);
-      if (Math.abs(me.x - it.x) >= foot.x * s + YOUR_HALF_X * myScale) continue;
-      if (Math.abs(me.y - it.y) >= foot.y * s + YOUR_HALF_Y * myScale) continue;
+      if (Math.abs(me.x - it.x) >= foot.x * s + mineX) continue;
+      if (Math.abs(me.y - it.y) >= foot.y * s + mineY) continue;
       return keys[i];
     }
     return null;
@@ -939,6 +1029,7 @@
       var p = self.placeAt(prop.worldX, prop.depth);
       self.sprites[key].setPosition(p.x, p.y).setScale(p.scale * prop.size).setDepth(p.y);
     });
+    this.layoutCat();
   };
 
   // ---- Painting the room ---------------------------------------------
@@ -1092,6 +1183,8 @@
   // in here that is finished - where it goes. Everything else in the
   // room still says "later", which is the promise this one just kept.
   MainScene.prototype.nearestThing = function () {
+    var cat = this.catThing();
+    if (cat) return cat;
     if (this.isAt('tv', REACH_X, REACH_Y)) return { say: 'The TV. There is a news report on.', watch: true, verb: 'Watch' };
     if (this.isAt('desk', REACH_X, REACH_Y)) return { say: 'The computer. Flight training.', go: TUTORIAL_PAGE, verb: 'Use' };
     if (this.isAt('shelf', REACH_X, REACH_Y)) return { say: 'Books. Nothing you have not read.' };
@@ -1106,6 +1199,7 @@
   MainScene.prototype.useThing = function () {
     if (this.mode !== 'walk' || !this.action) return false;
     if (this.action === WATCH_TV) return this.watchTv();
+    if (this.action === PET_CAT) return this.petCat();
     this.goTo(this.action);
     return true;
   };
@@ -1557,6 +1651,26 @@
   // the end of it - one fade, one place that navigates.
   MainScene.prototype.leave = function () { this.goTo(BACK_PAGE); };
 
+  // Off one end of the room and into the next, at the depth you were
+  // walking at. A cut: no fade, no sequence, because walking is already
+  // continuous and a fade in the middle of a stride is what breaks it.
+  MainScene.prototype.stepThrough = function (page) {
+    if (this.mode !== 'walk') return;
+    this.mode = 'gone';
+    this.setPrompt(null);
+    forceReleaseAllInput();
+    goPage(page + '?from=house&d=' + this.depth.toFixed(3));
+  };
+
+  // What the room says when you are near one of its open ends and
+  // standing at nothing - the only thing telling you the house carries
+  // on in both directions.
+  MainScene.prototype.sideHint = function () {
+    if (this.worldX <= -SIDE_HINT) return '\u2190 The kitchen';
+    if (this.worldX >= SIDE_HINT) return 'The bed end \u2192';
+    return null;
+  };
+
   MainScene.prototype.goTo = function (page) {
     if (this.mode !== 'walk') return;
     this.exitPage = page || BACK_PAGE;
@@ -1621,10 +1735,19 @@
     // Walking into the front door leaves, with no button - the same rule
     // as walking into the ship outside.
     if (this.atDoor()) { this.leave(); return; }
+    // ...and so does walking off either end of the room, which is how
+    // you get to the other two. A cut, not a sequence - see
+    // stepThrough().
+    if (this.worldX <= -SIDE_EXIT) { this.stepThrough(KITCHEN_PAGE); return; }
+    if (this.worldX >= SIDE_EXIT) { this.stepThrough(BEDROOM_PAGE); return; }
+
+    this.updateCat(dt);
 
     var thing = this.nearestThing();
-    this.action = thing ? (thing.watch ? WATCH_TV : (thing.go || null)) : null;
-    this.setPrompt(thing ? thing.say : null);
+    this.action = thing
+      ? (thing.watch ? WATCH_TV : (thing.pet ? PET_CAT : (thing.go || null)))
+      : null;
+    this.setPrompt(thing ? thing.say : this.sideHint());
     this.syncActionButton(thing && this.action ? thing.verb : null);
     this.updateDust(dt);
   };
@@ -1683,6 +1806,7 @@
           atDoor: self.atDoor(), prompt: self.prompt, action: self.action || null,
           atTv: self.isAt('tv', REACH_X, REACH_Y),
           atDesk: self.isAt('desk', REACH_X, REACH_Y),
+          atCat: self.atCat(),
           doorDistance: self.distanceTo('door'),
           blockedBy: self.blockedAt(self.worldX, self.depth)
         };
@@ -1697,6 +1821,8 @@
         });
         var y = self.you.getBounds();
         out.you = { left: y.x, top: y.y, right: y.x + y.width, bottom: y.y + y.height };
+        var c = self.catSprite.getBounds();
+        out.cat = { left: c.x, top: c.y, right: c.x + c.width, bottom: c.y + c.height };
         // Where the wall meets the floor. Things that belong IN the wall
         // have to land on this line, and nothing else on screen says so.
         out.floorY = self.floorY();
@@ -1718,7 +1844,304 @@
         };
       },
       watchTv: function () { return self.watchTv(); },
-      closeTv: function () { return self.closeTv(); }
+      closeTv: function () { return self.closeTv(); },
+      sideExit: SIDE_EXIT,
+      pages: { kitchen: KITCHEN_PAGE, bedroom: BEDROOM_PAGE },
+      cat: function () { return self.catDebug(); },
+      moveCat: function (worldX, depth, mode) {
+        if (!self.cat) return false;
+        self.cat.worldX = worldX;
+        self.cat.depth = depth;
+        self.cat.mode = mode || 'rest';
+        self.cat.rest = 9999;
+        self.layoutCat();
+        return true;
+      },
+      pet: function () { return self.petCat(); }
+    };
+  };
+
+  // ==================================================================
+  // The cat.
+  //
+  // It belongs to the HOUSE rather than to any one room. Which room it
+  // is in lives in the chapter's own scrap of memory, next to whether
+  // the garage door is up, and it moves while you are not looking:
+  // find it on the kitchen floor, walk out and back, and it may be on
+  // the bed. That is the whole of what it does, and all it is trying
+  // to be - the thing that makes three rooms one house rather than
+  // three pictures.
+  //
+  // In whichever room it is in, it walks a ring of places worth being
+  // and sits a while in each. It goes round the furniture the way you
+  // do - one axis at a time, so it slides along a sofa rather than
+  // sticking to it - and gives up on anywhere it cannot reach.
+  //
+  // The ORDER of the ring is load-bearing, not decoration: it walks
+  // between neighbours in a straight line, so two spots on opposite
+  // sides of the same sofa are two spots it slides between forever.
+  // ==================================================================
+  var CAT_ROOMS = ['house', 'kitchen', 'bedroom'];
+  var CAT_STARTS_IN = 'kitchen';   // where it is the first time you come in
+  var CAT_WANDERS = 0.5;           // chance it has moved rooms while you were out
+  var CAT_SIZE = 0.3;
+  var CAT_SPEED = 0.34;            // world units/sec, both axes
+  var CAT_ARRIVED = 0.03;          // ...and how near the spot counts as there
+  var CAT_REST_MIN = 2.4;          // seconds sat down...
+  var CAT_REST_MAX = 8;            // ...and at most
+  var CAT_GIVE_UP = 7;             // seconds walking at a spot before trying another
+  var CAT_HALF_X = 6;              // its own footprint, in its own texture px
+  var CAT_HALF_Y = 3;
+  var CAT_REACH_X = 46;            // ...and how close you have to be to pet it
+  var CAT_REACH_Y = 74;
+  var CAT_PET_SECS = 4.5;          // how long it stays put for having been petted
+  var CAT_LINE = 'The cat, deciding whether you exist.';
+  var CAT_PETTED_LINE = 'Purring. Loudly, for something that small.';
+  var PET_CAT = 'pet:cat';
+
+  // Where it is now, and where it has got to while you were out of the
+  // room. Rolled once, on load, so a room does not change under you
+  // while you are standing in it.
+  function catRoomNow() {
+    // ?cat=kitchen pins it, and ?cat=away pins it anywhere but here.
+    // A roaming cat is the point of it and also the one thing in the
+    // house that cannot be checked, so it gets a way to be held still -
+    // the same bargain ?boss and ?at= already made.
+    var m = /(?:^|[?&])cat=([^&]*)/.exec(window.location.search || '');
+    var asked = m ? decodeURIComponent(m[1]) : '';
+    if (CAT_ROOMS.indexOf(asked) >= 0) {
+      rememberWorld({ catRoom: asked });
+      return asked;
+    }
+    var world = readWorld();
+    var at = CAT_ROOMS.indexOf(world.catRoom) >= 0 ? world.catRoom : CAT_STARTS_IN;
+    if (asked === 'away') {
+      at = CAT_ROOMS[(CAT_ROOMS.indexOf(THIS_ROOM) + 1) % CAT_ROOMS.length];
+    } else if (Math.random() < CAT_WANDERS) {
+      at = CAT_ROOMS[Math.floor(Math.random() * CAT_ROOMS.length)];
+    }
+    rememberWorld({ catRoom: at });
+    return at;
+  }
+
+  // Two drawings, sitting and walking, both facing right and flipped
+  // when it goes the other way. Ginger, because every surface in this
+  // house is brown and a grey cat on one would be a smudge.
+  function buildCatTextures(scene) {
+    var FUR = 0xd09150, DARK = 0xa96f39, CREAM = 0xf0ddc0;
+    (function () {                                   // sitting
+      var w = 64, h = 60;
+      var g = scene.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.26);
+      g.fillEllipse(w * 0.5, h - 3, w * 0.52, 6);
+      g.fillStyle(FUR, 1);
+      g.fillEllipse(w * 0.42, h * 0.74, w * 0.42, h * 0.46);   // haunch
+      g.fillStyle(DARK, 1);                                     // tail, round the front
+      g.fillEllipse(w * 0.66, h * 0.92, w * 0.44, h * 0.1);
+      g.fillStyle(FUR, 1);
+      g.fillEllipse(w * 0.58, h * 0.56, w * 0.3, h * 0.42);    // chest
+      g.fillStyle(CREAM, 1);
+      g.fillEllipse(w * 0.62, h * 0.66, w * 0.16, h * 0.26);   // ...its white front
+      g.fillStyle(FUR, 1);
+      g.fillCircle(w * 0.64, h * 0.26, w * 0.17);              // head
+      g.beginPath();                                            // ears
+      g.moveTo(w * 0.52, h * 0.2); g.lineTo(w * 0.56, h * 0.04); g.lineTo(w * 0.63, h * 0.15);
+      g.closePath(); g.fillPath();
+      g.beginPath();
+      g.moveTo(w * 0.7, h * 0.14); g.lineTo(w * 0.78, h * 0.03); g.lineTo(w * 0.78, h * 0.2);
+      g.closePath(); g.fillPath();
+      g.fillStyle(DARK, 1);                                     // stripes
+      [0.62, 0.74, 0.86].forEach(function (f) {
+        g.fillRect(w * 0.26, h * f, w * 0.2, 2);
+      });
+      g.fillStyle(0x3b2a1c, 1);
+      g.fillEllipse(w * 0.62, h * 0.24, 2.6, 3.4);             // eyes
+      g.fillEllipse(w * 0.75, h * 0.24, 2.6, 3.4);
+      g.generateTexture('catSitTex', w, h);
+      g.destroy();
+    })();
+    (function () {                                   // walking
+      var w = 84, h = 48;
+      var g = scene.make.graphics({ x: 0, y: 0, add: false });
+      g.fillStyle(0x000000, 0.24);
+      g.fillEllipse(w * 0.5, h - 3, w * 0.66, 6);
+      g.fillStyle(DARK, 1);                                     // tail, up
+      g.beginPath();
+      g.moveTo(w * 0.2, h * 0.52); g.lineTo(w * 0.06, h * 0.1);
+      g.lineTo(w * 0.13, h * 0.08); g.lineTo(w * 0.27, h * 0.5);
+      g.closePath(); g.fillPath();
+      g.fillStyle(FUR, 1);
+      g.fillEllipse(w * 0.46, h * 0.52, w * 0.56, h * 0.42);   // body
+      [0.26, 0.4, 0.62, 0.76].forEach(function (f, i) {         // legs
+        g.fillRect(w * f, h * 0.66, w * 0.07, h * (i % 2 ? 0.3 : 0.26));
+      });
+      g.fillCircle(w * 0.78, h * 0.36, w * 0.13);              // head
+      g.beginPath();                                            // ears
+      g.moveTo(w * 0.7, h * 0.28); g.lineTo(w * 0.72, h * 0.08); g.lineTo(w * 0.79, h * 0.22);
+      g.closePath(); g.fillPath();
+      g.beginPath();
+      g.moveTo(w * 0.83, h * 0.2); g.lineTo(w * 0.9, h * 0.08); g.lineTo(w * 0.9, h * 0.28);
+      g.closePath(); g.fillPath();
+      g.fillStyle(CREAM, 1);
+      g.fillEllipse(w * 0.5, h * 0.64, w * 0.3, h * 0.16);     // belly
+      g.fillStyle(DARK, 1);                                     // stripes
+      [0.34, 0.46, 0.58].forEach(function (f) {
+        g.fillRect(w * f, h * 0.3, 2, h * 0.2);
+      });
+      g.fillStyle(0x3b2a1c, 1);
+      g.fillEllipse(w * 0.82, h * 0.34, 2.4, 3);               // eye
+      g.generateTexture('catWalkTex', w, h);
+      g.destroy();
+    })();
+  }
+
+  // Put down on a spot rather than in the middle of the floor, because
+  // the spots are the places that have been checked to be floor - and
+  // on the one FURTHEST from where you came in. Not for tidiness: a
+  // cat that might be sitting on the doormat when a room loads makes
+  // "what is in reach when you arrive" a coin toss, and the first
+  // thing a room says to you should not be decided by one.
+  MainScene.prototype.startCat = function () {
+    this.catHere = catRoomNow() === THIS_ROOM;
+    if (!this.catHere) { this.cat = null; return; }
+    var self = this, at = 0, best = -1;
+    var me = this.placeAt(this.worldX, this.depth);
+    CAT_SPOTS.forEach(function (spot, i) {
+      var p = self.placeAt(spot.worldX, spot.depth);
+      var d = Math.hypot(p.x - me.x, p.y - me.y);
+      if (d > best) { best = d; at = i; }
+    });
+    this.cat = {
+      worldX: CAT_SPOTS[at].worldX,
+      depth: CAT_SPOTS[at].depth,
+      at: at,                 // the spot it is sitting on, or heading for
+      mode: 'rest',           // 'rest' | 'walk' | 'pet'
+      rest: this.catRestFor(),
+      walked: 0,              // seconds spent trying to reach `at`
+      petAge: 0,
+      petted: false,          // has it been petted at all, ever
+      flipX: false,
+      bob: 0
+    };
+  };
+  MainScene.prototype.catRestFor = function () {
+    return CAT_REST_MIN + Math.random() * (CAT_REST_MAX - CAT_REST_MIN);
+  };
+  // The next place worth being. Mostly the next one round the ring, so
+  // it works its way about the room rather than bouncing between two
+  // favourites; sometimes back the way it came.
+  MainScene.prototype.catPickSpot = function () {
+    var step = Math.random() < 0.25 ? -1 : 1;
+    this.cat.at = (this.cat.at + step + CAT_SPOTS.length) % CAT_SPOTS.length;
+    this.cat.mode = 'walk';
+    this.cat.walked = 0;
+  };
+  MainScene.prototype.layoutCat = function () {
+    if (!this.cat || !this.catSprite) return;
+    var p = this.placeAt(this.cat.worldX, this.cat.depth);
+    var lift = this.cat.mode === 'walk' ? Math.sin(this.cat.bob) * 1.6 * p.scale : 0;
+    this.catSprite
+      .setTexture(this.cat.mode === 'walk' ? 'catWalkTex' : 'catSitTex')
+      .setPosition(p.x, p.y + lift)
+      .setScale(p.scale * CAT_SIZE)
+      .setFlipX(this.cat.flipX)
+      .setDepth(p.y);
+  };
+  MainScene.prototype.updateCat = function (dt) {
+    var c = this.cat;
+    if (!c) return;
+    if (c.mode === 'pet') {
+      c.petAge += dt;
+      if (c.petAge >= CAT_PET_SECS) { c.mode = 'rest'; c.rest = this.catRestFor(); }
+      this.layoutCat();
+      return;
+    }
+    if (c.mode === 'rest') {
+      c.rest -= dt;
+      if (c.rest <= 0) this.catPickSpot();
+      this.layoutCat();
+      return;
+    }
+
+    var target = CAT_SPOTS[c.at];
+    var dx = target.worldX - c.worldX, dy = target.depth - c.depth;
+    var dist = Math.hypot(dx, dy);
+    if (dist <= CAT_ARRIVED) {
+      c.worldX = target.worldX;
+      c.depth = target.depth;
+      c.mode = 'rest';
+      c.rest = this.catRestFor();
+      this.layoutCat();
+      return;
+    }
+
+    // Same rule as you: one axis at a time, so furniture is something
+    // it slides along. And the same escape hatch - a cat that a resize
+    // has left standing inside the bed may move however it likes until
+    // it is out again.
+    var step = Math.min(CAT_SPEED * dt, dist);
+    var stuck = this.blockedAt(c.worldX, c.depth, CAT_HALF_X, CAT_HALF_Y) !== null;
+    var nx = clamp(c.worldX + (dx / dist) * step, -1, 1);
+    if (stuck || this.blockedAt(nx, c.depth, CAT_HALF_X, CAT_HALF_Y) === null) {
+      if (nx > c.worldX + 0.0005) c.flipX = false;
+      else if (nx < c.worldX - 0.0005) c.flipX = true;
+      c.worldX = nx;
+    }
+    var nd = clamp(c.depth + (dy / dist) * step, 0.06, 0.94);
+    if (stuck || this.blockedAt(c.worldX, nd, CAT_HALF_X, CAT_HALF_Y) === null) c.depth = nd;
+
+    c.bob += dt * 11;
+    c.walked += dt;
+    if (c.walked > CAT_GIVE_UP) this.catPickSpot();   // given up on; somewhere else, then
+    this.layoutCat();
+  };
+  MainScene.prototype.atCat = function () {
+    if (!this.cat) return false;
+    var me = this.placeAt(this.worldX, this.depth);
+    var it = this.placeAt(this.cat.worldX, this.cat.depth);
+    var s = this.depthToScale(this.cat.depth);
+    var dx = (me.x - it.x) / (CAT_REACH_X * s);
+    var dy = (me.y - it.y) / (CAT_REACH_Y * s);
+    return dx * dx + dy * dy <= 1;
+  };
+  MainScene.prototype.petCat = function () {
+    if (this.mode !== 'walk' || !this.atCat()) return false;
+    this.cat.mode = 'pet';
+    this.cat.petAge = 0;
+    this.cat.petted = true;
+    this.layoutCat();
+    return true;
+  };
+  // What the cat has to say, which is nothing, in two moods. It comes
+  // FIRST wherever this is used: it wanders, so it is the one thing in
+  // a room that can turn up in front of something else, and being told
+  // about the bookshelf while a cat sits on your feet is the wrong
+  // answer every time.
+  MainScene.prototype.catThing = function () {
+    if (!this.atCat()) return null;
+    return {
+      say: this.cat.mode === 'pet' ? CAT_PETTED_LINE : CAT_LINE,
+      pet: true, verb: 'Pet'
+    };
+  };
+  // The cat, from outside: where it is, what it is doing, and whether
+  // it is standing in the furniture - which is the one thing about it
+  // that can be wrong rather than merely random.
+  MainScene.prototype.catDebug = function () {
+    var self = this;
+    return {
+      room: THIS_ROOM,
+      here: !!this.cat,
+      spots: CAT_SPOTS,
+      spotsBlocked: CAT_SPOTS.map(function (s) {
+        return self.blockedAt(s.worldX, s.depth, CAT_HALF_X, CAT_HALF_Y);
+      }),
+      at: this.cat ? {
+        worldX: this.cat.worldX, depth: this.cat.depth, mode: this.cat.mode,
+        at: this.cat.at, petted: this.cat.petted,
+        insideFurniture: this.blockedAt(this.cat.worldX, this.cat.depth,
+                                        CAT_HALF_X, CAT_HALF_Y)
+      } : null
     };
   };
 

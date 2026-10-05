@@ -23,7 +23,9 @@ const BOOT_MS = 700;
 
 async function reachedPage(page, name, timeout) {
   try {
-    await page.waitForURL('**/' + name, { timeout: timeout });
+    // The trailing * matters: walking between rooms carries a query
+    // string, and a pattern without it matches neither.
+    await page.waitForURL('**/' + name + '*', { timeout: timeout });
     return true;
   } catch (e) {
     return false;
@@ -44,6 +46,13 @@ async function readState(page) {
     return { gone: true, why: String(e).slice(0, 120) };
   }
 }
+
+// The cat roams the whole house, so a room may or may not have it -
+// which is the point of it and also the one thing these checks cannot
+// live with. ?cat= pins it: AWAY for everything that is about the
+// furniture, HERE for the handful of checks that are about the cat.
+const AWAY = 'house.html?cat=away';
+const HERE = 'house.html?cat=house';
 
 async function standAt(page, key, depthOffset) {
   await page.evaluate(function (args) {
@@ -118,7 +127,7 @@ harness.run(async (page, check, ctx) => {
     !middle.atTv && !middle.atDesk && middle.prompt === null, middle);
 
   const farSide = await page.evaluate(() => {
-    window.__houseDebug.moveTo(-0.95, 0.9);
+    window.__houseDebug.moveTo(-0.55, 0.9);
     return new Promise(res => setTimeout(() => res(window.__houseDebug.state()), 220));
   });
   check('nor is the far corner', !farSide.atTv && !farSide.atDesk, farSide);
@@ -143,18 +152,18 @@ harness.run(async (page, check, ctx) => {
   check('landing back in the yard', await reachedPage(page, 'yard.html', 6000), page.url());
 
   // The Out button is the same escape hatch the yard's Fly button is.
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
   await page.click('#outBtn');
   check('the Out button leaves from anywhere', await reachedPage(page, 'yard.html', 6000), page.url());
 
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
   await page.keyboard.press('Escape');
   check('and so does Escape', await reachedPage(page, 'yard.html', 6000), page.url());
 
   // --- the room is a room --------------------------------------------------
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
 
   // Sized against the FIGURE, not the canvas. Every one of these was
@@ -232,7 +241,7 @@ harness.run(async (page, check, ctx) => {
   await page.click('#outBtn');
   check('and pressing it in the open still goes outside',
     await reachedPage(page, 'yard.html', 6000), page.url());
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
 
   // Anything that does NOT act must stay inert, and must not offer a
@@ -256,7 +265,7 @@ harness.run(async (page, check, ctx) => {
   await page.click('#outBtn');
   check('pressing Use at the computer leaves for the tutorial',
     await reachedPage(page, 'head-on.html?tutorial', 6000), page.url());
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
 
   // --- the six o'clock news -------------------------------------------------
@@ -438,7 +447,7 @@ harness.run(async (page, check, ctx) => {
   // first paints - so an overlay starts opaque and is lifted once there
   // is a frame behind it. Read twice: dark a moment in, clear after.
   const arrival = await (async () => {
-    await page.goto(ctx.url('house.html'));
+    await page.goto(ctx.url(AWAY));
     const early = await page.evaluate(() => {
       const el = document.getElementById('blackout');
       return { exists: !!el, visible: el ? el.classList.contains('visible') : false,
@@ -483,27 +492,27 @@ harness.run(async (page, check, ctx) => {
   // door is deliberately NOT one of those spots - landing on the
   // doorstep would walk you straight back out to the yard before you
   // saw the room - and neither is anything the URL made up.
-  await page.goto(ctx.url('house.html?at=sofa'));
+  await page.goto(ctx.url('house.html?cat=away&at=sofa'));
   await page.waitForTimeout(BOOT_MS);
   const atSofa = await readState(page);
   check('?at= puts you in front of the thing it names',
     Math.abs(atSofa.worldX - 0.42) < 0.05 && atSofa.depth > 0.6 && atSofa.blockedBy === null,
     atSofa);
 
-  await page.goto(ctx.url('house.html?at=door'));
+  await page.goto(ctx.url('house.html?cat=away&at=door'));
   await page.waitForTimeout(BOOT_MS);
   const atTheDoor = await readState(page);
   check('but never on the doorstep, which would bounce you straight out',
     atTheDoor.gone !== true && atTheDoor.mode === 'walk' && atTheDoor.atDoor === false, atTheDoor);
 
-  await page.goto(ctx.url('house.html?at=nonsense'));
+  await page.goto(ctx.url('house.html?cat=away&at=nonsense'));
   await page.waitForTimeout(BOOT_MS);
   const atNonsense = await readState(page);
   check('and a spot that is not a thing lands you where you always start',
     Math.abs(atNonsense.worldX - 0.06) < 0.01 && Math.abs(atNonsense.depth - 0.70) < 0.01,
     atNonsense);
 
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
 
   // --- furniture is solid ---------------------------------------------------
@@ -514,7 +523,7 @@ harness.run(async (page, check, ctx) => {
   // time so furniture is something you slide along instead of something
   // you stick to. Both halves are invisible until someone walks at a
   // sofa, and neither is covered by anything above.
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
 
   const solid = await page.evaluate(() => {
@@ -555,7 +564,7 @@ harness.run(async (page, check, ctx) => {
   // Diagonally at it: blocked on one axis, free on the other, so you
   // slide past instead of stopping dead. Without that a player who
   // holds a diagonal just stops, which reads as the game hanging.
-  const roundSofa = await walkHolding(page, [0.42, 0.88], ['ArrowUp', 'ArrowLeft'], 3500);
+  const roundSofa = await walkHolding(page, [0.42, 0.88], ['ArrowUp', 'ArrowLeft'], 2000);
   check('but a diagonal slides you round it rather than sticking',
     roundSofa.end.depth < 0.45 && roundSofa.insideAt === null, roundSofa);
 
@@ -563,7 +572,7 @@ harness.run(async (page, check, ctx) => {
   const toDoor = await walkHolding(page, [0.06, 0.70], ['ArrowUp'], 4000);
   check('and the walk to the front door is still clear',
     toDoor.end.gone === true || toDoor.end.mode !== 'walk', toDoor);
-  await page.goto(ctx.url('house.html'));
+  await page.goto(ctx.url(AWAY));
   await page.waitForTimeout(BOOT_MS);
 
   // --- the door is IN the wall ---------------------------------------------
@@ -603,5 +612,235 @@ harness.run(async (page, check, ctx) => {
   check('nor under the Out button', !layout.youOnOut, layout);
   check('and the furniture stays clear of them too', !layout.sofaOnStick, layout);
 
+  // --- the two open ends of the house ---------------------------------------
+  // The front room is the middle of three. There is no door at either
+  // end and no hallway between them - it is one open plan - so the way
+  // through is to keep walking, and crossing the line is a CUT: the
+  // same rule as crossing the house's front line out in the yard.
+  await page.goto(ctx.url(AWAY));
+  await page.waitForTimeout(BOOT_MS);
+
+  const nearEnds = {};
+  for (const [name, x] of [['kitchen', -0.9], ['bedroom', 0.9]]) {
+    nearEnds[name] = await page.evaluate(spot => {
+      window.__houseDebug.moveTo(spot, 0.8);
+      return new Promise(res => setTimeout(() => res(window.__houseDebug.state()), 240));
+    }, x);
+  }
+  check('the left-hand end of the room says the kitchen is through it',
+    /kitchen/i.test(nearEnds.kitchen.prompt || ''), nearEnds);
+  check('and the right-hand end says the bed end is',
+    /bed/i.test(nearEnds.bedroom.prompt || ''), nearEnds);
+  // The hint is a sign, not a button. Pressing the corner button here
+  // must still be the way OUT of the house, not a way sideways.
+  const endButton = await page.evaluate(() => ({
+    label: document.getElementById('outLabel').textContent,
+    lit: document.getElementById('outBtn').classList.contains('acts')
+  }));
+  check('but neither end turns the corner button into something else',
+    endButton.label === 'Out' && endButton.lit === false, endButton);
+
+  const toKitchen = await walkHolding(page, [0.0, 0.8], ['ArrowLeft'], 4000);
+  check('walking off the left-hand end of the room leaves it', toKitchen.end.gone === true,
+    toKitchen);
+  check('and lands in the kitchen', await reachedPage(page, 'kitchen.html', 6000), page.url());
+  // Carrying the depth across is the whole of continuity here: there is
+  // no doorway at either end to work a landing spot out from, so the
+  // only thing that can make the two sides agree is where you were.
+  const handover = new URL(page.url());
+  check('carrying the depth you were walking at across with you',
+    handover.searchParams.get('from') === 'house' &&
+    Math.abs(parseFloat(handover.searchParams.get('d')) - 0.8) < 0.08, page.url());
+
+  await page.goto(ctx.url(AWAY));
+  await page.waitForTimeout(BOOT_MS);
+  const toBedroom = await walkHolding(page, [0.0, 0.8], ['ArrowRight'], 4000);
+  check('and walking off the right-hand end leaves it too', toBedroom.end.gone === true,
+    toBedroom);
+  check('landing at the bed end', await reachedPage(page, 'bedroom.html', 6000), page.url());
+
+  // Coming back the other way. You arrive at the end you walked out of,
+  // at the depth you were walking at - and never standing in the sofa,
+  // whatever depth that was.
+  for (const [from, sign] of [['kitchen', -1], ['bedroom', 1]]) {
+    await page.goto(ctx.url(`house.html?cat=away&from=${from}&d=0.62`));
+    await page.waitForTimeout(BOOT_MS);
+    const back = await readState(page);
+    check(`coming back from the ${from} puts you at that end of the room`,
+      Math.sign(back.worldX) === sign && Math.abs(back.worldX) > 0.6, back);
+    check(`at the depth you left it at, and standing on floor`,
+      Math.abs(back.depth - 0.62) < 0.02 && back.blockedBy === null, back);
+    // ...and not one step from walking straight back out again.
+    check(`with room to turn round in`,
+      Math.abs(back.worldX) < 0.95, back);
+  }
+
+  // The whole round trip, walked rather than teleported: out of the
+  // front room, across the kitchen, back, across the bed end, back.
+  // Each leg is checked on its own above; what this catches is the
+  // thing none of them can - the two sides of a join drifting apart,
+  // so that a lap of the house leaves you somewhere you never walked.
+  const lap = await (async () => {
+    const legs = [];
+    async function walkOut(hook, keys, ms) {
+      await page.keyboard.down(keys);
+      const started = Date.now();
+      while (Date.now() - started < ms) {
+        const here = await page.evaluate(h => {
+          const d = window[h];
+          return d ? d.state() : null;
+        }, hook).catch(() => null);
+        if (!here) break;
+        if (here.mode !== 'walk') break;
+        await page.waitForTimeout(40);
+      }
+      await page.keyboard.up(keys).catch(() => {});
+      await page.waitForTimeout(900);
+      return page.url();
+    }
+    await page.goto(ctx.url('house.html?cat=away'));
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window.__houseDebug.moveTo(0, 0.66));
+    legs.push(await walkOut('__houseDebug', 'ArrowLeft', 5000));
+    const inKitchen = await page.evaluate(() => window.__kitchenDebug.state());
+    legs.push(await walkOut('__kitchenDebug', 'ArrowRight', 5000));
+    const backHome = await page.evaluate(() => window.__houseDebug.state());
+    return { legs, inKitchen, backHome };
+  })();
+  check('a lap of the house walks through the kitchen and back',
+    /kitchen\.html/.test(lap.legs[0]) && /house\.html/.test(lap.legs[1]), lap.legs);
+  // Out at depth 0.66, so in at depth 0.66, and home again at 0.66 -
+  // give or take the stride you were part way through.
+  check('and you are at the same depth the whole way round',
+    Math.abs(lap.inKitchen.depth - 0.66) < 0.08 &&
+    Math.abs(lap.backHome.depth - 0.66) < 0.08, lap);
+  check('standing on floor at every stop',
+    lap.inKitchen.blockedBy === null && lap.backHome.blockedBy === null, lap);
+  // And back on the side of the front room you came in through, not
+  // teleported across it.
+  check('and back on the side of the room you came in through',
+    lap.backHome.worldX < -0.6, lap.backHome);
+
+  // --- the cat --------------------------------------------------------------
+  // It belongs to the house rather than to a room, so the first thing
+  // worth checking is that it is somewhere at all - and only ever in a
+  // room that exists.
+  await page.goto(ctx.url('house.html?cat=away'));
+  await page.waitForTimeout(BOOT_MS);
+  const away = await page.evaluate(() => ({
+    cat: window.__houseDebug.cat(),
+    stored: JSON.parse(window.sessionStorage.getItem('broccoli-chapter1-v1') || '{}'),
+    state: window.__houseDebug.state()
+  }));
+  check('with the cat elsewhere in the house, this room has no cat',
+    away.cat.here === false && away.state.atCat === false, away);
+  check('and it is still somewhere real',
+    ['house', 'kitchen', 'bedroom'].indexOf(away.stored.catRoom) >= 0 &&
+    away.stored.catRoom !== 'house', away);
+  check('and nothing in here claims to be it', away.state.prompt === null, away);
+
+  // Left to itself it moves between the three rooms while you are not
+  // looking. Loaded enough times, it has to have been in more than one
+  // of them - and never in a room that does not exist.
+  const roamed = await (async () => {
+    const seen = {};
+    for (let i = 0; i < 24; i++) {
+      await page.goto(ctx.url('house.html'));
+      await page.waitForTimeout(260);
+      const room = await page.evaluate(() =>
+        JSON.parse(window.sessionStorage.getItem('broccoli-chapter1-v1') || '{}').catRoom);
+      seen[room] = (seen[room] || 0) + 1;
+    }
+    return seen;
+  })();
+  check('left alone the cat moves about the house',
+    Object.keys(roamed).length >= 2, roamed);
+  check('and is never put in a room that does not exist',
+    Object.keys(roamed).every(r => ['house', 'kitchen', 'bedroom'].indexOf(r) >= 0), roamed);
+
+  // In the room, it is a thing you can be at.
+  await page.goto(ctx.url(HERE));
+  await page.waitForTimeout(BOOT_MS);
+  const catHere = await page.evaluate(() => window.__houseDebug.cat());
+  check('pinned to this room, the cat is in it', catHere.here === true, catHere);
+  check('every place it goes is floor it can stand on',
+    catHere.spots.length >= 4 && catHere.spotsBlocked.every(b => b === null), catHere);
+  check('and it does not boot standing underfoot',
+    (await readState(page)).atCat === false, await readState(page));
+
+  // Watched for a while: does it move, does it get anywhere, and is it
+  // ever found standing in the furniture on the way. Sampled rather
+  // than asserted once, because a cat that only clips the sofa in the
+  // middle of a walk would pass every end-of-walk check there is.
+  const watched = await (async () => {
+    const rested = new Set(), places = new Set();
+    let insideAt = null, walked = false;
+    const started = Date.now();
+    while (Date.now() - started < 26000) {
+      const c = await page.evaluate(() => window.__houseDebug.cat().at);
+      if (c.insideFurniture) insideAt = c;
+      if (c.mode === 'walk') walked = true;
+      if (c.mode === 'rest') rested.add(c.at);
+      places.add(c.worldX.toFixed(2) + ',' + c.depth.toFixed(2));
+      await page.waitForTimeout(120);
+    }
+    return { rested: rested.size, positions: places.size, walked, insideAt };
+  })();
+  check('the cat gets up and walks about the room', watched.walked, watched);
+  check('and arrives somewhere other than where it started', watched.rested >= 2, watched);
+  check('having moved through more than a handful of places on the way',
+    watched.positions > 12, watched);
+  check('and is never found standing inside the furniture',
+    watched.insideAt === null, watched);
+
+  // Petting. The cat is the only thing in here that answers to the
+  // corner button without being somewhere you can be TOLD to stand, so
+  // the check has to put it under your feet first.
+  await page.evaluate(() => {
+    const d = window.__houseDebug, st = d.state();
+    d.moveCat(st.worldX, st.depth - 0.06);
+  });
+  await page.waitForTimeout(260);
+  const onCat = await page.evaluate(() => ({
+    state: window.__houseDebug.state(),
+    label: document.getElementById('outLabel').textContent,
+    lit: document.getElementById('outBtn').classList.contains('acts'),
+    hint: document.getElementById('hint').textContent
+  }));
+  check('standing at the cat registers', onCat.state.atCat === true, onCat);
+  check('and the corner button offers to pet it',
+    onCat.label === 'Pet' && onCat.lit === true, onCat);
+
+  await page.click('#outBtn');
+  await page.waitForTimeout(280);
+  const petted = await page.evaluate(() => ({
+    cat: window.__houseDebug.cat(),
+    hint: document.getElementById('hint').textContent,
+    url: window.location.pathname
+  }));
+  check('pressing it pets the cat rather than leaving the house',
+    petted.cat.at.petted === true && /house\.html$/.test(petted.url), petted);
+  check('and the room says something different once you have',
+    petted.hint !== onCat.hint && petted.hint.length > 0, petted);
+  check('and the cat stays put to be petted', petted.cat.at.mode === 'pet', petted);
+
+  // Sat in front of something else, the cat wins. Being told about the
+  // television while a cat sits on your feet is the wrong answer every
+  // time, and the order of a list of ifs is exactly the kind of thing
+  // that gets rearranged by accident.
+  await page.goto(ctx.url(HERE));
+  await page.waitForTimeout(BOOT_MS);
+  const overTv = await page.evaluate(() => {
+    const d = window.__houseDebug, p = d.props.tv;
+    d.moveTo(p.worldX, p.depth + 0.18);
+    d.moveCat(p.worldX, p.depth + 0.18);
+    return new Promise(res => setTimeout(() => res({
+      state: d.state(), label: document.getElementById('outLabel').textContent
+    }), 280));
+  });
+  check('a cat in front of the TV is what the room talks about',
+    overTv.state.atTv === true && overTv.state.atCat === true &&
+    overTv.label === 'Pet', overTv);
+
   check('no page errors after full run', errors.length === 0, errors);
-}, { page: 'house.html' });
+}, { page: 'house.html?cat=away' });
