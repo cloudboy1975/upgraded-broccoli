@@ -105,6 +105,34 @@ chapter of a longer game about two-dimensional aliens.
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
 
+#### Descent (prototype)
+
+[`descent.html`](descent.html) is a prototype of what comes after the
+boss: flying down to the planet.
+[Try it](https://cloudboy1975.github.io/upgraded-broccoli/descent.html).
+It isn't connected to the boss fight yet. The plan is to hand off from
+`endBoss()` once the descent feels right.
+
+- **A behind-the-ship view with no 3D engine.** Every object is a flat
+  shape at some depth, drawn at `centre + (world - camera) / depth`. The
+  camera follows the ship only part of the way, so steering moves the
+  ship on screen and swings the world the other way. That parallax is
+  what gives the depth. The world is built from flat cutouts, which
+  fits a game about two-dimensional aliens.
+- **The same stick as the yard.** Left thumb, analog, centred wherever
+  you press. Arrows/WASD on a keyboard. Up is up. The right thumb is
+  left empty for the fire button.
+- **Three stretches, one clock:** *entry* (head-on's red planet swells
+  to fill the view, with heat streaks and meteors), the *cloud layer*
+  (cloud sheets you can't see through, and violet walls with a gap to
+  fly through), then a white-out as you break through the cloud base
+  onto the *surface*. There the ground rises toward you, rock spires
+  stand up out of it, and the pace keeps increasing until you crash.
+  For now there's no landing.
+- Three shields, a short grace period after each hit, distance flown as
+  the score, and your best distance saved locally.
+- Tests: `tests/test-descent.js`.
+
 #### Left off the lawn, into the trees
 
 **Walk left from anywhere on the lawn** and you end up in the trees.

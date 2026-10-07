@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Head-On &mdash; Descent</title>
+<style>
+  :root {
+    --bg-1: #05061a;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #fb923c;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+  /* Same shape as head-on.html: a header, a box the canvas is FIT into,
+     and the controls underneath it rather than over it - the stick is
+     held the whole time, so it must never sit on top of what you are
+     dodging. */
+  body {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-1);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .hud-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+    flex-shrink: 0;
+  }
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .back-link:hover { color: var(--text); }
+  .chapter-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid rgba(226, 232, 240, 0.2);
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+
+  #gameRoot { position: relative; flex: 1; min-height: 0; }
+  #gameRoot canvas { display: block; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(5, 6, 26, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 5;
+  }
+  .overlay.visible { opacity: 1; pointer-events: auto; }
+  .overlay-title {
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+  .overlay-line { color: var(--muted); font-size: 0.9rem; }
+  .btn {
+    margin-top: 6px;
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #1a0d03;
+    background: var(--accent);
+    border: none;
+    border-radius: 999px;
+    padding: 10px 26px;
+    cursor: pointer;
+  }
+
+  .control-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px max(14px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    touch-action: none;
+  }
+
+  /* Left thumb: the analog stick from yard.html, unchanged - wherever
+     the thumb lands becomes that press's neutral centre. */
+  .stick-zone {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: rgba(30, 41, 59, 0.55);
+    border: 1px solid rgba(226, 232, 240, 0.15);
+    flex-shrink: 0;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    overflow: visible;
+  }
+  .stick-anchor {
+    position: absolute;
+    top: 0; left: 0;
+    width: 10px; height: 10px;
+    margin-left: -5px; margin-top: -5px;
+    border-radius: 50%;
+    background: rgba(226, 232, 240, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-knob {
+    position: absolute;
+    top: 0; left: 0;
+    width: 50px; height: 50px;
+    margin-left: -25px; margin-top: -25px;
+    border-radius: 50%;
+    background: rgba(226, 232, 240, 0.16);
+    border: 2px solid rgba(226, 232, 240, 0.45);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-anchor.visible, .stick-knob.visible { opacity: 1; }
+
+  /* The right thumb is deliberately empty for now: it is where the fire
+     button goes once there is something to shoot, the same spot it
+     sits in head-on.html. A faint ring holds the place. */
+  .thumb-slot {
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 1px dashed rgba(226, 232, 240, 0.12);
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+  <div class="hud-bar">
+    <a class="back-link" href="index.html">&larr; All</a>
+    <div class="chapter-tag">Descent &middot; prototype</div>
+  </div>
+
+  <div id="gameRoot">
+    <div class="overlay" id="crashOverlay">
+      <div class="overlay-title">Crashed</div>
+      <div class="overlay-line" id="crashLine"></div>
+      <button type="button" class="btn" id="againBtn">Fly again</button>
+    </div>
+  </div>
+
+  <div class="control-bar">
+    <div class="stick-zone" id="stickZone" aria-label="Fly (press anywhere and drag)">
+      <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
+      <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
+    </div>
+    <div class="thumb-slot" aria-hidden="true"></div>
+  </div>
+
+<script src="phaser.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ==================================================================
+  // Descent: after the boss, down to the planet.
+  //
+  // A prototype of the next phase. The camera sits behind and a little
+  // above the ship and everything comes at you out of the middle of the
+  // screen. There is no 3D engine: every object is a FLAT shape standing
+  // in a plane at some depth z, and the whole projection is one divide -
+  //
+  //     screen = centre + (world - camera) / z
+  //
+  // - so a thing at z=1 (the ship's own depth) is drawn at world size,
+  // at z=4 a quarter of that, and so on. That keeps the look of
+  // head-on.html (flat outlines and fills, no lighting) while giving the
+  // depth, and it suits the premise: the aliens are two-dimensional, so
+  // the world they put in your way is made of cardboard.
+  //
+  // The run is three stretches, all driven off one clock (state.t) so
+  // any moment of it can be jumped to:
+  //   entry   - the red planet from head-on.html swells until it is all
+  //             you can see; heat streaks and meteors.
+  //   clouds  - inside the haze; cloud sheets that hide what is behind
+  //             them, and the first walls with a gap to fly through.
+  //   surface - punch out under the cloud base: a horizon, the ground
+  //             coming up to meet you, rock spires and walls. It keeps
+  //             going, faster, until you crash.
+  // ==================================================================
+
+  var GAME_WIDTH = 360;
+  var GAME_HEIGHT = 480;
+  var CX = GAME_WIDTH / 2;
+  var CY = 196;                // the vanishing point - where everything comes from
+
+  // ---- Depth ---------------------------------------------------------
+  var Z_SHIP = 1;              // the ship's plane; collisions happen as a thing crosses it
+  var Z_SPAWN = 14;            // where new obstacles appear
+  var Z_NEAR = 0.35;           // gone once this close to the camera
+  var Z_FADE_IN = 3;           // depths over which a new obstacle fades in out of the haze
+
+  // ---- The camera ----------------------------------------------------
+  // It follows the ship only part of the way, so steering visibly moves
+  // the ship on screen AND swings the world the other way - that
+  // parallax is most of what makes this read as 3D. CAM_RAISE puts the
+  // camera above the ship, which is what sits the ship low on screen
+  // with the world opening out above it.
+  var CAM_FOLLOW = 0.5;
+  var CAM_RAISE = 74;
+
+  // ---- The ship ------------------------------------------------------
+  var X_LIMIT = 150;           // world px either side of centre
+  var Y_TOP = -140;            // how high you can climb
+  var Y_BOTTOM = 150;          // how low, until there is ground in the way
+  var GROUND_CLEARANCE = 34;   // closest the ship may get to the ground
+  var SHIP_MAX_SPEED = 250;    // px/s at full stick
+  var SHIP_RESPONSE = 9;       // how quickly velocity catches up with the stick (1/s)
+  var SHIP_HIT_RADIUS = 11;
+  var SHIP_DRAW_SIZE = 18;
+  var SHIELDS = 3;
+  var INVULN_TIME = 1.3;       // seconds of grace after a hit
+
+  // ---- Pace ----------------------------------------------------------
+  var SPEED_START = 4.2;       // depth units per second: a spawn reaches you in ~3s
+  var SPEED_RAMP = 0.035;      // added per second flown
+  var SPEED_MAX = 8;
+  var METRES_PER_Z = 40;       // turns depth flown into the distance score
+
+  // ---- The stretches -------------------------------------------------
+  var ENTRY_TIME = 22;         // seconds of entry
+  var CLOUD_TIME = 24;         // seconds in the cloud layer
+  var BREAKOUT_TIME = 1.6;     // the white-out either side of the cloud base
+  var GROUND_SETTLE_TIME = 6;  // seconds for the ground to come up after the breakout
+  var GROUND_START_Y = 2600;   // world y of the ground as you clear the clouds
+  var GROUND_Y = 175;          // ...and where it settles: close enough that it, not Y_BOTTOM, is the floor
+
+  // Spawning. Intervals are in seconds at SPEED_START and shrink as the
+  // pace rises, so the spacing in DEPTH stays about the same while the
+  // time you have to react to each thing goes down.
+  var ROCK_INTERVAL = { entry: 0.75, clouds: 1.2, surface: 1.6 };
+  var WALL_INTERVAL = { clouds: 3.4, surface: 3.0 };
+  var SPIRE_INTERVAL = 0.9;
+  var SURFACE_INTERVAL_FLOOR = 0.55; // the surface tightens over time, down to this fraction
+  var AIMED_SHARE = 0.45;      // share of rocks/spires that are thrown at where you are
+  var WALL_CLEAR_Z = 1.4;      // depth kept clear either side of a wall, so a rock never plugs the gap
+  var GAP_W = 120;
+  var GAP_H = 104;
+
+  // ---- Colours -------------------------------------------------------
+  var COLOR_SHIP = 0xe2e8f0;           // head-on.html's ship
+  var COLOR_SHIP_FILL = 0x1e293b;
+  var COLOR_FLAME_OUTER = 0xf97316;
+  var COLOR_FLAME_INNER = 0xfde68a;
+  var COLOR_SPACE = 0x05061a;
+  var COLOR_SPACE_HOT = 0x2a0d18;
+  var COLOR_PLANET = 0x5c1414;         // head-on's dull red world, as it looks at its alpha
+  var COLOR_PLANET_BAND = 0x6e1a1a;
+  var COLOR_PLANET_DARK = 0x3a0909;
+  var COLOR_HAZE_HIGH = 0x5c1414;      // the cloud layer starts as the planet's own colour...
+  var COLOR_HAZE_LOW = 0x9a4a44;       // ...and gets paler going down
+  var COLOR_CLOUD = 0xf1d6cf;
+  var COLOR_SKY_TOP = 0x2a1030;
+  var COLOR_SKY_HORIZON = 0xb4533a;
+  var COLOR_GROUND = 0x450a0a;
+  var COLOR_GROUND_BAND = 0x7f1d1d;
+  var COLOR_GROUND_LINE = 0x2a0505;
+  var COLOR_METEOR = 0x8d8175;         // head-on's meteors
+  var COLOR_METEOR_SHADE = 0x5c534b;
+  var COLOR_HEAT = 0xff8a1e;
+  var COLOR_WALL = 0x3b0764;           // the boss's violet: these are theirs
+  var COLOR_WALL_EDGE = 0xa78bfa;
+  var COLOR_SPIRE = 0x2a0a0a;
+  var COLOR_SPIRE_EDGE = 0x991b1b;
+  var COLOR_HIT = 0xef4444;
+
+  var BEST_KEY = 'descent-best-v1';
+
+  // ---- Helpers -------------------------------------------------------
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
+  function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+  function mixColor(a, b, t) {
+    t = clamp(t, 0, 1);
+    var r = Math.round(lerp((a >> 16) & 255, (b >> 16) & 255, t));
+    var g = Math.round(lerp((a >> 8) & 255, (b >> 8) & 255, t));
+    var bl = Math.round(lerp(a & 255, b & 255, t));
+    return (r << 16) | (g << 8) | bl;
+  }
+
+  // ---- The clock -----------------------------------------------------
+  // Everything about WHERE you are in the descent is a function of
+  // state.t, never accumulated, so jumping the clock lands you in a
+  // consistent world.
+  var CLOUDS_START = ENTRY_TIME;
+  var SURFACE_START = ENTRY_TIME + CLOUD_TIME;
+
+  function phaseAt(t) {
+    if (t < CLOUDS_START) return 'entry';
+    if (t < SURFACE_START) return 'clouds';
+    return 'surface';
+  }
+  function speedAt(t) { return Math.min(SPEED_MAX, SPEED_START + SPEED_RAMP * t); }
+  function groundYAt(t) {
+    if (t < SURFACE_START) return Infinity;
+    return lerp(GROUND_START_Y, GROUND_Y, smooth((t - SURFACE_START) / GROUND_SETTLE_TIME));
+  }
+  // Kilometres up, for the readout. Purely cosmetic.
+  function altitudeAt(t) {
+    if (t < CLOUDS_START) return lerp(120, 18, t / ENTRY_TIME);
+    if (t < SURFACE_START) return lerp(18, 2.2, (t - CLOUDS_START) / CLOUD_TIME);
+    return lerp(2.2, 0.15, smooth((t - SURFACE_START) / GROUND_SETTLE_TIME));
+  }
+  // 0..1..0 across the cloud base: the white-out you punch through.
+  function whiteoutAt(t) {
+    var d = Math.abs(t - SURFACE_START);
+    return d > BREAKOUT_TIME ? 0 : smooth(1 - d / BREAKOUT_TIME);
+  }
+
+  // ---- Sound ---------------------------------------------------------
+  // Synthesised, no files - the same habit as the rest of the game. A
+  // bed of filtered noise that rises with speed, and a thump for a hit.
+  var Sound = (function () {
+    var ctx = null, windGain = null, windFilter = null;
+    function ensureAudio() {
+      if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      try { ctx = new AC(); } catch (e) { ctx = null; return; }
+      var len = ctx.sampleRate * 2;
+      var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      var data = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      windFilter = ctx.createBiquadFilter();
+      windFilter.type = 'lowpass';
+      windFilter.frequency.value = 400;
+      windGain = ctx.createGain();
+      windGain.gain.value = 0;
+      src.connect(windFilter).connect(windGain).connect(ctx.destination);
+      src.start();
+    }
+    function setWind(level, bright) {
+      if (!ctx) return;
+      var now = ctx.currentTime;
+      windGain.gain.setTargetAtTime(level * 0.06, now, 0.2);
+      windFilter.frequency.setTargetAtTime(300 + bright * 900, now, 0.2);
+    }
+    function thump() {
+      if (!ctx) return;
+      var now = ctx.currentTime;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(140, now);
+      o.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+      g.gain.setValueAtTime(0.35, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      o.connect(g).connect(ctx.destination);
+      o.start(now);
+      o.stop(now + 0.4);
+    }
+    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump };
+  })();
+
+  // ==================================================================
+  // Input: the analog stick from yard.html, plus arrows/WASD.
+  // Up on the stick is up on the screen - no flight-sim inversion.
+  // ==================================================================
+  var inputState = { x: 0, y: 0 };
+  var touchX = 0, touchY = 0;
+  var kb = { up: false, down: false, left: false, right: false };
+  var kbX = 0, kbY = 0;
+  var STICK_MAX_RADIUS_PX = 44;
+  var HOLD_WATCHDOG_MS = 12000;
+
+  function composeInput() {
+    var x = touchX + kbX, y = touchY + kbY;
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    inputState.x = x;
+    inputState.y = y;
+  }
+  function updateKbVector() {
+    var x = (kb.right ? 1 : 0) - (kb.left ? 1 : 0);
+    var y = (kb.down ? 1 : 0) - (kb.up ? 1 : 0);
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    kbX = x; kbY = y;
+    composeInput();
+  }
+
+  (function bindThumbstick(el, anchorEl, knobEl) {
+    var activeId = null, watchdogTimer = null, anchorX = 0, anchorY = 0;
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+
+    function applyVector(clientX, clientY) {
+      var dx = clientX - anchorX, dy = clientY - anchorY;
+      var dist = Math.hypot(dx, dy);
+      var clamped = Math.min(dist, STICK_MAX_RADIUS_PX);
+      var kx = dist > 0 ? (dx / dist) * clamped : 0;
+      var ky = dist > 0 ? (dy / dist) * clamped : 0;
+      knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+      touchX = kx / STICK_MAX_RADIUS_PX;
+      touchY = ky / STICK_MAX_RADIUS_PX;
+      composeInput();
+    }
+    function hardRelease() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      anchorEl.classList.remove('visible');
+      knobEl.classList.remove('visible');
+      knobEl.style.transform = 'translate(0px, 0px)';
+      touchX = 0; touchY = 0;
+      composeInput();
+    }
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      hardRelease();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      var rect = el.getBoundingClientRect();
+      anchorX = e.clientX;
+      anchorY = e.clientY;
+      var lx = anchorX - rect.left, ly = anchorY - rect.top;
+      anchorEl.style.left = lx + 'px'; anchorEl.style.top = ly + 'px';
+      knobEl.style.left = lx + 'px'; knobEl.style.top = ly + 'px';
+      knobEl.style.transform = 'translate(0px, 0px)';
+      anchorEl.classList.add('visible');
+      knobEl.classList.add('visible');
+      touchX = 0; touchY = 0;
+      composeInput();
+      watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== activeId) return;
+      applyVector(e.clientX, e.clientY);
+    });
+    function release(e) { if (e.pointerId === activeId) hardRelease(); }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+    window.addEventListener('blur', hardRelease);
+  })(
+    document.getElementById('stickZone'),
+    document.getElementById('stickAnchor'),
+    document.getElementById('stickKnob')
+  );
+
+  var KEY_DIRS = {
+    ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
+    ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right'
+  };
+  window.addEventListener('keydown', function (e) {
+    Sound.ensureAudio();
+    var dir = KEY_DIRS[e.code];
+    if (dir) { kb[dir] = true; updateKbVector(); e.preventDefault(); return; }
+    if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'crashed') {
+      e.preventDefault();
+      scene.restart();
+    }
+  });
+  window.addEventListener('keyup', function (e) {
+    var dir = KEY_DIRS[e.code];
+    if (dir) { kb[dir] = false; updateKbVector(); }
+  });
+  window.addEventListener('blur', function () {
+    kb.up = kb.down = kb.left = kb.right = false;
+    updateKbVector();
+  });
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  // ==================================================================
+  // The scene
+  // ==================================================================
+  var scene = null;
+
+  function MainScene() { Phaser.Scene.call(this, { key: 'main' }); }
+  MainScene.prototype = Object.create(Phaser.Scene.prototype);
+  MainScene.prototype.constructor = MainScene;
+
+  MainScene.prototype.create = function () {
+    scene = this;
+    this.shakeX = 0;
+    this.shakeY = 0;
+    this.gBack = this.add.graphics().setDepth(0);
+    this.gFar = this.add.graphics().setDepth(1);
+    this.gShip = this.add.graphics().setDepth(2);
+    this.gNear = this.add.graphics().setDepth(3);
+    this.gFx = this.add.graphics().setDepth(4);
+
+    var textStyle = { fontFamily: '-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif', fontSize: '12px', color: '#e2e8f0' };
+    this.altText = this.add.text(10, 8, '', textStyle).setDepth(10).setResolution(2);
+    this.distText = this.add.text(GAME_WIDTH - 10, 8, '', textStyle).setOrigin(1, 0).setDepth(10).setResolution(2);
+    this.shieldGfx = this.add.graphics().setDepth(10);
+    this.phaseText = this.add.text(CX, 92, '', {
+      fontFamily: textStyle.fontFamily, fontSize: '13px', fontStyle: 'bold', color: '#fde68a'
+    }).setOrigin(0.5).setDepth(10).setResolution(2);
+    this.phaseText.setLetterSpacing && this.phaseText.setLetterSpacing(2);
+
+    this.best = 0;
+    try { this.best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) {}
+
+    var self = this;
+    document.getElementById('againBtn').addEventListener('click', function () { self.restart(); });
+
+    this.restart();
+  };
+
+  MainScene.prototype.restart = function () {
+    this.state = {
+      mode: 'flying',          // 'flying' | 'crashed'
+      t: 0,
+      distance: 0,
+      shipX: 0, shipY: 0,
+      vx: 0, vy: 0,
+      shields: SHIELDS,
+      invuln: 0,
+      hits: 0,
+      flash: 0,
+      shake: 0,
+      crashAge: 0,
+      phase: null,
+      phaseAge: 0,
+      timers: { rock: 1.2, wall: 2.5, spire: 0.5 },
+      obstacles: [],
+      streaks: [],
+      shards: [],
+      invincible: this.state ? this.state.invincible : false,
+      spawning: this.state ? this.state.spawning : true
+    };
+    for (var i = 0; i < 90; i++) this.state.streaks.push(this.newStreak(rand(Z_NEAR, Z_SPAWN)));
+    document.getElementById('crashOverlay').classList.remove('visible');
+  };
+
+  // ---- Projection ----------------------------------------------------
+  MainScene.prototype.camX = function () { return this.state.shipX * CAM_FOLLOW; };
+  MainScene.prototype.camY = function () { return this.state.shipY * CAM_FOLLOW - CAM_RAISE; };
+  MainScene.prototype.sx = function (x, z) { return CX + this.shakeX + (x - this.camX()) / z; };
+  MainScene.prototype.sy = function (y, z) { return CY + this.shakeY + (y - this.camY()) / z; };
+
+  // ---- Update --------------------------------------------------------
+  MainScene.prototype.update = function (time, deltaMs) {
+    try {
+      var dt = Math.min(deltaMs / 1000, 0.05);
+      this.step(dt);
+      this.draw();
+    } catch (e) {
+      debug.runtimeErrors.count++;
+      debug.runtimeErrors.last = String(e && e.stack || e);
+      throw e;
+    }
+  };
+
+  MainScene.prototype.step = function (dt) {
+    var s = this.state;
+    var flying = s.mode === 'flying';
+
+    if (flying) {
+      s.t += dt;
+      var speed = speedAt(s.t);
+      s.distance += speed * dt * METRES_PER_Z;
+      this.stepShip(dt);
+      this.stepSpawning(dt);
+      this.stepObstacles(dt, speed);
+      if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
+    } else {
+      s.crashAge += dt;
+      // The world keeps sliding past for a beat, slowing, so the crash
+      // reads as momentum running out rather than a freeze-frame.
+      var drift = speedAt(s.t) * Math.max(0, 1 - s.crashAge / 0.8);
+      this.stepObstacles(dt, drift, true);
+    }
+    this.stepStreaks(dt, flying ? speedAt(s.t) : speedAt(s.t) * Math.max(0, 1 - s.crashAge / 0.8));
+    this.stepShards(dt);
+
+    var phase = phaseAt(s.t);
+    if (phase !== s.phase) { s.phase = phase; s.phaseAge = 0; }
+    else s.phaseAge += dt;
+
+    s.flash = Math.max(0, s.flash - dt * 2.5);
+    s.shake = Math.max(0, s.shake - dt * 3);
+    this.shakeX = s.shake ? rand(-1, 1) * s.shake * 8 : 0;
+    this.shakeY = s.shake ? rand(-1, 1) * s.shake * 8 : 0;
+
+    Sound.setWind(flying ? 0.4 + 0.6 * (speedAt(s.t) - SPEED_START) / (SPEED_MAX - SPEED_START) + (phase === 'entry' ? 0.4 * Math.sin(Math.PI * s.t / ENTRY_TIME) : 0) : 0,
+      phase === 'entry' ? 1 : phase === 'clouds' ? 0.4 : 0.6);
+  };
+
+  MainScene.prototype.shipYLimit = function () {
+    return Math.min(Y_BOTTOM, groundYAt(this.state.t) - GROUND_CLEARANCE);
+  };
+
+  MainScene.prototype.stepShip = function (dt) {
+    var s = this.state;
+    var k = 1 - Math.exp(-SHIP_RESPONSE * dt);
+    s.vx += (inputState.x * SHIP_MAX_SPEED - s.vx) * k;
+    s.vy += (inputState.y * SHIP_MAX_SPEED - s.vy) * k;
+    // Pinned against an edge, the push into it is dropped rather than
+    // stored, so pulling away responds at once instead of first having
+    // to unwind speed the ship never actually had.
+    var nx = s.shipX + s.vx * dt, ny = s.shipY + s.vy * dt;
+    var yMax = this.shipYLimit();
+    s.shipX = clamp(nx, -X_LIMIT, X_LIMIT);
+    s.shipY = clamp(ny, Y_TOP, yMax);
+    if (s.shipX !== nx) s.vx = 0;
+    if (s.shipY !== ny) s.vy = 0;
+  };
+
+  // ---- Spawning ------------------------------------------------------
+  MainScene.prototype.stepSpawning = function (dt) {
+    var s = this.state;
+    if (!s.spawning) return;
+    var phase = phaseAt(s.t);
+    // Nothing spawns in the white-out: you cannot see it coming.
+    if (whiteoutAt(s.t + (Z_SPAWN - Z_SHIP) / speedAt(s.t)) > 0.15) return;
+    var pace = SPEED_START / speedAt(s.t);
+    if (phase === 'surface') {
+      pace *= lerp(1, SURFACE_INTERVAL_FLOOR, clamp((s.t - SURFACE_START) / 90, 0, 1));
+    }
+    var timers = s.timers;
+
+    timers.rock -= dt;
+    if (timers.rock <= 0) {
+      timers.rock = ROCK_INTERVAL[phase] * pace * rand(0.7, 1.3);
+      if (this.clearOfWalls()) this.spawnRock(Math.random() < AIMED_SHARE);
+    }
+    if (WALL_INTERVAL[phase]) {
+      timers.wall -= dt;
+      if (timers.wall <= 0 && this.clearOfEverything()) {
+        timers.wall = WALL_INTERVAL[phase] * pace * rand(0.8, 1.25);
+        this.spawnWall();
+      }
+    }
+    if (phase === 'surface' && groundYAt(s.t) < 900) {
+      timers.spire -= dt;
+      if (timers.spire <= 0) {
+        timers.spire = SPIRE_INTERVAL * pace * rand(0.6, 1.4);
+        if (this.clearOfWalls()) this.spawnSpire(Math.random() < AIMED_SHARE);
+      }
+    }
+  };
+
+  MainScene.prototype.clearOfWalls = function () {
+    return !this.state.obstacles.some(function (o) {
+      return o.kind === 'wall' && o.z > Z_SPAWN - WALL_CLEAR_Z;
+    });
+  };
+  MainScene.prototype.clearOfEverything = function () {
+    return !this.state.obstacles.some(function (o) {
+      return o.kind !== 'cloud' && o.z > Z_SPAWN - WALL_CLEAR_Z;
+    });
+  };
+
+  MainScene.prototype.addObstacle = function (o) {
+    o.z = o.z == null ? Z_SPAWN : o.z;
+    o.prevZ = o.z;
+    o.age = 0;
+    this.state.obstacles.push(o);
+    return o;
+  };
+
+  MainScene.prototype.spawnRock = function (aimed, opts) {
+    var s = this.state;
+    var r = rand(18, 38);
+    var x = aimed ? s.shipX + rand(-25, 25) : rand(-X_LIMIT - 20, X_LIMIT + 20);
+    var y = aimed ? s.shipY + rand(-25, 25) : rand(Y_TOP - 20, Y_BOTTOM + 20);
+    y = Math.min(y, groundYAt(s.t) - r);
+    var verts = [];
+    var n = 8;
+    for (var i = 0; i < n; i++) verts.push(rand(0.72, 1.05));
+    return this.addObstacle(Object.assign({
+      kind: 'rock', x: x, y: y, r: r, verts: verts,
+      rot: rand(0, Math.PI * 2), spin: rand(-1.5, 1.5),
+      hot: phaseAt(s.t) === 'entry'
+    }, opts || {}));
+  };
+
+  // A flat slab across the whole corridor with one gap in it. The gap
+  // is always somewhere the ship can actually be.
+  MainScene.prototype.spawnWall = function (opts) {
+    var s = this.state;
+    var bottom = Math.min(Y_BOTTOM, groundYAt(s.t) - GROUND_CLEARANCE);
+    var gx = rand(-X_LIMIT + GAP_W / 2 - 20, X_LIMIT - GAP_W / 2 + 20);
+    var gy = rand(Y_TOP + GAP_H / 2 - 20, bottom - GAP_H / 2 + 20);
+    return this.addObstacle(Object.assign({
+      kind: 'wall', gx: gx, gy: gy, gw: GAP_W, gh: GAP_H
+    }, opts || {}));
+  };
+
+  // A rock column standing on the ground. Only once there IS ground.
+  MainScene.prototype.spawnSpire = function (aimed, opts) {
+    var s = this.state;
+    var w = rand(30, 58);
+    var x = aimed ? s.shipX + rand(-20, 20) : rand(-X_LIMIT - 30, X_LIMIT + 30);
+    var top = rand(Y_TOP + 10, GROUND_Y - 70);
+    return this.addObstacle(Object.assign({
+      kind: 'spire', x: x, w: w, top: top
+    }, opts || {}));
+  };
+
+  MainScene.prototype.spawnCloud = function (z) {
+    var puffs = [];
+    var n = 3 + Math.floor(Math.random() * 3);
+    var w = rand(120, 300);
+    for (var i = 0; i < n; i++) puffs.push({ dx: rand(-w / 2, w / 2), dy: rand(-18, 18), rx: rand(40, 90), ry: rand(18, 34) });
+    return this.addObstacle({
+      kind: 'cloud', z: z,
+      x: rand(-X_LIMIT * 2.2, X_LIMIT * 2.2), y: rand(Y_TOP - 120, Y_BOTTOM + 120),
+      puffs: puffs, alpha: rand(0.25, 0.55)
+    });
+  };
+
+  // ---- Movement & collision -----------------------------------------
+  MainScene.prototype.stepObstacles = function (dt, speed, noCollide) {
+    var s = this.state;
+    var phase = phaseAt(s.t);
+
+    // Clouds aren't obstacles, they're weather: keep a steady population.
+    if (phase === 'clouds' || (phase === 'surface' && s.t < SURFACE_START + 0.6)) {
+      var clouds = s.obstacles.filter(function (o) { return o.kind === 'cloud'; }).length;
+      if (clouds < 10 && Math.random() < dt * 6) this.spawnCloud(Z_SPAWN);
+    }
+
+    for (var i = s.obstacles.length - 1; i >= 0; i--) {
+      var o = s.obstacles[i];
+      o.prevZ = o.z;
+      o.z -= speed * dt;
+      o.age += dt;
+      if (o.spin) o.rot += o.spin * dt;
+      if (!noCollide && o.prevZ >= Z_SHIP && o.z < Z_SHIP && this.hitsShip(o)) this.onHit(o);
+      if (o.z < Z_NEAR || o.dead) s.obstacles.splice(i, 1);
+    }
+  };
+
+  MainScene.prototype.hitsShip = function (o) {
+    var s = this.state, r = SHIP_HIT_RADIUS;
+    if (o.kind === 'rock') {
+      return Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r * 0.9 + r;
+    }
+    if (o.kind === 'wall') {
+      var inGap = Math.abs(s.shipX - o.gx) < o.gw / 2 - r * 0.5 &&
+                  Math.abs(s.shipY - o.gy) < o.gh / 2 - r * 0.5;
+      return !inGap;
+    }
+    if (o.kind === 'spire') {
+      var ground = groundYAt(s.t);
+      if (s.shipY + r < o.top) return false;
+      // Tapered: narrow at the tip, full width at the foot.
+      var f = clamp((s.shipY - o.top) / Math.max(1, ground - o.top), 0, 1);
+      var half = lerp(o.w * 0.2, o.w * 0.65, f);
+      return Math.abs(s.shipX - o.x) < half + r * 0.7;
+    }
+    return false;
+  };
+
+  MainScene.prototype.onHit = function (o) {
+    var s = this.state;
+    s.hits++;
+    if (o.kind === 'rock') o.dead = true;
+    if (s.invuln > 0 || s.invincible) return;
+    s.shields--;
+    s.invuln = INVULN_TIME;
+    s.flash = 1;
+    s.shake = 1;
+    Sound.thump();
+    if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+    if (s.shields <= 0) this.crash();
+  };
+
+  MainScene.prototype.crash = function () {
+    var s = this.state;
+    s.mode = 'crashed';
+    s.crashAge = 0;
+    s.shake = 1.4;
+    var x = this.sx(s.shipX, Z_SHIP), y = this.sy(s.shipY, Z_SHIP);
+    for (var i = 0; i < 14; i++) {
+      var a = rand(0, Math.PI * 2), v = rand(60, 220);
+      s.shards.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: rand(0, 6), spin: rand(-8, 8), len: rand(5, 14), life: rand(0.8, 1.6), age: 0 });
+    }
+    var dist = Math.floor(s.distance);
+    if (dist > this.best) {
+      this.best = dist;
+      try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
+    }
+    var line = document.getElementById('crashLine');
+    line.textContent = dist.toLocaleString() + ' m flown · best ' + this.best.toLocaleString() + ' m';
+    var self = this;
+    setTimeout(function () {
+      if (self.state.mode === 'crashed') document.getElementById('crashOverlay').classList.add('visible');
+    }, 800);
+  };
+
+  // ---- Speed streaks -------------------------------------------------
+  // The starfield of head-on.html, turned to face you: points scattered
+  // through a wide volume, drawn as a short line along their own depth
+  // so they stretch as they pass.
+  MainScene.prototype.newStreak = function (z) {
+    return { x: rand(-700, 700), y: rand(-600, 600), z: z };
+  };
+  MainScene.prototype.stepStreaks = function (dt, speed) {
+    var st = this.state.streaks;
+    for (var i = 0; i < st.length; i++) {
+      st[i].z -= speed * 1.6 * dt;
+      if (st[i].z < Z_NEAR) st[i] = this.newStreak(Z_SPAWN + rand(0, 2));
+    }
+  };
+  MainScene.prototype.stepShards = function (dt) {
+    var sh = this.state.shards;
+    for (var i = sh.length - 1; i >= 0; i--) {
+      var p = sh[i];
+      p.age += dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx *= 0.97; p.vy *= 0.97;
+      p.rot += p.spin * dt;
+      if (p.age > p.life) sh.splice(i, 1);
+    }
+  };
+
+  // ==================================================================
+  // Drawing. Everything is redrawn every frame into a handful of
+  // Graphics layers: background, things beyond the ship, the ship,
+  // things that have passed it, then effects.
+  // ==================================================================
+  MainScene.prototype.draw = function () {
+    var s = this.state;
+    this.gBack.clear(); this.gFar.clear(); this.gShip.clear(); this.gNear.clear(); this.gFx.clear();
+
+    var phase = phaseAt(s.t);
+    if (phase === 'entry') this.drawEntryBackground();
+    else if (phase === 'clouds') this.drawHaze();
+    else this.drawSurface();
+
+    this.drawStreaks();
+
+    var obs = s.obstacles.slice().sort(function (a, b) { return b.z - a.z; });
+    for (var i = 0; i < obs.length; i++) {
+      this.drawObstacle(obs[i].z >= Z_SHIP ? this.gFar : this.gNear, obs[i]);
+    }
+
+    if (s.mode === 'flying') this.drawShip();
+    this.drawShards();
+    this.drawFx();
+    this.drawHud();
+  };
+
+  function bandedFill(g, top, bottom, cTop, cBottom, bands) {
+    var h = (bottom - top) / bands;
+    for (var i = 0; i < bands; i++) {
+      g.fillStyle(mixColor(cTop, cBottom, i / (bands - 1)), 1);
+      g.fillRect(-20, top + i * h, GAME_WIDTH + 40, h + 1);
+    }
+  }
+
+  MainScene.prototype.drawEntryBackground = function () {
+    var g = this.gBack, t = this.state.t;
+    var p = clamp(t / ENTRY_TIME, 0, 1);
+    var heat = Math.sin(Math.PI * p);
+    bandedFill(g, 0, GAME_HEIGHT, COLOR_SPACE, mixColor(COLOR_SPACE, COLOR_SPACE_HOT, heat), 10);
+
+    // The planet, ahead. It starts the size head-on.html left it at and
+    // swells until it is the whole view - by the end of entry its edge
+    // is off the screen and you are inside its haze.
+    var r = 110 / (1 - 0.95 * smooth(p));
+    var px = CX + this.shakeX - this.camX() * 0.04;
+    var py = CY + this.shakeY - this.camY() * 0.04;
+    g.fillStyle(COLOR_PLANET_DARK, 1);
+    g.fillCircle(px, py, r * 1.02);
+    g.fillStyle(COLOR_PLANET, 1);
+    g.fillCircle(px - r * 0.03, py - r * 0.03, r);
+    // Bands as chords of the disc - flat stripes, no shading.
+    g.fillStyle(COLOR_PLANET_BAND, 1);
+    var bands = [-0.55, -0.2, 0.15, 0.45];
+    for (var i = 0; i < bands.length; i++) {
+      var dy = bands[i] * r, bh = r * 0.09;
+      var half = Math.sqrt(Math.max(0, r * r - dy * dy)) * 0.97;
+      if (half > 0) g.fillRect(px - half, py + dy - bh / 2, half * 2, bh);
+    }
+    // The atmosphere's rim glowing as you hit it.
+    if (heat > 0.05) {
+      g.lineStyle(3, COLOR_HEAT, 0.35 * heat);
+      g.strokeCircle(px, py, r * 1.04);
+    }
+  };
+
+  MainScene.prototype.drawHaze = function () {
+    var p = clamp((this.state.t - CLOUDS_START) / CLOUD_TIME, 0, 1);
+    var c = mixColor(COLOR_HAZE_HIGH, COLOR_HAZE_LOW, p);
+    bandedFill(this.gBack, 0, GAME_HEIGHT, mixColor(c, 0x000000, 0.25), mixColor(c, 0xffffff, 0.12), 10);
+  };
+
+  // Sky above a horizon, ground below it as bands that scroll toward
+  // you, and lines converging on the vanishing point. Out Run's road,
+  // without the road.
+  MainScene.prototype.drawSurface = function () {
+    var s = this.state, g = this.gBack;
+    var G = groundYAt(s.t);
+    var zFar = 60;
+    var horizon = this.sy(G, zFar);
+    bandedFill(g, -20, horizon, COLOR_SKY_TOP, COLOR_SKY_HORIZON, 8);
+    g.fillStyle(COLOR_GROUND, 1);
+    g.fillRect(-20, horizon, GAME_WIDTH + 40, GAME_HEIGHT - horizon + 20);
+
+    // Bands at fixed world depths, scrolled by distance flown.
+    var spacing = 1.2;
+    var offset = (s.distance / METRES_PER_Z) % (spacing * 2);
+    g.fillStyle(COLOR_GROUND_BAND, 1);
+    for (var z = spacing * 2 - offset; z < zFar; z += spacing * 2) {
+      var z0 = Math.max(z, Z_NEAR * 0.5), z1 = z + spacing;
+      var y0 = this.sy(G, z0), y1 = this.sy(G, z1);
+      if (y1 > GAME_HEIGHT + 20) continue;
+      g.fillRect(-20, y1, GAME_WIDTH + 40, Math.min(y0, GAME_HEIGHT + 20) - y1);
+    }
+    g.lineStyle(1, COLOR_GROUND_LINE, 0.8);
+    for (var k = -8; k <= 8; k++) {
+      var x = k * 80;
+      g.lineBetween(this.sx(x, 0.3), this.sy(G, 0.3), this.sx(x, zFar), this.sy(G, zFar));
+    }
+  };
+
+  MainScene.prototype.drawStreaks = function () {
+    var s = this.state, g = this.gBack;
+    var phase = phaseAt(s.t);
+    var color, alpha;
+    if (phase === 'entry') {
+      var heat = Math.sin(Math.PI * clamp(s.t / ENTRY_TIME, 0, 1));
+      color = mixColor(0x94a3b8, COLOR_HEAT, heat);
+      alpha = 0.5 + 0.4 * heat;
+    } else if (phase === 'clouds') {
+      color = 0xf1d6cf; alpha = 0.25;
+    } else {
+      color = 0xfca5a5; alpha = 0.2;
+    }
+    var stretch = 0.25 + 0.1 * speedAt(s.t);
+    for (var i = 0; i < s.streaks.length; i++) {
+      var p = s.streaks[i];
+      var a = alpha * clamp((Z_SPAWN - p.z) / 3, 0, 1);
+      if (a <= 0) continue;
+      g.lineStyle(p.z < 2 ? 2 : 1, color, a);
+      g.lineBetween(this.sx(p.x, p.z), this.sy(p.y, p.z), this.sx(p.x, p.z + stretch), this.sy(p.y, p.z + stretch));
+    }
+  };
+
+  // How solid a thing is at its depth: fading in out of the distance,
+  // and fading out again once it has passed you so it never blots out
+  // the screen on its way past the camera.
+  function depthAlpha(z) {
+    if (z > Z_SHIP) return clamp((Z_SPAWN - z) / Z_FADE_IN, 0, 1);
+    return clamp((z - Z_NEAR) / (Z_SHIP - Z_NEAR), 0, 1) * 0.6;
+  }
+
+  MainScene.prototype.drawObstacle = function (g, o) {
+    var a = depthAlpha(o.z);
+    if (a <= 0) return;
+    var z = o.z;
+    if (o.kind === 'rock') {
+      var cx = this.sx(o.x, z), cy = this.sy(o.y, z), r = o.r / z;
+      g.fillStyle(COLOR_METEOR, a);
+      g.beginPath();
+      for (var i = 0; i < o.verts.length; i++) {
+        var ang = o.rot + (i / o.verts.length) * Math.PI * 2;
+        var vx = cx + Math.cos(ang) * r * o.verts[i], vy = cy + Math.sin(ang) * r * o.verts[i];
+        if (i === 0) g.moveTo(vx, vy); else g.lineTo(vx, vy);
+      }
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(COLOR_METEOR_SHADE, a);
+      g.fillCircle(cx + r * 0.25, cy + r * 0.2, r * 0.32);
+      if (o.hot) {
+        g.lineStyle(Math.max(1, 2 / z), COLOR_HEAT, a * 0.8);
+        g.strokeCircle(cx, cy, r * 1.08);
+      }
+    } else if (o.kind === 'wall') {
+      // The slab is drawn as the four rectangles around its gap.
+      var G = groundYAt(this.state.t);
+      var L = this.sx(-X_LIMIT - 70, z), R = this.sx(X_LIMIT + 70, z);
+      var T = this.sy(Y_TOP - 70, z), B = this.sy(Math.min(Y_BOTTOM + 70, G), z);
+      var gl = this.sx(o.gx - o.gw / 2, z), gr = this.sx(o.gx + o.gw / 2, z);
+      var gt = this.sy(o.gy - o.gh / 2, z), gb = this.sy(o.gy + o.gh / 2, z);
+      g.fillStyle(COLOR_WALL, a * 0.92);
+      g.fillRect(L, T, R - L, gt - T);
+      g.fillRect(L, gb, R - L, B - gb);
+      g.fillRect(L, gt, gl - L, gb - gt);
+      g.fillRect(gr, gt, R - gr, gb - gt);
+      g.lineStyle(Math.max(1, 2 / z), COLOR_WALL_EDGE, a);
+      g.strokeRect(L, T, R - L, B - T);
+      g.strokeRect(gl, gt, gr - gl, gb - gt);
+    } else if (o.kind === 'spire') {
+      var G2 = groundYAt(this.state.t);
+      var base = this.sy(G2 + 10, z), tip = this.sy(o.top, z);
+      var x = this.sx(o.x, z), hw = o.w * 0.65 / z, tw = o.w * 0.2 / z;
+      g.fillStyle(COLOR_SPIRE, a);
+      g.beginPath();
+      g.moveTo(x - hw, base);
+      g.lineTo(x - tw, tip + tw);
+      g.lineTo(x, tip);
+      g.lineTo(x + tw, tip + tw);
+      g.lineTo(x + hw, base);
+      g.closePath();
+      g.fillPath();
+      g.lineStyle(Math.max(1, 1.5 / z), COLOR_SPIRE_EDGE, a);
+      g.strokePath();
+    } else if (o.kind === 'cloud') {
+      var ca = o.alpha * (o.z > Z_SHIP ? clamp((Z_SPAWN - z) / Z_FADE_IN, 0, 1) : clamp((z - Z_NEAR) / (Z_SHIP - Z_NEAR), 0, 1));
+      g.fillStyle(COLOR_CLOUD, ca);
+      for (var j = 0; j < o.puffs.length; j++) {
+        var pf = o.puffs[j];
+        g.fillEllipse(this.sx(o.x + pf.dx, z), this.sy(o.y + pf.dy, z), pf.rx * 2 / z, pf.ry * 2 / z);
+      }
+    }
+  };
+
+  // The ship from behind: head-on.html's chevron, flattened, banking
+  // into the turn and pitching with the climb.
+  MainScene.prototype.drawShip = function () {
+    var s = this.state, g = this.gShip;
+    if (s.invuln > 0 && Math.floor(s.invuln * 12) % 2 === 0) return;
+    var x = this.sx(s.shipX, Z_SHIP), y = this.sy(s.shipY, Z_SHIP);
+    var bank = (s.vx / SHIP_MAX_SPEED) * 0.5;
+    var pitch = 1 + (s.vy / SHIP_MAX_SPEED) * 0.25;
+    var r = SHIP_DRAW_SIZE;
+    var c = Math.cos(bank), sn = Math.sin(bank);
+    function P(px, py) { py *= pitch; return [x + px * c - py * sn, y + px * sn + py * c]; }
+    var nose = P(0, -r * 0.55), rw = P(r * 1.15, r * 0.35), notch = P(0, r * 0.08), lw = P(-r * 1.15, r * 0.35);
+
+    // Engine flame out of the notch.
+    var flick = rand(0.7, 1.15);
+    var f1 = P(-4, r * 0.12), f2 = P(4, r * 0.12), ft = P(0, r * 0.12 + 11 * flick);
+    g.fillStyle(COLOR_FLAME_OUTER, 0.9);
+    g.fillTriangle(f1[0], f1[1], f2[0], f2[1], ft[0], ft[1]);
+    var fi = P(0, r * 0.12 + 6 * flick);
+    g.fillStyle(COLOR_FLAME_INNER, 1);
+    g.fillTriangle(f1[0] + 1.5, f1[1], f2[0] - 1.5, f2[1], fi[0], fi[1]);
+
+    g.fillStyle(COLOR_SHIP_FILL, 0.85);
+    g.lineStyle(2, COLOR_SHIP, 1);
+    g.beginPath();
+    g.moveTo(nose[0], nose[1]); g.lineTo(rw[0], rw[1]); g.lineTo(notch[0], notch[1]); g.lineTo(lw[0], lw[1]);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+
+    // Heat shield glow on the way in.
+    if (phaseAt(s.t) === 'entry') {
+      var heat = Math.sin(Math.PI * clamp(s.t / ENTRY_TIME, 0, 1));
+      if (heat > 0.1) {
+        var h1 = P(-r * 1.3, r * 0.1), h2 = P(0, -r * 0.95 - rand(0, 3)), h3 = P(r * 1.3, r * 0.1);
+        g.lineStyle(2, COLOR_HEAT, heat * 0.7);
+        g.beginPath(); g.moveTo(h1[0], h1[1]); g.lineTo(h2[0], h2[1]); g.lineTo(h3[0], h3[1]); g.strokePath();
+      }
+    }
+  };
+
+  MainScene.prototype.drawShards = function () {
+    var g = this.gFx, sh = this.state.shards;
+    for (var i = 0; i < sh.length; i++) {
+      var p = sh[i], a = 1 - p.age / p.life;
+      var dx = Math.cos(p.rot) * p.len / 2, dy = Math.sin(p.rot) * p.len / 2;
+      g.lineStyle(2, i % 3 === 0 ? COLOR_FLAME_OUTER : COLOR_SHIP, a);
+      g.lineBetween(p.x - dx, p.y - dy, p.x + dx, p.y + dy);
+    }
+  };
+
+  MainScene.prototype.drawFx = function () {
+    var s = this.state, g = this.gFx;
+    var w = whiteoutAt(s.t);
+    if (w > 0) { g.fillStyle(COLOR_CLOUD, w * 0.95); g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); }
+    if (s.flash > 0) {
+      g.lineStyle(10, COLOR_HIT, s.flash * 0.7);
+      g.strokeRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    }
+  };
+
+  var PHASE_NAMES = { entry: 'ENTERING ATMOSPHERE', clouds: 'CLOUD LAYER', surface: 'SURFACE' };
+
+  MainScene.prototype.drawHud = function () {
+    var s = this.state;
+    this.altText.setText('ALT ' + altitudeAt(s.t).toFixed(1) + ' km');
+    this.distText.setText(Math.floor(s.distance).toLocaleString() + ' m');
+    // Shields: one small chevron per hit you can still take.
+    var g = this.shieldGfx;
+    g.clear();
+    for (var i = 0; i < SHIELDS; i++) {
+      var x = CX - 22 + i * 22, y = 15;
+      g.lineStyle(1.5, COLOR_SHIP, i < s.shields ? 0.9 : 0.2);
+      g.beginPath();
+      g.moveTo(x, y - 5); g.lineTo(x + 8, y + 5); g.lineTo(x, y + 2); g.lineTo(x - 8, y + 5);
+      g.closePath();
+      g.strokePath();
+    }
+    var a = s.mode === 'flying' ? clamp(1 - (s.phaseAge - 2) / 0.8, 0, 1) : 0;
+    this.phaseText.setText(PHASE_NAMES[s.phase] || '');
+    this.phaseText.setAlpha(a);
+  };
+
+  // ==================================================================
+  // Debug hook, for the tests. Returns plain values only.
+  // ==================================================================
+  var debug = window.__descentDebug = {
+    runtimeErrors: { count: 0, last: null },
+    state: function () {
+      var s = scene.state;
+      return {
+        mode: s.mode, t: s.t, phase: phaseAt(s.t), distance: s.distance,
+        shipX: s.shipX, shipY: s.shipY, vx: s.vx, vy: s.vy,
+        shields: s.shields, hits: s.hits, invuln: s.invuln,
+        groundY: groundYAt(s.t), shipYLimit: scene.shipYLimit(),
+        obstacles: s.obstacles.map(function (o) { return { kind: o.kind, z: o.z }; }),
+        input: { x: inputState.x, y: inputState.y },
+        overlay: document.getElementById('crashOverlay').classList.contains('visible')
+      };
+    },
+    constants: function () {
+      return { X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELDS: SHIELDS, Z_SPAWN: Z_SPAWN,
+        CLOUDS_START: CLOUDS_START, SURFACE_START: SURFACE_START, GROUND_Y: GROUND_Y,
+        GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME };
+    },
+    skipTo: function (t) { scene.state.t = t; },
+    clear: function () { scene.state.obstacles.length = 0; },
+    setSpawning: function (on) { scene.state.spawning = !!on; },
+    setInvincible: function (on) { scene.state.invincible = !!on; },
+    setShip: function (x, y) { var s = scene.state; s.shipX = x; s.shipY = y; s.vx = s.vy = 0; },
+    spawn: function (kind, opts) {
+      var o = kind === 'rock' ? scene.spawnRock(false, opts)
+        : kind === 'wall' ? scene.spawnWall(opts)
+        : kind === 'spire' ? scene.spawnSpire(false, opts)
+        : scene.spawnCloud(opts && opts.z || Z_SPAWN);
+      o.prevZ = o.z;
+      return true;
+    },
+    restart: function () { scene.restart(); }
+  };
+
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'gameRoot',
+    width: GAME_WIDTH,
+    height: GAME_HEIGHT,
+    backgroundColor: COLOR_SPACE,
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    scene: [MainScene],
+    disableContextMenu: true
+  });
+})();
+</script>
+</body>
+</html>
