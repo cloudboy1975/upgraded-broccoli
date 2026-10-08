@@ -175,8 +175,17 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   onto the *surface*. There the ground rises toward you, rock spires
   stand up out of it, and the pace keeps increasing until you crash.
   For now there's no landing.
-- Five shields, a short grace period after each hit, distance flown as
-  the score, and your best distance saved locally.
+- **A shield bar, not lives.** Different hits cost different amounts:
+  rocks, spires and alien fire take 20%, and scraping a wall takes 10%.
+  What a hit took shows briefly in white before it drains away, and the
+  bar goes amber below half and red below a quarter. After a hit there's
+  a short grace period. Distance flown is the score, and your best is
+  saved locally.
+- **Green glows.** A downed alien leaves a green glow where it was.
+  It hangs there a moment, then drifts toward you, and flying into it
+  restores 20%, up to full. You're usually lined up with the alien
+  when you shoot it down, so staying put collects it. Swerve and it's
+  gone.
 - Tests: `tests/test-descent.js`.
 
 #### Left off the lawn, into the trees

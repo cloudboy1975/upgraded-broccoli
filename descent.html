@@ -299,7 +299,22 @@
   var FLICK_RESPONSE_BOOST = 2; // response x3 at a full flick, so the speed actually arrives
   var SHIP_HIT_RADIUS = 11;
   var SHIP_DRAW_SIZE = 18;
-  var SHIELDS = 5;
+  // Shield: one bar instead of a count of lives, so different hits can
+  // cost different amounts. Clipping a wall is a scrape; a rock, a spire
+  // or alien fire is a real hit.
+  var SHIELD_MAX = 100;
+  var DAMAGE = { rock: 20, spire: 20, shot: 20, wall: 10 };
+  // A downed alien leaves a green glow where it was. It comes at you
+  // with the world, and flying into it tops the shield back up. You
+  // were lined up with the alien to shoot it, so it comes straight at
+  // you - stay put and it is yours, swerve and it is gone.
+  var GLOW_HEAL = 20;
+  var GLOW_RADIUS = 26;        // generous: a glow is a reward, not a test
+  // It does not ride in with the world - at full pace it would be on
+  // you a third of a second after the kill, before you had seen it. It
+  // hangs where the alien was for a beat, then drifts in slowly.
+  var GLOW_HANG = 0.4;         // seconds it hangs before drifting
+  var GLOW_SPEED = 1.5;        // depth units/s once it drifts
   var INVULN_TIME = 1.3;       // seconds of grace after a hit
 
   // ---- Pace ----------------------------------------------------------
@@ -403,6 +418,8 @@
   var COLOR_ENEMY = [0x38bdf8, 0xf472b6]; // head-on.html's swoop and zigzag families
   var COLOR_ENEMY_SHOT = 0xff7a1a;        // head-on.html's enemy fire
   var COLOR_ENEMY_EYE = 0x0f172a;
+  var COLOR_GLOW = 0x22c55e;
+  var COLOR_SHIELD_MID = 0xfbbf24;
 
   var SIGHT_Z = ENEMY_Z;       // the gun sight sits on the aliens' plane, so it lies right over them
 
@@ -512,7 +529,8 @@
     function boom() { blip(220, 30, 0.35, 'sawtooth', 0.12); }
     function tick() { blip(1400, 900, 0.05, 'square', 0.04); }
     function zap() { blip(300, 700, 0.18, 'triangle', 0.07); }
-    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump, shot: shot, boom: boom, tick: tick, zap: zap };
+    function heal() { blip(520, 1040, 0.22, 'sine', 0.1); }
+    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump, shot: shot, boom: boom, tick: tick, zap: zap, heal: heal };
   })();
 
   // ==================================================================
@@ -758,7 +776,10 @@
       distance: 0,
       shipX: 0, shipY: 0,
       vx: 0, vy: 0,
-      shields: SHIELDS,
+      shield: SHIELD_MAX,
+      shieldGhost: SHIELD_MAX, // trails the bar down, so a hit shows how much it took
+      healFlash: 0,
+      pickups: 0,
       invuln: 0,
       hits: 0,
       flash: 0,
@@ -836,6 +857,11 @@
     else s.phaseAge += dt;
 
     s.flash = Math.max(0, s.flash - dt * 2.5);
+    s.healFlash = Math.max(0, s.healFlash - dt * 2);
+    // The ghost waits a beat at the old level, then drains down to the
+    // new one; on a heal it simply follows the bar up.
+    if (s.shieldGhost < s.shield) s.shieldGhost = s.shield;
+    else if (s.invuln < INVULN_TIME - 0.35) s.shieldGhost = Math.max(s.shield, s.shieldGhost - 60 * dt);
     s.shake = Math.max(0, s.shake - dt * 3);
     this.shakeX = s.shake ? rand(-1, 1) * s.shake * 8 : 0;
     this.shakeY = s.shake ? rand(-1, 1) * s.shake * 8 : 0;
@@ -995,7 +1021,8 @@
     for (var i = s.obstacles.length - 1; i >= 0; i--) {
       var o = s.obstacles[i];
       o.prevZ = o.z;
-      o.z -= speed * dt;
+      if (o.kind === 'glow') o.z -= (o.age > GLOW_HANG ? GLOW_SPEED : 0) * dt;
+      else o.z -= speed * dt;
       o.age += dt;
       if (o.spin) o.rot += o.spin * dt;
       if (!noCollide && o.prevZ >= Z_SHIP && o.z < Z_SHIP && this.hitsShip(o)) this.onHit(o);
@@ -1009,6 +1036,7 @@
       return Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r * 0.9 + r;
     }
     if (o.kind === 'wall') return this.wallAlignment(o) !== 'clear';
+    if (o.kind === 'glow') return Math.hypot(s.shipX - o.x, s.shipY - o.y) < GLOW_RADIUS + r;
     if (o.kind === 'spire') {
       var ground = groundYAt(s.t);
       if (s.shipY + r < o.top) return false;
@@ -1033,16 +1061,28 @@
 
   MainScene.prototype.onHit = function (o) {
     var s = this.state;
+    if (o.kind === 'glow') return this.collectGlow(o);
     s.hits++;
     if (o.kind === 'rock' || o.kind === 'shot') o.dead = true;
     if (s.invuln > 0 || s.invincible) return;
-    s.shields--;
+    s.shield = Math.max(0, s.shield - (DAMAGE[o.kind] || DAMAGE.rock));
     s.invuln = INVULN_TIME;
     s.flash = 1;
     s.shake = 1;
     Sound.thump();
     if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
-    if (s.shields <= 0) this.crash();
+    if (s.shield <= 0) this.crash();
+  };
+
+  // A glow is taken even mid-grace: being hit a moment ago is no reason
+  // to lose the reward.
+  MainScene.prototype.collectGlow = function (o) {
+    var s = this.state;
+    o.dead = true;
+    s.pickups++;
+    s.shield = Math.min(SHIELD_MAX, s.shield + GLOW_HEAL);
+    s.healFlash = 1;
+    Sound.heal();
   };
 
   MainScene.prototype.crash = function () {
@@ -1257,6 +1297,7 @@
     s.enemiesDowned++;
     s.enemies.splice(s.enemies.indexOf(e), 1);
     s.bursts.push({ kind: 'burst', x: e.x, y: e.y, z: e.z, r: ENEMY_RADIUS * 1.3, age: 0, life: 0.6, spin: rand(0, Math.PI), color: e.color, holdsStation: true });
+    this.addObstacle({ kind: 'glow', x: e.x, y: e.y, z: e.z });
     Sound.boom();
   };
 
@@ -1461,6 +1502,7 @@
     if (o.kind === 'burst') return this.drawBurst(g, o);
     if (o.kind === 'enemy') return this.drawEnemy(g, o);
     if (o.kind === 'shot') return this.drawEnemyShot(g, o);
+    if (o.kind === 'glow') return this.drawGlow(g, o);
     if (o.dead) return; // shot this frame; its burst is drawn instead
     var a = depthAlpha(o.z);
     if (a <= 0) return;
@@ -1641,6 +1683,22 @@
     }
   };
 
+  // A glow: a soft green orb with a cross in it, pulsing.
+  MainScene.prototype.drawGlow = function (g, o) {
+    if (o.dead) return;
+    var z = Math.max(o.z, Z_NEAR), x = this.sx(o.x, z), y = this.sy(o.y, z);
+    var a = o.z < Z_SHIP ? clamp((o.z - Z_NEAR) / (Z_SHIP - Z_NEAR), 0, 1) : 1;
+    var pulse = 1 + 0.12 * Math.sin(o.age * 10);
+    var r = Math.max(6, GLOW_RADIUS * 0.6 / z) * pulse;
+    g.fillStyle(COLOR_GLOW, a * 0.22);
+    g.fillCircle(x, y, r * 2);
+    g.fillStyle(COLOR_GLOW, a * 0.85);
+    g.fillCircle(x, y, r);
+    g.fillStyle(0xf0fdf4, a);
+    g.fillRect(x - r * 0.5, y - r * 0.14, r, r * 0.28);
+    g.fillRect(x - r * 0.14, y - r * 0.5, r * 0.28, r);
+  };
+
   // Their fire: an orange orb with a halo, growing as it comes.
   MainScene.prototype.drawEnemyShot = function (g, p) {
     if (p.dead) return;
@@ -1697,17 +1755,20 @@
     this.altText.setText('ALT ' + altitudeAt(s.t).toFixed(1) + ' km');
     this.distText.setText(Math.floor(s.distance).toLocaleString() + ' m');
     this.downText.setText(s.enemiesDowned ? s.enemiesDowned + ' downed' : '');
-    // Shields: one small chevron per hit you can still take.
+    // Shield bar: green, amber under half, red under a quarter. What a
+    // hit just took shows white and drains away after it.
     var g = this.shieldGfx;
     g.clear();
-    for (var i = 0; i < SHIELDS; i++) {
-      var x = CX + (i - (SHIELDS - 1) / 2) * 20, y = 15;
-      g.lineStyle(1.5, COLOR_SHIP, i < s.shields ? 0.9 : 0.2);
-      g.beginPath();
-      g.moveTo(x, y - 5); g.lineTo(x + 8, y + 5); g.lineTo(x, y + 2); g.lineTo(x - 8, y + 5);
-      g.closePath();
-      g.strokePath();
-    }
+    var bw = 110, bh = 8, bx = CX - bw / 2, by = 11;
+    var frac = s.shield / SHIELD_MAX, ghost = s.shieldGhost / SHIELD_MAX;
+    var col = frac > 0.5 ? COLOR_GLOW : frac > 0.25 ? COLOR_SHIELD_MID : COLOR_HIT;
+    g.fillStyle(0x0f172a, 0.6);
+    g.fillRect(bx, by, bw, bh);
+    if (ghost > frac) { g.fillStyle(0xffffff, 0.7); g.fillRect(bx, by, bw * ghost, bh); }
+    g.fillStyle(col, 1);
+    g.fillRect(bx, by, bw * frac, bh);
+    g.lineStyle(1, s.healFlash > 0 ? COLOR_GLOW : COLOR_SHIP, s.healFlash > 0 ? 0.6 + 0.4 * s.healFlash : 0.5);
+    g.strokeRect(bx - 1, by - 1, bw + 2, bh + 2);
     var a = s.mode === 'flying' ? clamp(1 - (s.phaseAge - 2) / 0.8, 0, 1) : 0;
     this.phaseText.setText(PHASE_NAMES[s.phase] || '');
     this.phaseText.setAlpha(a);
@@ -1723,7 +1784,7 @@
       return {
         mode: s.mode, t: s.t, phase: phaseAt(s.t), distance: s.distance,
         shipX: s.shipX, shipY: s.shipY, vx: s.vx, vy: s.vy, boost: s.boost || 0,
-        shields: s.shields, hits: s.hits, invuln: s.invuln,
+        shield: s.shield, pickups: s.pickups, hits: s.hits, invuln: s.invuln,
         groundY: groundYAt(s.t),
         bullets: s.bullets.length, shotsFired: s.shotsFired,
         enemies: s.enemies.map(function (e) { return { mode: e.mode, hp: e.hp, z: e.z, x: e.x, y: e.y, charge: enemyCharge(e) }; }),
@@ -1738,12 +1799,13 @@
       };
     },
     constants: function () {
-      return { SHIP_MAX_SPEED: SHIP_MAX_SPEED, GAP_W: GAP_W, GAP_H: GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELDS: SHIELDS, Z_SPAWN: Z_SPAWN,
+      return { SHIP_MAX_SPEED: SHIP_MAX_SPEED, GAP_W: GAP_W, GAP_H: GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELD_MAX: SHIELD_MAX, DAMAGE: DAMAGE, GLOW_HEAL: GLOW_HEAL, Z_SPAWN: Z_SPAWN,
         CLOUDS_START: CLOUDS_START, SURFACE_START: SURFACE_START, GROUND_Y: GROUND_Y,
         GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME,
         ENEMY_HP: ENEMY_HP, ENEMY_Z: ENEMY_Z, ENEMY_FIRST: ENEMY_FIRST, ENEMY_RADIUS: ENEMY_RADIUS,
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: BULLET_RADIUS,
-        ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED };
+        ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED,
+        GLOW_HANG: GLOW_HANG, GLOW_SPEED: GLOW_SPEED };
     },
     skipTo: function (t) { scene.state.t = t; },
     // The marker on the next wall, with that wall's gap in screen space.
@@ -1764,6 +1826,7 @@
     },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },
+    setShield: function (v) { scene.state.shield = scene.state.shieldGhost = v; },
     setShip: function (x, y) { var s = scene.state; s.shipX = x; s.shipY = y; s.vx = s.vy = 0; },
     spawn: function (kind, opts) {
       if (kind === 'enemy') { scene.spawnEnemy(opts); return true; }

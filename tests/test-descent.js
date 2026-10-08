@@ -33,8 +33,8 @@ async function hold(page, key, ms) {
 harness.run(async (page, check, ctx) => {
   const C = await D(page, () => window.__descentDebug.constants());
   let s = await state(page);
-  check('boots flying, in the entry stretch, with full shields',
-    s.mode === 'flying' && s.phase === 'entry' && s.shields === C.SHIELDS, s);
+  check('boots flying, in the entry stretch, with a full shield',
+    s.mode === 'flying' && s.phase === 'entry' && s.shield === C.SHIELD_MAX, s);
 
   // ---- Integration: the spawner fills the sky by itself -------------
   await page.waitForTimeout(3000);
@@ -197,25 +197,25 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 25, z: 1.6 }));
   await page.waitForTimeout(600);
   s = await state(page);
-  check('a rock you fly into costs a shield', s.shields === C.SHIELDS - 1, s);
+  check('a rock you fly into costs a rock\'s worth of shield', s.shield === C.SHIELD_MAX - C.DAMAGE.rock, s);
 
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('rock', { x: 120, y: -100, r: 20, z: 1.6 }));
   await page.waitForTimeout(600);
   s = await state(page);
-  check('a rock you are clear of does not', s.shields === C.SHIELDS && s.hits === 0, s);
+  check('a rock you are clear of does not', s.shield === C.SHIELD_MAX && s.hits === 0, s);
 
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('wall', { gx: 0, gy: 0, z: 1.6 }));
   await page.waitForTimeout(600);
   s = await state(page);
-  check('a wall with its gap on you is flown through', s.shields === C.SHIELDS && s.hits === 0, s);
+  check('a wall with its gap on you is flown through', s.shield === C.SHIELD_MAX && s.hits === 0, s);
 
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('wall', { gx: 100, gy: -90, z: 1.6 }));
   await page.waitForTimeout(600);
   s = await state(page);
-  check('a wall with its gap elsewhere costs a shield', s.shields === C.SHIELDS - 1, s);
+  check('a wall with its gap elsewhere costs a wall\'s worth', s.shield === C.SHIELD_MAX - C.DAMAGE.wall, s);
 
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('cloud', { z: 1.6 }));
@@ -277,10 +277,11 @@ harness.run(async (page, check, ctx) => {
   await D(page, (gx) => window.__descentDebug.spawn('wall', { gx: gx, gy: 0, z: 1.6 }), CLOSE_GX);
   await page.waitForTimeout(600);
   s = await state(page);
-  check('crossing a wall while only close still costs a shield', s.shields === C.SHIELDS - 1, s);
+  check('crossing a wall while only close still costs shield', s.shield === C.SHIELD_MAX - C.DAMAGE.wall, s);
 
   // ---- Guns ----------------------------------------------------------
-  check('five lives', C.SHIELDS === 5, C.SHIELDS);
+  check('a wall scrape costs less than a rock or alien fire',
+    C.DAMAGE.wall < C.DAMAGE.rock && C.DAMAGE.wall < C.DAMAGE.shot, C.DAMAGE);
 
   await quiet(page);
   await D(page, () => window.__descentDebug.setInvincible(true));
@@ -302,7 +303,7 @@ harness.run(async (page, check, ctx) => {
   check('rocks cannot be shot down', s.shotsFired > 0 && s.obstacles.some(o => o.kind === 'rock'), s);
   await page.waitForTimeout(1800);
   s = await state(page);
-  check('...so a rock you shot at still hits you', s.shields === C.SHIELDS - 1, s);
+  check('...so a rock you shot at still hits you', s.shield === C.SHIELD_MAX - C.DAMAGE.rock, s);
 
   // ---- Aliens --------------------------------------------------------
   // One holding station dead ahead, still and not firing, to aim at.
@@ -382,14 +383,14 @@ harness.run(async (page, check, ctx) => {
   await D(page, (z) => window.__descentDebug.spawn('shot', { z0: z }), C.ENEMY_Z);
   await page.waitForTimeout(SHOT_MS);
   s = await state(page);
-  check('hold still and its shot hits you', s.shields === C.SHIELDS - 1, s);
+  check('hold still and its shot hits you', s.shield === C.SHIELD_MAX - C.DAMAGE.shot, s);
 
   await quiet(page);
   await D(page, (z) => window.__descentDebug.spawn('shot', { z0: z }), C.ENEMY_Z);
   await hold(page, 'ArrowRight', 400);
   await page.waitForTimeout(SHOT_MS);
   s = await state(page);
-  check('move and it misses', s.shields === C.SHIELDS && s.hits === 0, s);
+  check('move and it misses', s.shield === C.SHIELD_MAX && s.hits === 0, s);
 
   await quiet(page);
   await D(page, (ez) => {
@@ -417,7 +418,52 @@ harness.run(async (page, check, ctx) => {
   check('ignored, it pulls back', (await enemy0()) && (await enemy0()).mode === 'leaving');
   await page.waitForTimeout(1500);
   s = await state(page);
-  check('...and goes, with no harm done', s.enemies.length === 0 && s.enemiesDowned === 0 && s.shields === C.SHIELDS, s);
+  check('...and goes, with no harm done', s.enemies.length === 0 && s.enemiesDowned === 0 && s.shield === C.SHIELD_MAX, s);
+
+  // ---- The green glow a downed alien leaves --------------------------
+  // How long a glow takes to reach you from the alien's station, plus slack.
+  const GLOW_MS = (C.GLOW_HANG + (C.ENEMY_Z - 1) / C.GLOW_SPEED + 0.5) * 1000;
+  await quiet(page);
+  await D(page, () => window.__descentDebug.setShield(50));
+  await sitter(0, 0, { hp: 1 });
+  await hold(page, 'Space', 60);
+  await page.waitForTimeout(250);
+  s = await state(page);
+  check('a downed alien leaves a green glow', s.enemiesDowned === 1 && s.obstacles.some(o => o.kind === 'glow'), s.obstacles);
+  await page.waitForTimeout(700);
+  check('...and it is on screen long enough to see coming',
+    (await state(page)).obstacles.some(o => o.kind === 'glow'));
+  await page.waitForTimeout(GLOW_MS);
+  s = await state(page);
+  check('stay on its line and the glow tops the shield up',
+    s.pickups === 1 && s.shield === 50 + C.GLOW_HEAL && !s.obstacles.some(o => o.kind === 'glow'), s);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.setShield(50));
+  await sitter(0, 0, { hp: 1 });
+  await hold(page, 'Space', 60);
+  await hold(page, 'ArrowRight', 500);
+  await page.waitForTimeout(GLOW_MS);
+  s = await state(page);
+  check('swerve away and the glow is lost', s.pickups === 0 && s.shield === 50, s);
+
+  await quiet(page);
+  await sitter(0, 0, { hp: 1 });
+  await hold(page, 'Space', 60);
+  await page.waitForTimeout(GLOW_MS);
+  s = await state(page);
+  check('a glow never takes the shield past full', s.pickups === 1 && s.shield === C.SHIELD_MAX, s);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.setShield(50));
+  await sitter(0, 0, { hp: 1 });
+  await hold(page, 'Space', 60);
+  // A rock right on the line, just ahead of the glow: hit, then the glow lands mid-grace.
+  await D(page, () => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 20, z: 1.3 }));
+  await page.waitForTimeout(GLOW_MS);
+  s = await state(page);
+  check('a glow still counts during the grace after a hit',
+    s.pickups === 1 && s.shield === 50 - C.DAMAGE.rock + C.GLOW_HEAL, s);
 
   // Integration: nobody spawns these by hand in a real run.
   await quiet(page);
@@ -495,12 +541,12 @@ harness.run(async (page, check, ctx) => {
   // clear rocks out of the way.
   await quiet(page);
   await page.keyboard.down('Space');
-  for (let i = 0; i < C.SHIELDS; i++) {
+  for (let i = 0; i < Math.ceil(C.SHIELD_MAX / C.DAMAGE.wall) && (await state(page)).mode === 'flying'; i++) {
     await D(page, () => window.__descentDebug.spawn('wall', { gx: 120, gy: -100, z: 1.3 }));
     await page.waitForTimeout(1800); // past the grace period after each hit
   }
   s = await state(page);
-  check('running out of shields crashes the ship', s.mode === 'crashed' && s.shields === 0, s);
+  check('running out of shields crashes the ship', s.mode === 'crashed' && s.shield <= 0, s);
   check('the crash screen comes up', s.overlay === true, s);
   const distAtCrash = s.distance;
   await page.waitForTimeout(400);
@@ -516,7 +562,7 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(200);
   s = await state(page);
   check('Fly again starts a fresh run',
-    s.mode === 'flying' && s.shields === C.SHIELDS && s.t < 1 && !s.overlay, s);
+    s.mode === 'flying' && s.shield === C.SHIELD_MAX && s.t < 1 && !s.overlay, s);
 
   check('no page errors', ctx.errors.length === 0, ctx.errors);
   const re = await D(page, () => window.__descentDebug.runtimeErrors);
