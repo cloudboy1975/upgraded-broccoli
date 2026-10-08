@@ -291,8 +291,9 @@
   var SURFACE_INTERVAL_FLOOR = 0.55; // the surface tightens over time, down to this fraction
   var AIMED_SHARE = 0.45;      // share of rocks/spires that are thrown at where you are
   var WALL_CLEAR_Z = 1.4;      // depth kept clear either side of a wall, so a rock never plugs the gap
-  var GAP_W = 120;
-  var GAP_H = 104;
+  var MARKER_MIN_PX = 7;       // smallest the aiming marker on a wall is drawn
+  var GAP_W = 140;
+  var GAP_H = 124;
 
   // ---- Colours -------------------------------------------------------
   var COLOR_SHIP = 0xe2e8f0;           // head-on.html's ship
@@ -928,6 +929,7 @@
     this.drawStreaks();
 
     var obs = s.obstacles.slice().sort(function (a, b) { return b.z - a.z; });
+    this.nextWall = this.findNextWall();
     for (var i = 0; i < obs.length; i++) {
       this.drawObstacle(obs[i].z >= Z_SHIP ? this.gFar : this.gNear, obs[i]);
     }
@@ -1043,6 +1045,49 @@
     return clamp((z - Z_NEAR) / (Z_SHIP - Z_NEAR), 0, 1) * 0.6;
   }
 
+  // The wall you will meet next - the only one worth aiming at.
+  MainScene.prototype.findNextWall = function () {
+    var next = null;
+    this.state.obstacles.forEach(function (o) {
+      if (o.kind === 'wall' && o.z >= Z_SHIP && (!next || o.z < next.z)) next = o;
+    });
+    return next;
+  };
+
+  // Where the ship would pass through a wall if it held its position:
+  // the ship's own x/y, projected at the wall's depth. Because the
+  // camera sits above and behind, this is NOT where the ship is drawn
+  // on screen - which is exactly why lining up by eye was so hard.
+  MainScene.prototype.wallMarker = function (o) {
+    var s = this.state;
+    return { x: this.sx(s.shipX, o.z), y: this.sy(s.shipY, o.z), scale: 1 / o.z, align: this.wallAlignment(o) };
+  };
+
+  // The marker: a small copy of the ship's chevron, sized to what
+  // actually collides (the hit radius, not the drawn wingspan), so "the
+  // marker fits in the gap" and "you get through" are the same thing.
+  // A faint sight line ties it back to the ship.
+  MainScene.prototype.drawWallMarker = function (g, o, a) {
+    var s = this.state;
+    var m = this.wallMarker(o);
+    var color = COLOR_ALIGN[m.align];
+    g.lineStyle(1, color, a * 0.35);
+    g.lineBetween(this.sx(s.shipX, Z_SHIP), this.sy(s.shipY, Z_SHIP) - SHIP_DRAW_SIZE * 0.55, m.x, m.y);
+    // Never smaller than a few pixels: far off, a true-size marker is a
+    // speck, and that is when there is most time to act on it.
+    var r = Math.max(MARKER_MIN_PX, SHIP_HIT_RADIUS * m.scale);
+    g.fillStyle(color, a * 0.35);
+    g.lineStyle(Math.max(1.5, 2 * m.scale), color, a);
+    g.beginPath();
+    g.moveTo(m.x, m.y - r * 0.9);
+    g.lineTo(m.x + r, m.y + r * 0.6);
+    g.lineTo(m.x, m.y + r * 0.2);
+    g.lineTo(m.x - r, m.y + r * 0.6);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+  };
+
   MainScene.prototype.drawObstacle = function (g, o) {
     var a = depthAlpha(o.z);
     if (a <= 0) return;
@@ -1083,6 +1128,7 @@
         g.lineStyle(Math.max(2, 3 / z), COLOR_ALIGN[this.wallAlignment(o)], a);
       }
       g.strokeRect(gl, gt, gr - gl, gb - gt);
+      if (o === this.nextWall) this.drawWallMarker(g, o, a);
     } else if (o.kind === 'spire') {
       var G2 = groundYAt(this.state.t);
       var base = this.sy(G2 + 10, z), tip = this.sy(o.top, z);
@@ -1217,6 +1263,18 @@
         GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME };
     },
     skipTo: function (t) { scene.state.t = t; },
+    // The marker on the next wall, with that wall's gap in screen space.
+    nextWallMarker: function () {
+      var o = scene.findNextWall();
+      if (!o) return null;
+      var m = scene.wallMarker(o);
+      return {
+        x: m.x, y: m.y, align: m.align, z: o.z,
+        gapLeft: scene.sx(o.gx - o.gw / 2, o.z), gapRight: scene.sx(o.gx + o.gw / 2, o.z),
+        gapTop: scene.sy(o.gy - o.gh / 2, o.z), gapBottom: scene.sy(o.gy + o.gh / 2, o.z),
+        shipScreenY: scene.sy(scene.state.shipY, Z_SHIP)
+      };
+    },
     clear: function () { scene.state.obstacles.length = 0; },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },

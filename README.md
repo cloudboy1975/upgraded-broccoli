@@ -133,7 +133,10 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   fly through. The gap's outline is **green** if the ship is lined up
   with it, **amber** if it's close, and **red** if it isn't. The colour
   uses the same test as the collision, so green always means you'll get
-  through), then a white-out as you break through the cloud base
+  through. The next wall also shows a small copy of your ship, joined
+  to it by a faint line, at the exact point you'd pass through if you
+  held your position. It's the size of the ship's collision area, so if
+  it fits in the gap, you fit), then a white-out as you break through the cloud base
   onto the *surface*. There the ground rises toward you, rock spires
   stand up out of it, and the pace keeps increasing until you crash.
   For now there's no landing.

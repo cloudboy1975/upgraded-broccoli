@@ -181,6 +181,30 @@ harness.run(async (page, check, ctx) => {
   const alignAfter = await wallAlign();
   check('steering into the gap turns it from red to green', alignBefore === 'off' && alignAfter === 'clear', { alignBefore, alignAfter });
 
+  // ---- The marker: where you would pass through the next wall -------
+  await quiet(page);
+  check('no wall ahead, no marker', await D(page, () => window.__descentDebug.nextWallMarker()) === null);
+
+  await D(page, () => window.__descentDebug.spawn('wall', { gx: 0, gy: 0, z: 4 }));
+  let m = await D(page, () => window.__descentDebug.nextWallMarker());
+  check('lined up, the marker sits inside the gap on screen',
+    m.align === 'clear' && m.x > m.gapLeft && m.x < m.gapRight && m.y > m.gapTop && m.y < m.gapBottom, m);
+  check('the marker is not where the ship is drawn (the camera parallax it corrects for)',
+    m.shipScreenY - m.y > 20, m);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('wall', { gx: 120, gy: -100, z: 4 }));
+  m = await D(page, () => window.__descentDebug.nextWallMarker());
+  check('off, the marker sits outside the gap', m.align === 'off' && (m.x < m.gapLeft || m.y > m.gapBottom), m);
+
+  await quiet(page);
+  await D(page, () => {
+    window.__descentDebug.spawn('wall', { gx: 0, gy: 0, z: 9 });
+    window.__descentDebug.spawn('wall', { gx: 0, gy: 0, z: 3 });
+  });
+  m = await D(page, () => window.__descentDebug.nextWallMarker());
+  check('the marker is on the NEAREST wall ahead', Math.abs(m.z - 3) < 0.3, m.z);
+
   // Amber is a warning, not a pass: crossing a wall while close still hurts.
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('wall', { gx: 65, gy: 0, z: 1.6 }));
