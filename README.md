@@ -199,7 +199,12 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   It hangs there a moment, then drifts toward you, and flying into it
   restores 20%, up to full. You're usually lined up with the alien
   when you shoot it down, so staying put collects it. Swerve and it's
-  gone.
+  gone. It also steers as it comes. If a wall will reach you before
+  the glow does, the glow heads for that wall's gap, so being lined up
+  with the hole also lines you up with the glow, and the wall doesn't
+  take back what the glow gives. With no wall in the way it only drifts
+  gently toward you. That's enough to forgive a near miss, but not
+  enough to chase you down.
 - Tests: `tests/test-descent.js`.
 
 #### Left off the lawn, into the trees
