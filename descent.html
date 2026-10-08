@@ -337,6 +337,15 @@
   var ROCK_INTERVAL = { entry: 0.75, clouds: 1.2, surface: 1.6 };
   var WALL_INTERVAL = { clouds: 3.4, surface: 3.0 };
   var SPIRE_INTERVAL = 0.9;
+  // Towers can be shot, Star Wars arcade style: a hit cuts the tower at
+  // the height it struck, and everything above the cut is blown off and
+  // tumbles away. Hit the tip and you trim it; hit the foot and the
+  // whole thing comes down. What is left is a broken stump - shorter, so
+  // you can now fly over where the top used to be.
+  var SPIRE_BLAST = 14;        // world px below the hit point the blast also takes
+  var SPIRE_MIN_STUMP = 28;    // a stump shorter than this goes altogether
+  var CHUNK_GRAVITY = 320;     // px/s^2 on the blown-off piece
+  var CHUNK_LIFE = 1.6;
   var SURFACE_INTERVAL_FLOOR = 0.55; // the surface tightens over time, down to this fraction
   var AIMED_SHARE = 0.45;      // share of rocks/spires that are thrown at where you are
   var WALL_CLEAR_Z = 1.4;      // depth kept clear either side of a wall, so a rock never plugs the gap
@@ -793,6 +802,9 @@
       shards: [],
       bullets: [],
       bursts: [],
+      chunks: [],
+      spireHits: 0,
+      spiresDowned: 0,
       fireCooldown: 0,
       shotsFired: 0,
       enemies: [],
@@ -816,7 +828,7 @@
   // ---- Update --------------------------------------------------------
   MainScene.prototype.update = function (time, deltaMs) {
     try {
-      var dt = Math.min(deltaMs / 1000, 0.05);
+      var dt = Math.min(deltaMs / 1000, 0.05) * debug.timeScale;
       this.step(dt);
       this.draw();
     } catch (e) {
@@ -851,6 +863,7 @@
     this.stepStreaks(dt, flying ? speedAt(s.t) : speedAt(s.t) * Math.max(0, 1 - s.crashAge / 0.8));
     this.stepShards(dt);
     this.stepBursts(dt, flying ? speedAt(s.t) : 0);
+    this.stepChunks(dt, flying ? speedAt(s.t) : 0);
 
     var phase = phaseAt(s.t);
     if (phase !== s.phase) { s.phase = phase; s.phaseAge = 0; }
@@ -990,10 +1003,21 @@
     var w = rand(30, 58);
     var x = aimed ? s.shipX + rand(-20, 20) : rand(-X_LIMIT - 30, X_LIMIT + 30);
     var top = rand(Y_TOP + 10, GROUND_Y - 70);
-    return this.addObstacle(Object.assign({
+    var o = this.addObstacle(Object.assign({
       kind: 'spire', x: x, w: w, top: top
     }, opts || {}));
+    // top is where the tower currently ends; top0 is where its tip WAS.
+    // The taper is always measured from top0, so a cut tower keeps the
+    // width it had at that height instead of growing a new point.
+    if (o.top0 == null) o.top0 = o.top;
+    return o;
   };
+
+  // Half-width of a tower at height y.
+  function spireHalf(o, y, G) {
+    var f = clamp((y - o.top0) / Math.max(1, G - o.top0), 0, 1);
+    return lerp(o.w * 0.2, o.w * 0.65, f);
+  }
 
   MainScene.prototype.spawnCloud = function (z) {
     var puffs = [];
@@ -1025,6 +1049,7 @@
       else o.z -= speed * dt;
       o.age += dt;
       if (o.spin) o.rot += o.spin * dt;
+      if (o.cutAge != null) o.cutAge += dt;
       if (!noCollide && o.prevZ >= Z_SHIP && o.z < Z_SHIP && this.hitsShip(o)) this.onHit(o);
       if (o.z < Z_NEAR || o.dead) s.obstacles.splice(i, 1);
     }
@@ -1041,9 +1066,7 @@
       var ground = groundYAt(s.t);
       if (s.shipY + r < o.top) return false;
       // Tapered: narrow at the tip, full width at the foot.
-      var f = clamp((s.shipY - o.top) / Math.max(1, ground - o.top), 0, 1);
-      var half = lerp(o.w * 0.2, o.w * 0.65, f);
-      return Math.abs(s.shipX - o.x) < half + r * 0.7;
+      return Math.abs(s.shipX - o.x) < spireHalf(o, s.shipY, ground) + r * 0.7;
     }
     return false;
   };
@@ -1130,9 +1153,7 @@
     if (o.kind === 'rock') return Math.hypot(x - o.x, y - o.y) < o.r;
     if (o.kind === 'wall') return !(Math.abs(x - o.gx) < o.gw / 2 && Math.abs(y - o.gy) < o.gh / 2);
     if (o.kind === 'spire') {
-      var G = groundYAt(this.state.t);
-      var f = clamp((y - o.top) / Math.max(1, G - o.top), 0, 1);
-      return y > o.top && Math.abs(x - o.x) < lerp(o.w * 0.2, o.w * 0.65, f);
+      return y > o.top && Math.abs(x - o.x) < spireHalf(o, y, groundYAt(this.state.t));
     }
     return false;
   };
@@ -1166,6 +1187,7 @@
         if (this.blocks(o, b.x, b.y)) {
           spent = true;
           if (o.kind === 'rock') this.spark(b.x, b.y, o.z);
+          else if (o.kind === 'spire') this.blastSpire(o, b.y);
         }
       }
       for (var k = 0; k < s.enemies.length && !spent; k++) {
@@ -1177,6 +1199,55 @@
         }
       }
       if (spent) s.bullets.splice(i, 1);
+    }
+  };
+
+  // A shot into a tower: cut it at the hit, and send what was above
+  // tumbling. The broken top is a separate flat piece, the exact shape
+  // that came off, thrown up and sideways and left to fall.
+  MainScene.prototype.blastSpire = function (o, hitY) {
+    var s = this.state, G = groundYAt(s.t);
+    var cut = Math.min(G, hitY + SPIRE_BLAST);
+    var whole = G - cut < SPIRE_MIN_STUMP;
+    if (whole) cut = G;
+    var top = o.top, mid = (top + cut) / 2;
+    var hc = spireHalf(o, cut, G), ht = spireHalf(o, top, G);
+    // The piece, in its own coordinates about its middle. An uncut tip
+    // keeps its point; a piece off an already-broken stump is flat-topped.
+    var pointed = top === o.top0;
+    var shoulder = pointed ? Math.min(ht, (cut - top) * 0.5) : 0; // drawn tips sit their shoulders this far under the point
+    var pts = [[-hc, cut - mid], [-ht, top + shoulder - mid]];
+    if (pointed) pts.push([0, top - mid]);
+    pts.push([ht, top + shoulder - mid], [hc, cut - mid]);
+    s.chunks.push({
+      kind: 'chunk', x: o.x, y: mid, z: o.z, pts: pts,
+      vx: rand(40, 110) * (Math.random() < 0.5 ? -1 : 1), vy: -rand(90, 170),
+      rot: 0, spin: rand(-3.5, 3.5), age: 0
+    });
+    s.bursts.push({ kind: 'burst', x: o.x, y: cut, z: o.z, r: Math.max(16, hc * 1.4), age: 0, life: 0.45, spin: rand(0, Math.PI) });
+    s.spireHits++;
+    Sound.boom();
+    if (whole) {
+      o.dead = true;
+      s.spiresDowned++;
+      return;
+    }
+    o.top = cut;
+    o.cutAge = 0;
+    o.jag = [rand(-5, 5), rand(-7, 2), rand(-5, 5)];
+  };
+
+  MainScene.prototype.stepChunks = function (dt, speed) {
+    var s = this.state, G = groundYAt(s.t);
+    for (var i = s.chunks.length - 1; i >= 0; i--) {
+      var c = s.chunks[i];
+      c.age += dt;
+      c.vy += CHUNK_GRAVITY * dt;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.rot += c.spin * dt;
+      c.z -= speed * dt;
+      if (c.age > CHUNK_LIFE || c.y > G + 60 || c.z < Z_NEAR) s.chunks.splice(i, 1);
     }
   };
 
@@ -1337,7 +1408,7 @@
 
     this.drawStreaks();
 
-    var obs = s.obstacles.concat(s.bullets, s.bursts, s.enemies, s.enemyShots).sort(function (a, b) { return b.z - a.z; });
+    var obs = s.obstacles.concat(s.bullets, s.bursts, s.enemies, s.enemyShots, s.chunks).sort(function (a, b) { return b.z - a.z; });
     this.nextWall = this.findNextWall();
     for (var i = 0; i < obs.length; i++) {
       this.drawObstacle(obs[i].z >= Z_SHIP ? this.gFar : this.gNear, obs[i]);
@@ -1503,6 +1574,7 @@
     if (o.kind === 'enemy') return this.drawEnemy(g, o);
     if (o.kind === 'shot') return this.drawEnemyShot(g, o);
     if (o.kind === 'glow') return this.drawGlow(g, o);
+    if (o.kind === 'chunk') return this.drawChunk(g, o);
     if (o.dead) return; // shot this frame; its burst is drawn instead
     var a = depthAlpha(o.z);
     if (a <= 0) return;
@@ -1551,14 +1623,37 @@
       g.fillStyle(COLOR_SPIRE, a);
       g.beginPath();
       g.moveTo(x - hw, base);
-      g.lineTo(x - tw, tip + tw);
-      g.lineTo(x, tip);
-      g.lineTo(x + tw, tip + tw);
+      if (o.top === o.top0) {
+        g.lineTo(x - tw, tip + tw);
+        g.lineTo(x, tip);
+        g.lineTo(x + tw, tip + tw);
+      } else {
+        // A broken stump: a jagged edge across the cut, at the width the
+        // tower had there.
+        var hc = spireHalf(o, o.top, G2) / z, jag = o.jag;
+        g.lineTo(x - hc, tip);
+        g.lineTo(x - hc * 0.5, tip + jag[0] / z);
+        g.lineTo(x, tip + jag[1] / z);
+        g.lineTo(x + hc * 0.5, tip + jag[2] / z);
+        g.lineTo(x + hc, tip);
+      }
       g.lineTo(x + hw, base);
       g.closePath();
       g.fillPath();
       g.lineStyle(Math.max(1, 1.5 / z), COLOR_SPIRE_EDGE, a);
       g.strokePath();
+      // The break glows for a moment, cooling from white-hot to nothing.
+      if (o.cutAge != null && o.cutAge < 1.2) {
+        var heat = 1 - o.cutAge / 1.2, hc2 = spireHalf(o, o.top, G2) / z;
+        g.lineStyle(Math.max(1.5, 3 / z), mixColor(COLOR_FLAME_OUTER, COLOR_FLAME_INNER, heat), a * heat);
+        g.beginPath();
+        g.moveTo(x - hc2, tip);
+        g.lineTo(x - hc2 * 0.5, tip + o.jag[0] / z);
+        g.lineTo(x, tip + o.jag[1] / z);
+        g.lineTo(x + hc2 * 0.5, tip + o.jag[2] / z);
+        g.lineTo(x + hc2, tip);
+        g.strokePath();
+      }
     } else if (o.kind === 'cloud') {
       var ca = o.alpha * (o.z > Z_SHIP ? clamp((Z_SPAWN - z) / Z_FADE_IN, 0, 1) : clamp((z - Z_NEAR) / (Z_SHIP - Z_NEAR), 0, 1));
       g.fillStyle(COLOR_CLOUD, ca);
@@ -1683,6 +1778,34 @@
     }
   };
 
+  // The blown-off top of a tower, tumbling: the same flat shape that
+  // came off, turning about its middle, with a hot edge where it broke.
+  MainScene.prototype.drawChunk = function (g, c) {
+    var z = Math.max(c.z, Z_NEAR);
+    var a = clamp((CHUNK_LIFE - c.age) / 0.5, 0, 1) * (c.z < Z_SHIP ? 0.6 : 1);
+    var cs = Math.cos(c.rot), sn = Math.sin(c.rot);
+    var self = this;
+    function P(p) {
+      var wx = c.x + p[0] * cs - p[1] * sn, wy = c.y + p[0] * sn + p[1] * cs;
+      return [self.sx(wx, z), self.sy(wy, z)];
+    }
+    var pts = c.pts.map(P);
+    g.fillStyle(COLOR_SPIRE, a);
+    g.lineStyle(Math.max(1, 1.5 / z), COLOR_SPIRE_EDGE, a);
+    g.beginPath();
+    g.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+    var heat = clamp(1 - c.age / 0.8, 0, 1);
+    if (heat > 0) {
+      var last = pts[pts.length - 1];
+      g.lineStyle(Math.max(1.5, 3 / z), COLOR_FLAME_INNER, a * heat);
+      g.lineBetween(pts[0][0], pts[0][1], last[0], last[1]);
+    }
+  };
+
   // A glow: a soft green orb with a cross in it, pulsing.
   MainScene.prototype.drawGlow = function (g, o) {
     if (o.dead) return;
@@ -1779,6 +1902,7 @@
   // ==================================================================
   var debug = window.__descentDebug = {
     runtimeErrors: { count: 0, last: null },
+    timeScale: 1,              // slow motion, for looking at effects frame by frame
     state: function () {
       var s = scene.state;
       return {
@@ -1789,9 +1913,11 @@
         bullets: s.bullets.length, shotsFired: s.shotsFired,
         enemies: s.enemies.map(function (e) { return { mode: e.mode, hp: e.hp, z: e.z, x: e.x, y: e.y, charge: enemyCharge(e) }; }),
         enemyShots: s.enemyShots.length, enemiesDowned: s.enemiesDowned, shotsBlocked: s.shotsBlocked, enemyFired: s.enemyFired,
+        chunks: s.chunks.length, spireHits: s.spireHits, spiresDowned: s.spiresDowned,
         inSights: scene.enemyInSights(), fireHeld: fireHeld(), shipYLimit: scene.shipYLimit(),
         obstacles: s.obstacles.map(function (o) {
-          return { kind: o.kind, z: o.z, align: o.kind === 'wall' ? scene.wallAlignment(o) : null };
+          return { kind: o.kind, z: o.z, align: o.kind === 'wall' ? scene.wallAlignment(o) : null,
+            top: o.kind === 'spire' ? o.top : null, top0: o.kind === 'spire' ? o.top0 : null };
         }),
         input: { x: inputState.x, y: inputState.y },
         invertY: invertY,
@@ -1805,7 +1931,8 @@
         ENEMY_HP: ENEMY_HP, ENEMY_Z: ENEMY_Z, ENEMY_FIRST: ENEMY_FIRST, ENEMY_RADIUS: ENEMY_RADIUS,
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED,
-        GLOW_HANG: GLOW_HANG, GLOW_SPEED: GLOW_SPEED };
+        GLOW_HANG: GLOW_HANG, GLOW_SPEED: GLOW_SPEED,
+        SPIRE_BLAST: SPIRE_BLAST, SPIRE_MIN_STUMP: SPIRE_MIN_STUMP, CHUNK_LIFE: CHUNK_LIFE };
     },
     skipTo: function (t) { scene.state.t = t; },
     // The marker on the next wall, with that wall's gap in screen space.
@@ -1822,7 +1949,7 @@
     },
     clear: function () {
       var s = scene.state;
-      s.obstacles.length = 0; s.enemies.length = 0; s.enemyShots.length = 0; s.bullets.length = 0;
+      s.obstacles.length = 0; s.enemies.length = 0; s.enemyShots.length = 0; s.bullets.length = 0; s.chunks.length = 0;
     },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },

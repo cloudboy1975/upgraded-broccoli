@@ -465,6 +465,64 @@ harness.run(async (page, check, ctx) => {
   check('a glow still counts during the grace after a hit',
     s.pickups === 1 && s.shield === 50 - C.DAMAGE.rock + C.GLOW_HEAL, s);
 
+  // ---- Towers: shot where you hit them --------------------------------
+  // On the settled surface, a tower straight ahead with its tip at -60.
+  const towerAt = async (shipY, extra) => {
+    await quiet(page);
+    await D(page, ([t, shipY, extra]) => {
+      const d = window.__descentDebug;
+      d.skipTo(t);
+      d.setShip(0, shipY);
+      d.spawn('spire', Object.assign({ x: 0, w: 50, top: -60, z: 5 }, extra || {}));
+    }, [C.SURFACE_START + C.GROUND_SETTLE_TIME + 1, shipY, extra]);
+  };
+  const tower = async () => (await state(page)).obstacles.find(o => o.kind === 'spire');
+
+  await towerAt(-40);
+  await hold(page, 'Space', 60);
+  await page.waitForTimeout(200);
+  s = await state(page);
+  let tw = s.obstacles.find(o => o.kind === 'spire');
+  check('a shot near the tip blows the top off, cut at the hit',
+    tw && Math.abs(tw.top - (-40 + C.SPIRE_BLAST)) < 0.01 && tw.top0 === -60, tw);
+  check('...and the top goes tumbling off as a piece', s.chunks === 1 && s.spireHits === 1, s);
+  await page.waitForTimeout((C.CHUNK_LIFE + 0.3) * 1000);
+  check('...which is gone soon after', (await state(page)).chunks === 0);
+
+  // The cut is real: the ship flies over the stump where the top was.
+  await towerAt(-40, { z: 1.5 });
+  await page.waitForTimeout(500);
+  s = await state(page);
+  check('an uncut tower at that height hits you', s.shield < C.SHIELD_MAX, s);
+
+  await towerAt(-40, { z: 2.5 });
+  await hold(page, 'Space', 60);
+  await page.waitForTimeout(700);
+  s = await state(page);
+  check('...but once its top is shot off you fly over the stump', s.spireHits === 1 && s.shield === C.SHIELD_MAX, s);
+
+  // Shots that pass over the stump do nothing more: to chip it lower you
+  // have to aim lower.
+  await towerAt(-40);
+  await hold(page, 'Space', 400);
+  await page.waitForTimeout(200);
+  tw = await tower();
+  check('more shots at the same height pass over the stump', (await state(page)).spireHits === 1 && Math.abs(tw.top - (-40 + C.SPIRE_BLAST)) < 0.01, tw);
+
+  await towerAt(-100);
+  await hold(page, 'Space', 300);
+  await page.waitForTimeout(200);
+  s = await state(page);
+  check('shots over the tip miss the tower', s.spireHits === 0 && (await tower()).top === -60, s);
+
+  // Hit at the foot and the whole thing comes down.
+  await towerAt(C.GROUND_Y - C.GROUND_CLEARANCE);
+  await hold(page, 'Space', 60);
+  await page.waitForTimeout(200);
+  s = await state(page);
+  check('a shot at the foot brings the whole tower down',
+    s.spiresDowned === 1 && !s.obstacles.some(o => o.kind === 'spire') && s.chunks === 1, s);
+
   // Integration: nobody spawns these by hand in a real run.
   await quiet(page);
   await D(page, () => { window.__descentDebug.setSpawning(true); window.__descentDebug.setInvincible(true); });

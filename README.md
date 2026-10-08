@@ -132,9 +132,17 @@ It isn't connected to the boss fight yet. The plan is to hand off from
 - **Guns, for the aliens only.** Hold the fire button (right thumb),
   or Space, to keep firing. Shots fly straight ahead along the ship's
   line, so the gun sight (four ticks on the aliens' plane) is where they
-  go. It turns yellow when an alien is in line. Rocks, walls and spires
-  are for dodging, not shooting: shots spark off them, and they give
-  cover both ways.
+  go. It turns yellow when an alien is in line. Rocks and walls are for
+  dodging, not shooting: shots spark off them, and they give cover both
+  ways.
+- **Towers come apart where you hit them.** This is inspired by the
+  original Star Wars arcade game. A shot cuts a tower off at the height
+  it hits. Everything above the cut breaks off as one flat piece and
+  tumbles away, and what's left is a broken stump with a glowing edge
+  that fades. Hit near the tip and you trim it. Hit the foot and the
+  whole tower topples. The stump is solid, but it's shorter, so you can
+  fly over where the top used to be. To cut lower, aim lower: shots at
+  the same height pass over the stump.
 - **Aliens.** One at a time, a flat alien flies in and holds position
   a fixed distance ahead of you, weaving, so you can aim at it while
   the rocks keep coming. It takes four hits. Before every shot its eye
