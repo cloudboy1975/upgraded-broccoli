@@ -121,6 +121,14 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   fits a game about two-dimensional aliens.
 - **The same stick as the yard.** Left thumb, analog, centred wherever
   you press. Arrows/WASD on a keyboard.
+- **Flicks.** How fast your thumb moves counts, not just where it
+  ends up. Ordinary steering is unchanged. A quick flick of the stick
+  gives a short burst, up to 80% above the normal top speed and with
+  sharper response, in whatever direction the stick now points. The
+  engine flame stretches while it lasts, and it fades out in about a
+  third of a second. Thumb speed is measured over the last 60 ms, so a
+  shaky thumb doesn't trigger it. Lifting your thumb and the keyboard
+  never do.
 - **Guns.** Hold the fire button (right thumb), or Space, to keep
   firing. Shots fly straight ahead along the ship's line, so the gun
   sight (four ticks a little way ahead) is where they go. The sight

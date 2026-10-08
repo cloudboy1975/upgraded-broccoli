@@ -79,6 +79,70 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('letting go of the stick centres it', s.input.x === 0 && s.input.y === 0, s.input);
 
+  // ---- Flicks: thumb speed becomes ship speed -----------------------
+  // Samples the ship while something happens, reporting the peaks.
+  async function peaksDuring(ms) {
+    let boost = 0, vx = 0;
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const st = await state(page);
+      boost = Math.max(boost, st.boost);
+      vx = Math.max(vx, Math.abs(st.vx));
+      await page.waitForTimeout(25);
+    }
+    return { boost, vx };
+  }
+
+  // Ordinary steering: ease the stick over to full right in half a second.
+  await quiet(page);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  let slow = { boost: 0, vx: 0 };
+  for (let i = 1; i <= 20; i++) {
+    await page.mouse.move(cx + i * 2.5, cy);
+    const st = await state(page);
+    slow.boost = Math.max(slow.boost, st.boost);
+    await page.waitForTimeout(20);
+  }
+  const slowTail = await peaksDuring(700);
+  slow = { boost: Math.max(slow.boost, slowTail.boost), vx: slowTail.vx };
+  await page.mouse.up();
+  const afterLift = await state(page);
+  check('slow steering gets no boost', slow.boost === 0, slow);
+  check('slow steering keeps the normal top speed', slow.vx <= C.SHIP_MAX_SPEED + 0.5, slow);
+  check('lifting the thumb is not a flick', afterLift.boost === 0, afterLift.boost);
+
+  // A flick: thumb rests a moment, then snaps to full right.
+  await quiet(page);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.waitForTimeout(300);
+  await page.mouse.move(cx + 50, cy);
+  const fast = await peaksDuring(400);
+  check('a flick after a rest boosts the ship', fast.boost > 0.8, fast);
+  check('a flick goes faster than the normal top speed', fast.vx > C.SHIP_MAX_SPEED * 1.3, fast);
+  await page.waitForTimeout(1200);
+  s = await state(page);
+  await page.mouse.up();
+  check('the boost fades, back to normal top speed while held',
+    s.boost === 0 && Math.abs(Math.abs(s.vx) - C.SHIP_MAX_SPEED) < 5 || (s.boost === 0 && Math.abs(s.shipX) === C.X_LIMIT), s);
+
+  // A trembling thumb is not a flick.
+  await quiet(page);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  for (let i = 0; i < 30; i++) await page.mouse.move(cx + (i % 2 ? 2 : -2), cy);
+  s = await state(page);
+  await page.mouse.up();
+  check('small jitter gets no boost', s.boost === 0, s.boost);
+
+  // Keys snap from 0 to 1 every press; that must not count as a flick.
+  await quiet(page);
+  await page.keyboard.down('ArrowRight');
+  const kbPeak = await peaksDuring(500);
+  await page.keyboard.up('ArrowRight');
+  check('keyboard steering gets no boost', kbPeak.boost === 0 && kbPeak.vx <= C.SHIP_MAX_SPEED + 0.5, kbPeak);
+
   // ---- The Y-axis toggle: arcade <-> flight sim ---------------------
   s = await state(page);
   check('arcade is the default', s.invertY === false &&

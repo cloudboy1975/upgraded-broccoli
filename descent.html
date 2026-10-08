@@ -283,6 +283,20 @@
   var GROUND_CLEARANCE = 34;   // closest the ship may get to the ground
   var SHIP_MAX_SPEED = 250;    // px/s at full stick
   var SHIP_RESPONSE = 9;       // how quickly velocity catches up with the stick (1/s)
+
+  // Flicks. How FAST the thumb moves, not just where it is, feeds the
+  // ship: a quick flick of the stick gives a short burst of extra top
+  // speed and sharper response in whatever direction it now points, and
+  // it fades back out over a fraction of a second. Below FLICK_START the
+  // stick behaves exactly as it always did, so ordinary steering is
+  // unchanged. Speeds are in stick-widths per second (the stick runs
+  // -1..1, so a full deflection in a tenth of a second is 10).
+  var FLICK_START = 6;         // thumb speed where the boost begins...
+  var FLICK_FULL = 16;         // ...and where it is at full strength
+  var FLICK_WINDOW_MS = 60;    // thumb speed is measured over this much movement, not one event
+  var FLICK_DECAY = 0.3;       // seconds for a boost to fade to about a third
+  var FLICK_SPEED_BOOST = 0.8; // top speed +80% at a full flick
+  var FLICK_RESPONSE_BOOST = 2; // response x3 at a full flick, so the speed actually arrives
   var SHIP_HIT_RADIUS = 11;
   var SHIP_DRAW_SIZE = 18;
   var SHIELDS = 5;
@@ -476,6 +490,31 @@
   var kb = { up: false, down: false, left: false, right: false };
   var kbX = 0, kbY = 0;
   var STICK_MAX_RADIUS_PX = 44;
+  var thumbFlick = 0;          // 0..1, the current flick boost; decays in step()
+  var stickTrail = [];         // recent {t, x, y} of the stick, for measuring its speed
+
+  // Thumb speed is how far the stick moved over the last
+  // FLICK_WINDOW_MS, always divided by that same window. Not event to
+  // event: events can land a few ms apart, and a two-pixel wobble over
+  // four milliseconds would read as a flick. And not since the previous
+  // event either: a thumb resting still sends no events at all, and a
+  // flick after a rest would be averaged over the whole rest.
+  //
+  // Timed by the event's own timestamp (when the thumb moved), not by
+  // when the handler got round to it: a busy frame delivers a queue of
+  // moves at once, and timing them on arrival makes slow steering look
+  // like a flick.
+  function noteStickMotion(x, y, now) {
+    var from = now - FLICK_WINDOW_MS;
+    stickTrail.push({ t: now, x: x, y: y });
+    // Keep the last sample from before the window: that is where the
+    // stick was when the window opened.
+    while (stickTrail.length > 2 && stickTrail[1].t <= from) stickTrail.shift();
+    var base = stickTrail[0];
+    var rate = Math.hypot(x - base.x, y - base.y) / (FLICK_WINDOW_MS / 1000);
+    var f = clamp((rate - FLICK_START) / (FLICK_FULL - FLICK_START), 0, 1);
+    if (f > thumbFlick) thumbFlick = f;
+  }
   var HOLD_WATCHDOG_MS = 12000;
 
   function composeInput() {
@@ -498,7 +537,7 @@
     var activeId = null, watchdogTimer = null, anchorX = 0, anchorY = 0;
     el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
 
-    function applyVector(clientX, clientY) {
+    function applyVector(clientX, clientY, t) {
       var dx = clientX - anchorX, dy = clientY - anchorY;
       var dist = Math.hypot(dx, dy);
       var clamped = Math.min(dist, STICK_MAX_RADIUS_PX);
@@ -507,6 +546,7 @@
       knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
       touchX = kx / STICK_MAX_RADIUS_PX;
       touchY = ky / STICK_MAX_RADIUS_PX;
+      noteStickMotion(touchX, touchY, t);
       composeInput();
     }
     function hardRelease() {
@@ -516,7 +556,7 @@
       anchorEl.classList.remove('visible');
       knobEl.classList.remove('visible');
       knobEl.style.transform = 'translate(0px, 0px)';
-      touchX = 0; touchY = 0;
+      touchX = 0; touchY = 0; // not fed to noteStickMotion: lifting the thumb is not a flick
       composeInput();
     }
     el.addEventListener('pointerdown', function (e) {
@@ -535,12 +575,13 @@
       anchorEl.classList.add('visible');
       knobEl.classList.add('visible');
       touchX = 0; touchY = 0;
+      stickTrail = [{ t: e.timeStamp || performance.now(), x: 0, y: 0 }];
       composeInput();
       watchdogTimer = setTimeout(hardRelease, HOLD_WATCHDOG_MS);
     });
     el.addEventListener('pointermove', function (e) {
       if (e.pointerId !== activeId) return;
-      applyVector(e.clientX, e.clientY);
+      applyVector(e.clientX, e.clientY, e.timeStamp || performance.now());
     });
     function release(e) { if (e.pointerId === activeId) hardRelease(); }
     el.addEventListener('pointerup', release);
@@ -675,6 +716,7 @@
   };
 
   MainScene.prototype.restart = function () {
+    thumbFlick = 0; // a new run never starts mid-flick
     this.state = {
       mode: 'flying',          // 'flying' | 'crashed'
       t: 0,
@@ -767,10 +809,14 @@
 
   MainScene.prototype.stepShip = function (dt) {
     var s = this.state;
-    var k = 1 - Math.exp(-SHIP_RESPONSE * dt);
-    s.vx += (inputState.x * SHIP_MAX_SPEED - s.vx) * k;
+    thumbFlick *= Math.exp(-dt / FLICK_DECAY);
+    if (thumbFlick < 0.01) thumbFlick = 0;
+    s.boost = thumbFlick;
+    var maxSpeed = SHIP_MAX_SPEED * (1 + FLICK_SPEED_BOOST * s.boost);
+    var k = 1 - Math.exp(-SHIP_RESPONSE * (1 + FLICK_RESPONSE_BOOST * s.boost) * dt);
+    s.vx += (inputState.x * maxSpeed - s.vx) * k;
     var stickY = invertY ? -inputState.y : inputState.y;
-    s.vy += (stickY * SHIP_MAX_SPEED - s.vy) * k;
+    s.vy += (stickY * maxSpeed - s.vy) * k;
     // Pinned against an edge, the push into it is dropped rather than
     // stored, so pulling away responds at once instead of first having
     // to unwind speed the ship never actually had.
@@ -1319,7 +1365,7 @@
     var s = this.state, g = this.gShip;
     if (s.invuln > 0 && Math.floor(s.invuln * 12) % 2 === 0) return;
     var x = this.sx(s.shipX, Z_SHIP), y = this.sy(s.shipY, Z_SHIP);
-    var bank = (s.vx / SHIP_MAX_SPEED) * 0.5;
+    var bank = clamp(s.vx / SHIP_MAX_SPEED, -1.4, 1.4) * 0.5;
     var pitch = 1 + (s.vy / SHIP_MAX_SPEED) * 0.25;
     var r = SHIP_DRAW_SIZE;
     var c = Math.cos(bank), sn = Math.sin(bank);
@@ -1327,7 +1373,8 @@
     var nose = P(0, -r * 0.55), rw = P(r * 1.15, r * 0.35), notch = P(0, r * 0.08), lw = P(-r * 1.15, r * 0.35);
 
     // Engine flame out of the notch.
-    var flick = rand(0.7, 1.15);
+    // A flick burns hotter: the flame stretches with the boost.
+    var flick = rand(0.7, 1.15) * (1 + 1.2 * (s.boost || 0));
     var f1 = P(-4, r * 0.12), f2 = P(4, r * 0.12), ft = P(0, r * 0.12 + 11 * flick);
     g.fillStyle(COLOR_FLAME_OUTER, 0.9);
     g.fillTriangle(f1[0], f1[1], f2[0], f2[1], ft[0], ft[1]);
@@ -1448,7 +1495,7 @@
       var s = scene.state;
       return {
         mode: s.mode, t: s.t, phase: phaseAt(s.t), distance: s.distance,
-        shipX: s.shipX, shipY: s.shipY, vx: s.vx, vy: s.vy,
+        shipX: s.shipX, shipY: s.shipY, vx: s.vx, vy: s.vy, boost: s.boost || 0,
         shields: s.shields, hits: s.hits, invuln: s.invuln,
         groundY: groundYAt(s.t),
         bullets: s.bullets.length, shotsFired: s.shotsFired, rocksDestroyed: s.rocksDestroyed,
@@ -1462,7 +1509,7 @@
       };
     },
     constants: function () {
-      return { GAP_W: GAP_W, GAP_H: GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELDS: SHIELDS, Z_SPAWN: Z_SPAWN,
+      return { SHIP_MAX_SPEED: SHIP_MAX_SPEED, GAP_W: GAP_W, GAP_H: GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELDS: SHIELDS, Z_SPAWN: Z_SPAWN,
         CLOUDS_START: CLOUDS_START, SURFACE_START: SURFACE_START, GROUND_Y: GROUND_Y,
         GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME };
     },
