@@ -117,30 +117,60 @@
     cursor: pointer;
   }
 
+  /* The bar is two halves, and each WHOLE half is a control: anywhere
+     on the left steers, anywhere on the right fires. The circles are
+     only there to show where the thumbs go. When the controls were the
+     circles themselves, a thumb landing just outside one - easy, when
+     you are watching the ship and not your hands - did nothing at all,
+     which feels exactly like the game ignoring you. The stick already
+     centres wherever the thumb lands, so a big surface costs nothing.
+     The two halves meet in the middle, so there is no dead strip. */
   .control-bar {
     flex-shrink: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px max(14px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    align-items: stretch;
     touch-action: none;
   }
-
-  /* Left thumb: the analog stick from yard.html, unchanged - wherever
-     the thumb lands becomes that press's neutral centre. */
-  .stick-zone {
+  .pad {
+    flex: 1;
     position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 154px;
+    padding-top: 10px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
+  }
+  .stick-pad { justify-content: flex-start; padding-left: max(14px, env(safe-area-inset-left)); }
+  .fire-pad { justify-content: flex-end; padding-right: max(14px, env(safe-area-inset-right)); }
+  /* Hit slop: each half also reaches up over the bottom of the picture.
+     A thumb coming back to the controls tends to land high, and nothing
+     up there takes a touch of its own, so a press there can only have
+     been meant for the control underneath. (The crash screen's button
+     sits higher, in the middle of the picture, and stacks above this.) */
+  .pad::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -56px;
+    height: 56px;
+  }
+
+  /* Left thumb: the analog stick from yard.html - wherever the thumb
+     lands becomes that press's neutral centre. */
+  .stick-ring {
     width: 132px;
     height: 132px;
     border-radius: 50%;
     background: rgba(30, 41, 59, 0.55);
     border: 1px solid rgba(226, 232, 240, 0.15);
     flex-shrink: 0;
-    touch-action: none;
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
-    overflow: visible;
+    pointer-events: none;
   }
   .stick-anchor {
     position: absolute;
@@ -169,7 +199,7 @@
 
   /* Right thumb: fire, in the same spot as head-on.html's. Hold it
      down to keep firing. */
-  .fire-btn {
+  .fire-face {
     width: 84px;
     height: 84px;
     border-radius: 50%;
@@ -179,14 +209,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    touch-action: none;
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
+    pointer-events: none;
     transition: transform 0.08s, background 0.12s;
   }
-  .fire-btn.active {
+  .fire-pad.active .fire-face {
     transform: scale(0.93);
     background: radial-gradient(circle at 35% 30%, rgba(34, 197, 94, 0.75), rgba(20, 83, 45, 0.55) 70%);
   }
@@ -217,11 +243,14 @@
   </div>
 
   <div class="control-bar">
-    <div class="stick-zone" id="stickZone" aria-label="Fly (press anywhere and drag)">
+    <div class="pad stick-pad" id="stickZone" aria-label="Fly: press anywhere on the left half and drag">
+      <span class="stick-ring" aria-hidden="true"></span>
       <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
       <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
     </div>
-    <button type="button" class="fire-btn" id="fireBtn" aria-label="Fire (hold to keep firing)"><span class="fire-dot" aria-hidden="true"></span></button>
+    <div class="pad fire-pad" id="fireBtn" role="button" aria-label="Fire: hold anywhere on the right half">
+      <span class="fire-face" aria-hidden="true"><span class="fire-dot"></span></span>
+    </div>
   </div>
 
 <script src="phaser.min.js"></script>

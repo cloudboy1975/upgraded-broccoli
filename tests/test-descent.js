@@ -79,6 +79,71 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('letting go of the stick centres it', s.input.x === 0 && s.input.y === 0, s.input);
 
+  // ---- Wide controls: the whole half is the control -----------------
+  // A thumb that lands off the drawn circle still steers or fires.
+  const fbox = await page.locator('#fireBtn').boundingBox();
+  check('the two halves meet with no dead strip between them',
+    Math.abs((box.x + box.width) - fbox.x) < 1 && Math.abs(fbox.x + fbox.width - 390) < 1, { box, fbox });
+
+  async function dragFrom(x, y) {
+    await quiet(page);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 30, y, { steps: 4 });
+    await page.waitForTimeout(300);
+    const st = await state(page);
+    await page.mouse.up();
+    return st;
+  }
+  const spots = {
+    'by the middle seam': [box.x + box.width - 50, cy],
+    'top corner of the bar': [box.x + 8, box.y + 6],
+    'bottom corner of the bar': [box.x + box.width - 50, box.y + box.height - 6],
+    'just above the bar (hit slop)': [box.x + box.width / 2, box.y - 30]
+  };
+  for (const name of Object.keys(spots)) {
+    s = await dragFrom(spots[name][0], spots[name][1]);
+    check('steering works from ' + name, s.shipX > 10 && s.shotsFired === 0, { x: s.shipX, fired: s.shotsFired });
+  }
+
+  async function pressAt(x, y) {
+    await quiet(page);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(250);
+    const st = await state(page);
+    await page.mouse.up();
+    return st;
+  }
+  const fireSpots = {
+    'just right of the seam': [fbox.x + 6, fbox.y + fbox.height / 2],
+    'the far corner': [fbox.x + fbox.width - 6, fbox.y + 6],
+    'just above the bar (hit slop)': [fbox.x + 40, fbox.y - 30]
+  };
+  for (const name of Object.keys(fireSpots)) {
+    s = await pressAt(fireSpots[name][0], fireSpots[name][1]);
+    check('firing works from ' + name, s.shotsFired >= 1 && s.input.x === 0, { fired: s.shotsFired, input: s.input });
+  }
+
+  // Both thumbs at once: steer with one while holding fire with the other.
+  await quiet(page);
+  s = await D(page, ([sx, sy, fx, fy]) => {
+    const fire = document.getElementById('fireBtn'), stick = document.getElementById('stickZone');
+    const ev = (el, type, id, x, y) => el.dispatchEvent(new PointerEvent(type, {
+      pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, cancelable: true, isPrimary: id === 11
+    }));
+    ev(stick, 'pointerdown', 11, sx, sy);
+    ev(fire, 'pointerdown', 12, fx, fy);
+    ev(stick, 'pointermove', 11, sx + 40, sy);
+    return new Promise(res => setTimeout(() => {
+      const st = window.__descentDebug.state();
+      ev(stick, 'pointerup', 11, sx + 40, sy);
+      ev(fire, 'pointerup', 12, fx, fy);
+      res(st);
+    }, 350));
+  }, [cx, cy, fbox.x + fbox.width / 2, fbox.y + fbox.height / 2]);
+  check('steering and firing at the same time, one thumb each', s.shipX > 10 && s.shotsFired >= 2, { x: s.shipX, fired: s.shotsFired });
+
   // ---- Flicks: thumb speed becomes ship speed -----------------------
   // Samples the ship while something happens, reporting the peaks.
   async function peaksDuring(ms) {

@@ -121,6 +121,12 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   fits a game about two-dimensional aliens.
 - **The same stick as the yard.** Left thumb, analog, centred wherever
   you press. Arrows/WASD on a keyboard.
+- **Big touch areas.** The circles only show where your thumbs go.
+  The whole left half of the control bar steers, the whole right half
+  fires, and the two halves meet in the middle with no gap. Each half
+  also has **hit slop**: an invisible strip about 56px tall above the
+  bar that still counts, because a thumb coming back to the controls
+  tends to land high. Both thumbs work at once.
 - **Flicks.** How fast your thumb moves counts, not just where it
   ends up. Ordinary steering is unchanged. A quick flick of the stick
   gives a short burst, up to 80% above the normal top speed and with
