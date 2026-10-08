@@ -366,13 +366,45 @@
   // ---- The guns ------------------------------------------------------
   // Shots leave the ship and fly straight ahead along its own line, so
   // the gun sight and the marker on the next wall are both exactly
-  // where they will go. A rock bursts in one hit; walls and spires just
-  // soak shots up.
+  // where they will go. They are for the aliens: rocks, walls and
+  // spires are scenery to fly round, and just soak shots up - shooting
+  // a path through the rocks was more fun than dodging them, and
+  // dodging is the point.
   var FIRE_INTERVAL = 0.14;    // seconds between shots while fire is held
   var BULLET_SPEED = 26;       // depth units per second, on top of nothing - the world closes on them too
   var BULLET_RADIUS = 9;       // generous: a near miss on a rock still counts
   var BULLET_RANGE = Z_SPAWN + 1;
-  var SIGHT_Z = 5;             // depth the gun sight is drawn at
+
+  // ---- The aliens ----------------------------------------------------
+  // Flat, like everything of theirs. One at a time: it flies in, holds
+  // station a fixed distance ahead - moving WITH you, so it can be
+  // aimed at - and weaves while it charges and fires. Every shot is
+  // telegraphed by a visible charge, and travels slowly enough to be
+  // sidestepped. Leave it alone and it gives up and goes. While one is
+  // up, rocks come less often: aiming and dodging at full rate at once
+  // is the one combination that stops being fun.
+  var ENEMY_Z = 3;             // the depth it holds station at: close enough to read and to hit
+  var ENEMY_ARRIVE = 1.4;      // seconds to fly in from the distance
+  var ENEMY_STAY = 10;         // seconds it hangs about before leaving
+  var ENEMY_LEAVE = 1.2;       // seconds to pull back and fade
+  var ENEMY_HP = 4;            // shots to bring one down
+  var ENEMY_RADIUS = 36;       // its size; shots within this + BULLET_RADIUS count
+  var ENEMY_WEAVE_X = 70;      // px of side-to-side weave
+  var ENEMY_WEAVE_Y = 40;
+  var ENEMY_FIRST = 5;         // seconds into a run before the first
+  var ENEMY_GAP_MIN = 3;       // seconds between one going and the next arriving
+  var ENEMY_GAP_MAX = 6;
+  var ENEMY_FIRE_INTERVAL = 2; // seconds between its shots
+  var ENEMY_FIRST_SHOT = 1;    // grace after it arrives before its first
+  var ENEMY_CHARGE = 0.55;     // the visible wind-up before each shot
+  var ENEMY_SHOT_SPEED = 2.2;  // depth units/s: ~0.9s from its station to you
+  var ENEMY_SHOT_RADIUS = 10;
+  var ROCKS_WITH_ENEMY = 1.6;  // rock interval multiplier while an alien is up
+  var COLOR_ENEMY = [0x38bdf8, 0xf472b6]; // head-on.html's swoop and zigzag families
+  var COLOR_ENEMY_SHOT = 0xff7a1a;        // head-on.html's enemy fire
+  var COLOR_ENEMY_EYE = 0x0f172a;
+
+  var SIGHT_Z = ENEMY_Z;       // the gun sight sits on the aliens' plane, so it lies right over them
 
   var BEST_KEY = 'descent-best-v1';
   var AXIS_KEY = 'descent-axis-v1';
@@ -478,7 +510,9 @@
     }
     function shot() { blip(900, 300, 0.08, 'square', 0.05); }
     function boom() { blip(220, 30, 0.35, 'sawtooth', 0.12); }
-    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump, shot: shot, boom: boom };
+    function tick() { blip(1400, 900, 0.05, 'square', 0.04); }
+    function zap() { blip(300, 700, 0.18, 'triangle', 0.07); }
+    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump, shot: shot, boom: boom, tick: tick, zap: zap };
   })();
 
   // ==================================================================
@@ -700,6 +734,7 @@
     var textStyle = { fontFamily: '-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif', fontSize: '12px', color: '#e2e8f0' };
     this.altText = this.add.text(10, 8, '', textStyle).setDepth(10).setResolution(2);
     this.distText = this.add.text(GAME_WIDTH - 10, 8, '', textStyle).setOrigin(1, 0).setDepth(10).setResolution(2);
+    this.downText = this.add.text(GAME_WIDTH - 10, 24, '', Object.assign({}, textStyle, { fontSize: '11px', color: '#94a3b8' })).setOrigin(1, 0).setDepth(10).setResolution(2);
     this.shieldGfx = this.add.graphics().setDepth(10);
     this.phaseText = this.add.text(CX, 92, '', {
       fontFamily: textStyle.fontFamily, fontSize: '13px', fontStyle: 'bold', color: '#fde68a'
@@ -731,7 +766,7 @@
       crashAge: 0,
       phase: null,
       phaseAge: 0,
-      timers: { rock: 1.2, wall: 2.5, spire: 0.5 },
+      timers: { rock: 1.2, wall: 2.5, spire: 0.5, enemy: ENEMY_FIRST },
       obstacles: [],
       streaks: [],
       shards: [],
@@ -739,7 +774,11 @@
       bursts: [],
       fireCooldown: 0,
       shotsFired: 0,
-      rocksDestroyed: 0,
+      enemies: [],
+      enemyShots: [],
+      enemiesDowned: 0,
+      enemyFired: 0,
+      shotsBlocked: 0,
       invincible: this.state ? this.state.invincible : false,
       spawning: this.state ? this.state.spawning : true
     };
@@ -777,6 +816,8 @@
       this.stepShip(dt);
       this.stepSpawning(dt);
       this.stepObstacles(dt, speed);
+      this.stepEnemies(dt);
+      this.stepEnemyShots(dt);
       this.stepGuns(dt, speed);
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else {
@@ -843,7 +884,8 @@
 
     timers.rock -= dt;
     if (timers.rock <= 0) {
-      timers.rock = ROCK_INTERVAL[phase] * pace * rand(0.7, 1.3);
+      timers.rock = ROCK_INTERVAL[phase] * pace * rand(0.7, 1.3) *
+        (s.enemies.length ? ROCKS_WITH_ENEMY : 1);
       if (this.clearOfWalls()) this.spawnRock(Math.random() < AIMED_SHARE);
     }
     if (WALL_INTERVAL[phase]) {
@@ -851,6 +893,13 @@
       if (timers.wall <= 0 && this.clearOfEverything()) {
         timers.wall = WALL_INTERVAL[phase] * pace * rand(0.8, 1.25);
         this.spawnWall();
+      }
+    }
+    if (!s.enemies.length) {
+      timers.enemy -= dt;
+      if (timers.enemy <= 0) {
+        timers.enemy = rand(ENEMY_GAP_MIN, ENEMY_GAP_MAX);
+        this.spawnEnemy();
       }
     }
     if (phase === 'surface' && groundYAt(s.t) < 900) {
@@ -985,7 +1034,7 @@
   MainScene.prototype.onHit = function (o) {
     var s = this.state;
     s.hits++;
-    if (o.kind === 'rock') o.dead = true;
+    if (o.kind === 'rock' || o.kind === 'shot') o.dead = true;
     if (s.invuln > 0 || s.invincible) return;
     s.shields--;
     s.invuln = INVULN_TIME;
@@ -1012,7 +1061,7 @@
       try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
     }
     var line = document.getElementById('crashLine');
-    line.textContent = dist.toLocaleString() + ' m flown · ' + s.rocksDestroyed + ' rocks shot · best ' + this.best.toLocaleString() + ' m';
+    line.textContent = dist.toLocaleString() + ' m flown · ' + s.enemiesDowned + ' aliens downed · best ' + this.best.toLocaleString() + ' m';
     var self = this;
     setTimeout(function () {
       if (self.state.mode === 'crashed') document.getElementById('crashOverlay').classList.add('visible');
@@ -1034,6 +1083,29 @@
     }
   };
   // ---- Guns ----------------------------------------------------------
+  // Whether a piece of scenery stands in the way at point (x, y) of its
+  // own plane. Shared by our shots and theirs, so cover works both ways.
+  MainScene.prototype.blocks = function (o, x, y) {
+    if (o.dead) return false;
+    if (o.kind === 'rock') return Math.hypot(x - o.x, y - o.y) < o.r;
+    if (o.kind === 'wall') return !(Math.abs(x - o.gx) < o.gw / 2 && Math.abs(y - o.gy) < o.gh / 2);
+    if (o.kind === 'spire') {
+      var G = groundYAt(this.state.t);
+      var f = clamp((y - o.top) / Math.max(1, G - o.top), 0, 1);
+      return y > o.top && Math.abs(x - o.x) < lerp(o.w * 0.2, o.w * 0.65, f);
+    }
+    return false;
+  };
+
+  // Did a thing moving in depth pass through o's plane this frame?
+  // Everything has moved already, so this compares where each was and
+  // is: at these closing speeds two things can pass straight through
+  // each other between frames.
+  function crossed(p, o) {
+    var before = p.prevZ - o.prevZ, after = p.z - o.z;
+    return (before <= 0 && after >= 0) || (before >= 0 && after <= 0);
+  }
+
   MainScene.prototype.stepGuns = function (dt, speed) {
     var s = this.state;
     s.fireCooldown = Math.max(0, s.fireCooldown - dt);
@@ -1043,62 +1115,156 @@
       s.bullets.push({ kind: 'bullet', x: s.shipX, y: s.shipY, z: Z_SHIP, prevZ: Z_SHIP });
       Sound.shot();
     }
-    var G = groundYAt(s.t);
     for (var i = s.bullets.length - 1; i >= 0; i--) {
       var b = s.bullets[i];
       b.prevZ = b.z;
       b.z += BULLET_SPEED * dt;
       var spent = b.z > BULLET_RANGE;
-      // Obstacles have already moved this frame, so each pair is tested
-      // on whether their depths CROSSED - at these closing speeds a
-      // bullet and a rock can pass straight through each other between
-      // two frames.
       for (var j = 0; j < s.obstacles.length && !spent; j++) {
         var o = s.obstacles[j];
-        if (o.dead || o.kind === 'cloud') continue;
-        var before = b.prevZ - o.prevZ, after = b.z - o.z;
-        if (before > 0 || after < 0) continue;  // not crossed this frame
-        if (o.kind === 'rock') {
-          if (Math.hypot(b.x - o.x, b.y - o.y) < o.r + BULLET_RADIUS) {
-            this.destroyRock(o);
-            spent = true;
-          }
-        } else if (o.kind === 'wall') {
-          spent = !(Math.abs(b.x - o.gx) < o.gw / 2 && Math.abs(b.y - o.gy) < o.gh / 2);
-        } else if (o.kind === 'spire') {
-          var f = clamp((b.y - o.top) / Math.max(1, G - o.top), 0, 1);
-          spent = b.y > o.top && Math.abs(b.x - o.x) < lerp(o.w * 0.2, o.w * 0.65, f);
+        if (o.kind === 'cloud' || !crossed(b, o)) continue;
+        if (this.blocks(o, b.x, b.y)) {
+          spent = true;
+          if (o.kind === 'rock') this.spark(b.x, b.y, o.z);
+        }
+      }
+      for (var k = 0; k < s.enemies.length && !spent; k++) {
+        var e = s.enemies[k];
+        if (e.mode === 'leaving' || !crossed(b, e)) continue;
+        if (Math.hypot(b.x - e.x, b.y - e.y) < ENEMY_RADIUS + BULLET_RADIUS) {
+          spent = true;
+          this.damageEnemy(e);
         }
       }
       if (spent) s.bullets.splice(i, 1);
     }
   };
 
-  MainScene.prototype.destroyRock = function (o) {
-    var s = this.state;
-    o.dead = true;
-    s.rocksDestroyed++;
-    s.bursts.push({ kind: 'burst', x: o.x, y: o.y, z: o.z, r: o.r, age: 0, life: 0.5, spin: rand(0, Math.PI) });
-    Sound.boom();
+  // A shot glancing off a rock: a little flash where it struck.
+  MainScene.prototype.spark = function (x, y, z) {
+    this.state.bursts.push({ kind: 'burst', x: x, y: y, z: z, r: 8, age: 0, life: 0.22, spin: rand(0, Math.PI), small: true });
   };
 
-  // A burst stays where the rock was, so it keeps coming at you with
-  // the world rather than hanging in front of the camera.
+  // A burst stays where it happened, so it keeps coming at you with the
+  // world rather than hanging in front of the camera.
   MainScene.prototype.stepBursts = function (dt, speed) {
     var bs = this.state.bursts;
     for (var i = bs.length - 1; i >= 0; i--) {
       bs[i].age += dt;
-      bs[i].z -= speed * dt;
+      if (!bs[i].holdsStation) bs[i].z -= speed * dt;
       if (bs[i].age > bs[i].life || bs[i].z < Z_NEAR) bs.splice(i, 1);
     }
   };
 
-  // True when a rock ahead sits on the ship's line of fire.
-  MainScene.prototype.rockInSights = function () {
+  // ---- Aliens --------------------------------------------------------
+  MainScene.prototype.spawnEnemy = function (opts) {
     var s = this.state;
-    return s.obstacles.some(function (o) {
-      return o.kind === 'rock' && !o.dead && o.z > Z_SHIP &&
-        Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r + BULLET_RADIUS;
+    var floor = Math.min(Y_BOTTOM, groundYAt(s.t) - GROUND_CLEARANCE) - ENEMY_WEAVE_Y - 20;
+    var e = Object.assign({
+      kind: 'enemy',
+      ax: rand(-X_LIMIT + ENEMY_WEAVE_X, X_LIMIT - ENEMY_WEAVE_X),
+      ay: rand(Y_TOP + ENEMY_WEAVE_Y, Math.max(Y_TOP + ENEMY_WEAVE_Y, Math.min(40, floor))),
+      phaseX: rand(0, Math.PI * 2), phaseY: rand(0, Math.PI * 2),
+      weave: true,
+      color: COLOR_ENEMY[Math.floor(Math.random() * COLOR_ENEMY.length)],
+      hp: ENEMY_HP, flash: 0,
+      mode: 'arriving', age: 0, modeAge: 0,
+      stay: ENEMY_STAY,
+      fireTimer: ENEMY_FIRST_SHOT + ENEMY_CHARGE,
+      z: Z_SPAWN, prevZ: Z_SPAWN
+    }, opts || {});
+    e.x = e.ax; e.y = e.ay;
+    s.enemies.push(e);
+    return e;
+  };
+
+  MainScene.prototype.stepEnemies = function (dt) {
+    var s = this.state;
+    for (var i = s.enemies.length - 1; i >= 0; i--) {
+      var e = s.enemies[i];
+      e.age += dt;
+      e.modeAge += dt;
+      e.prevZ = e.z;
+      e.flash = Math.max(0, e.flash - dt);
+      if (e.weave) {
+        e.x = e.ax + Math.sin(e.age * 0.8 + e.phaseX) * ENEMY_WEAVE_X;
+        e.y = e.ay + Math.sin(e.age * 1.1 + e.phaseY) * ENEMY_WEAVE_Y;
+      }
+      if (e.mode === 'arriving') {
+        e.z = lerp(Z_SPAWN, ENEMY_Z, smooth(e.modeAge / ENEMY_ARRIVE));
+        if (e.modeAge >= ENEMY_ARRIVE) { e.mode = 'holding'; e.modeAge = 0; }
+      } else if (e.mode === 'holding') {
+        e.z = ENEMY_Z;
+        e.fireTimer -= dt;
+        if (e.fireTimer <= 0) {
+          e.fireTimer = ENEMY_FIRE_INTERVAL * rand(0.85, 1.15);
+          this.enemyFire(e);
+        }
+        if (e.modeAge >= e.stay) { e.mode = 'leaving'; e.modeAge = 0; }
+      } else {
+        e.z = lerp(ENEMY_Z, Z_SPAWN + 2, smooth(e.modeAge / ENEMY_LEAVE));
+        if (e.modeAge >= ENEMY_LEAVE) s.enemies.splice(i, 1);
+      }
+    }
+  };
+
+  // 0..1 through the visible wind-up before a shot; 0 when not charging.
+  function enemyCharge(e) {
+    if (e.mode !== 'holding' || e.fireTimer > ENEMY_CHARGE) return 0;
+    return 1 - e.fireTimer / ENEMY_CHARGE;
+  }
+
+  // Aimed at where the ship IS: hold still and it hits you, move and
+  // it doesn't.
+  MainScene.prototype.enemyFire = function (e) {
+    var s = this.state;
+    s.enemyFired++;
+    s.enemyShots.push({ kind: 'shot', x0: e.x, y0: e.y, z0: e.z, tx: s.shipX, ty: s.shipY, x: e.x, y: e.y, z: e.z, prevZ: e.z });
+    Sound.zap();
+  };
+
+  MainScene.prototype.stepEnemyShots = function (dt) {
+    var s = this.state;
+    for (var i = s.enemyShots.length - 1; i >= 0; i--) {
+      var p = s.enemyShots[i];
+      p.prevZ = p.z;
+      p.z -= ENEMY_SHOT_SPEED * dt;
+      // A straight line from the alien to the point it aimed at.
+      var f = (p.z0 - p.z) / (p.z0 - Z_SHIP);
+      p.x = lerp(p.x0, p.tx, f);
+      p.y = lerp(p.y0, p.ty, f);
+      for (var j = 0; j < s.obstacles.length && !p.dead; j++) {
+        var o = s.obstacles[j];
+        if (o.kind !== 'cloud' && crossed(p, o) && this.blocks(o, p.x, p.y)) {
+          p.dead = true;
+          s.shotsBlocked++;
+          this.spark(p.x, p.y, o.z);
+        }
+      }
+      if (!p.dead && p.prevZ >= Z_SHIP && p.z < Z_SHIP &&
+          Math.hypot(s.shipX - p.x, s.shipY - p.y) < ENEMY_SHOT_RADIUS + SHIP_HIT_RADIUS) {
+        this.onHit(p);
+      }
+      if (p.dead || p.z < Z_NEAR) s.enemyShots.splice(i, 1);
+    }
+  };
+
+  MainScene.prototype.damageEnemy = function (e) {
+    var s = this.state;
+    e.hp--;
+    e.flash = 0.1;
+    if (e.hp > 0) { Sound.tick(); return; }
+    s.enemiesDowned++;
+    s.enemies.splice(s.enemies.indexOf(e), 1);
+    s.bursts.push({ kind: 'burst', x: e.x, y: e.y, z: e.z, r: ENEMY_RADIUS * 1.3, age: 0, life: 0.6, spin: rand(0, Math.PI), color: e.color, holdsStation: true });
+    Sound.boom();
+  };
+
+  // True when an alien sits on the ship's line of fire.
+  MainScene.prototype.enemyInSights = function () {
+    var s = this.state;
+    return s.enemies.some(function (e) {
+      return e.mode !== 'leaving' && Math.hypot(s.shipX - e.x, s.shipY - e.y) < ENEMY_RADIUS + BULLET_RADIUS;
     });
   };
 
@@ -1130,7 +1296,7 @@
 
     this.drawStreaks();
 
-    var obs = s.obstacles.concat(s.bullets, s.bursts).sort(function (a, b) { return b.z - a.z; });
+    var obs = s.obstacles.concat(s.bullets, s.bursts, s.enemies, s.enemyShots).sort(function (a, b) { return b.z - a.z; });
     this.nextWall = this.findNextWall();
     for (var i = 0; i < obs.length; i++) {
       this.drawObstacle(obs[i].z >= Z_SHIP ? this.gFar : this.gNear, obs[i]);
@@ -1293,6 +1459,8 @@
   MainScene.prototype.drawObstacle = function (g, o) {
     if (o.kind === 'bullet') return this.drawBullet(g, o);
     if (o.kind === 'burst') return this.drawBurst(g, o);
+    if (o.kind === 'enemy') return this.drawEnemy(g, o);
+    if (o.kind === 'shot') return this.drawEnemyShot(g, o);
     if (o.dead) return; // shot this frame; its burst is drawn instead
     var a = depthAlpha(o.z);
     if (a <= 0) return;
@@ -1413,9 +1581,19 @@
   MainScene.prototype.drawBurst = function (g, o) {
     var t = o.age / o.life, z = Math.max(o.z, Z_NEAR);
     var cx = this.sx(o.x, z), cy = this.sy(o.y, z);
-    // A minimum size, so a rock shot far off still visibly goes up.
-    var r = Math.max(10 + t * 14, o.r * (0.6 + t * 1.6) / z);
+    // A minimum size, so a kill far off still visibly goes up; a spark
+    // off a rock stays small.
+    var r = o.small ? Math.max(3, o.r * (0.5 + t) / z) : Math.max(10 + t * 14, o.r * (0.6 + t * 1.6) / z);
     var a = 1 - t;
+    if (o.color && t < 0.5) {
+      // An alien coming apart: its own colour, flung out in flat shards.
+      g.fillStyle(o.color, (0.5 - t) * 2 * 0.9);
+      for (var k = 0; k < 6; k++) {
+        var ka = o.spin + k * Math.PI / 3, kd = r * 0.9;
+        var kx = cx + Math.cos(ka) * kd, ky = cy + Math.sin(ka) * kd, ks = r * 0.22;
+        g.fillTriangle(kx, ky - ks, kx + ks, ky + ks, kx - ks, ky + ks);
+      }
+    }
     if (t < 0.3) {
       g.fillStyle(COLOR_FLAME_INNER, (0.3 - t) / 0.3 * 0.8);
       g.fillCircle(cx, cy, r * 0.7);
@@ -1430,12 +1608,60 @@
     }
   };
 
-  // The gun sight: four ticks round the point the guns are aimed at, a
-  // little way ahead. It brightens when a rock is on the line.
+  // An alien: a flat cutout, the diamond of head-on.html's swoopers with
+  // a pair of fins and one eye. The eye is where the charge shows - it
+  // fills with the shot's orange, and a ring closes in on it, so the
+  // wind-up can be read at a glance while you are busy dodging.
+  MainScene.prototype.drawEnemy = function (g, e) {
+    var z = e.z, x = this.sx(e.x, z), y = this.sy(e.y, z), r = ENEMY_RADIUS / z;
+    var a = e.mode === 'leaving' ? 1 - e.modeAge / ENEMY_LEAVE : clamp((Z_SPAWN - z) / Z_FADE_IN, 0, 1);
+    if (a <= 0) return;
+    var body = e.flash > 0 ? 0xffffff : e.color;
+    var wob = Math.sin(e.age * 6) * r * 0.08;
+    g.fillStyle(body, a * 0.75);
+    g.fillTriangle(x - r * 0.55, y, x - r * 1.45, y - r * 0.55 + wob, x - r * 1.1, y + r * 0.35);
+    g.fillTriangle(x + r * 0.55, y, x + r * 1.45, y - r * 0.55 - wob, x + r * 1.1, y + r * 0.35);
+    g.fillStyle(body, a);
+    g.beginPath();
+    g.moveTo(x, y - r); g.lineTo(x + r * 0.8, y); g.lineTo(x, y + r); g.lineTo(x - r * 0.8, y);
+    g.closePath();
+    g.fillPath();
+    var charge = enemyCharge(e);
+    g.fillStyle(charge > 0 ? mixColor(COLOR_ENEMY_EYE, COLOR_ENEMY_SHOT, charge) : COLOR_ENEMY_EYE, a);
+    g.fillCircle(x, y, r * 0.32);
+    if (charge > 0) {
+      g.lineStyle(Math.max(1.5, 2.5 / z), COLOR_ENEMY_SHOT, a * charge);
+      g.strokeCircle(x, y, r * (0.35 + 1.4 * (1 - charge)));
+    }
+    // Damage: one notch out of the diamond's edge per hit taken.
+    g.fillStyle(COLOR_ENEMY_EYE, a);
+    for (var i = 0; i < ENEMY_HP - e.hp; i++) {
+      var nx = x + (i % 2 ? 1 : -1) * r * 0.4, ny = y + (i < 2 ? -1 : 1) * r * 0.5;
+      g.fillCircle(nx, ny, r * 0.12);
+    }
+  };
+
+  // Their fire: an orange orb with a halo, growing as it comes.
+  MainScene.prototype.drawEnemyShot = function (g, p) {
+    if (p.dead) return;
+    var z = Math.max(p.z, Z_NEAR), x = this.sx(p.x, z), y = this.sy(p.y, z);
+    var r = Math.max(4, ENEMY_SHOT_RADIUS * 1.3 / z);
+    var a = p.z < Z_SHIP ? clamp((p.z - Z_NEAR) / (Z_SHIP - Z_NEAR), 0, 1) : 1;
+    g.fillStyle(COLOR_ENEMY_SHOT, a * 0.3);
+    g.fillCircle(x, y, r * 1.8);
+    g.fillStyle(COLOR_ENEMY_SHOT, a);
+    g.fillCircle(x, y, r);
+    g.fillStyle(COLOR_FLAME_INNER, a);
+    g.fillCircle(x, y, r * 0.45);
+  };
+
+  // The gun sight: four ticks round the point the guns are aimed at, on
+  // the plane the aliens hold station in. It goes yellow with one on
+  // the line.
   MainScene.prototype.drawSight = function () {
     var s = this.state, g = this.gFx;
     var x = this.sx(s.shipX, SIGHT_Z), y = this.sy(s.shipY, SIGHT_Z);
-    var locked = this.rockInSights();
+    var locked = this.enemyInSights();
     var gap = 5, len = 6;
     g.lineStyle(locked ? 2 : 1.5, locked ? COLOR_FLAME_INNER : COLOR_SIGHT, locked ? 1 : 0.55);
     g.lineBetween(x - gap - len, y, x - gap, y);
@@ -1470,6 +1696,7 @@
     var s = this.state;
     this.altText.setText('ALT ' + altitudeAt(s.t).toFixed(1) + ' km');
     this.distText.setText(Math.floor(s.distance).toLocaleString() + ' m');
+    this.downText.setText(s.enemiesDowned ? s.enemiesDowned + ' downed' : '');
     // Shields: one small chevron per hit you can still take.
     var g = this.shieldGfx;
     g.clear();
@@ -1498,8 +1725,10 @@
         shipX: s.shipX, shipY: s.shipY, vx: s.vx, vy: s.vy, boost: s.boost || 0,
         shields: s.shields, hits: s.hits, invuln: s.invuln,
         groundY: groundYAt(s.t),
-        bullets: s.bullets.length, shotsFired: s.shotsFired, rocksDestroyed: s.rocksDestroyed,
-        inSights: scene.rockInSights(), fireHeld: fireHeld(), shipYLimit: scene.shipYLimit(),
+        bullets: s.bullets.length, shotsFired: s.shotsFired,
+        enemies: s.enemies.map(function (e) { return { mode: e.mode, hp: e.hp, z: e.z, x: e.x, y: e.y, charge: enemyCharge(e) }; }),
+        enemyShots: s.enemyShots.length, enemiesDowned: s.enemiesDowned, shotsBlocked: s.shotsBlocked, enemyFired: s.enemyFired,
+        inSights: scene.enemyInSights(), fireHeld: fireHeld(), shipYLimit: scene.shipYLimit(),
         obstacles: s.obstacles.map(function (o) {
           return { kind: o.kind, z: o.z, align: o.kind === 'wall' ? scene.wallAlignment(o) : null };
         }),
@@ -1511,7 +1740,10 @@
     constants: function () {
       return { SHIP_MAX_SPEED: SHIP_MAX_SPEED, GAP_W: GAP_W, GAP_H: GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELDS: SHIELDS, Z_SPAWN: Z_SPAWN,
         CLOUDS_START: CLOUDS_START, SURFACE_START: SURFACE_START, GROUND_Y: GROUND_Y,
-        GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME };
+        GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME,
+        ENEMY_HP: ENEMY_HP, ENEMY_Z: ENEMY_Z, ENEMY_FIRST: ENEMY_FIRST, ENEMY_RADIUS: ENEMY_RADIUS,
+        ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: BULLET_RADIUS,
+        ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED };
     },
     skipTo: function (t) { scene.state.t = t; },
     // The marker on the next wall, with that wall's gap in screen space.
@@ -1526,11 +1758,21 @@
         shipScreenY: scene.sy(scene.state.shipY, Z_SHIP)
       };
     },
-    clear: function () { scene.state.obstacles.length = 0; },
+    clear: function () {
+      var s = scene.state;
+      s.obstacles.length = 0; s.enemies.length = 0; s.enemyShots.length = 0; s.bullets.length = 0;
+    },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },
     setShip: function (x, y) { var s = scene.state; s.shipX = x; s.shipY = y; s.vx = s.vy = 0; },
     spawn: function (kind, opts) {
+      if (kind === 'enemy') { scene.spawnEnemy(opts); return true; }
+      if (kind === 'shot') {
+        var sh = Object.assign({ kind: 'shot', x0: 0, y0: 0, z0: ENEMY_Z, tx: scene.state.shipX, ty: scene.state.shipY }, opts || {});
+        sh.z = sh.z == null ? sh.z0 : sh.z; sh.prevZ = sh.z; sh.x = sh.x0; sh.y = sh.y0;
+        scene.state.enemyShots.push(sh);
+        return true;
+      }
       var o = kind === 'rock' ? scene.spawnRock(false, opts)
         : kind === 'wall' ? scene.spawnWall(opts)
         : kind === 'spire' ? scene.spawnSpire(false, opts)

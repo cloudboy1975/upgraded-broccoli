@@ -129,6 +129,29 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   third of a second. Thumb speed is measured over the last 60 ms, so a
   shaky thumb doesn't trigger it. Lifting your thumb and the keyboard
   never do.
+- **Guns, for the aliens only.** Hold the fire button (right thumb),
+  or Space, to keep firing. Shots fly straight ahead along the ship's
+  line, so the gun sight (four ticks on the aliens' plane) is where they
+  go. It turns yellow when an alien is in line. Rocks, walls and spires
+  are for dodging, not shooting: shots spark off them, and they give
+  cover both ways.
+- **Aliens.** One at a time, a flat alien flies in and holds position
+  a fixed distance ahead of you, weaving, so you can aim at it while
+  the rocks keep coming. It takes four hits. Before every shot its eye
+  fills orange and a ring closes in on it, then a slow orange shot
+  comes at where you were, so moving dodges it. Ignore it and after
+  about ten seconds it pulls back and leaves. While one is around,
+  rocks come about 40% less often, so dodging and aiming at the same
+  time stays fun. This is one fixed balance for the prototype. The
+  real game would build up to it over time.
+- **Flicks.** How fast your thumb moves counts, not just where it
+  ends up. Ordinary steering is unchanged. A quick flick of the stick
+  gives a short burst, up to 80% above the normal top speed and with
+  sharper response, in whatever direction the stick now points. The
+  engine flame stretches while it lasts, and it fades out in about a
+  third of a second. Thumb speed is measured over the last 60 ms, so a
+  shaky thumb doesn't trigger it. Lifting your thumb and the keyboard
+  never do.
 - **Guns.** Hold the fire button (right thumb), or Space, to keep
   firing. Shots fly straight ahead along the ship's line, so the gun
   sight (four ticks a little way ahead) is where they go. The sight

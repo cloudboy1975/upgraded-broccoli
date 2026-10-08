@@ -292,48 +292,144 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(300);
   check('letting go stops the guns', (await state(page)).shotsFired === firedAfterRelease);
 
+  // Rocks are for dodging: shots spark off them and they keep coming.
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 22, z: 9 }));
-  check('a rock on the line puts it in the sights', (await state(page)).inSights === true);
+  check('a rock on the line does not light the sight', (await state(page)).inSights === false);
   await hold(page, 'Space', 400);
   await page.waitForTimeout(300);
   s = await state(page);
-  check('a rock on the line can be shot down', s.rocksDestroyed === 1 && !s.obstacles.some(o => o.kind === 'rock'), s);
-  await page.waitForTimeout(2200);
+  check('rocks cannot be shot down', s.shotsFired > 0 && s.obstacles.some(o => o.kind === 'rock'), s);
+  await page.waitForTimeout(1800);
   s = await state(page);
-  check('...and then it cannot hit you', s.shields === C.SHIELDS && s.hits === 0, s);
+  check('...so a rock you shot at still hits you', s.shields === C.SHIELDS - 1, s);
+
+  // ---- Aliens --------------------------------------------------------
+  // One holding station dead ahead, still and not firing, to aim at.
+  // Scenery placed BETWEEN you and it has to sit nearer than its station.
+  const COVER_Z = 1 + (C.ENEMY_Z - 1) * 0.75;
+  // How long its shot takes to reach you, plus slack.
+  const SHOT_MS = ((C.ENEMY_Z - 1) / C.ENEMY_SHOT_SPEED + 0.5) * 1000;
+  const sitter = (x, y, extra) => D(page, ([x, y, extra, ez]) => window.__descentDebug.spawn('enemy', Object.assign({
+    ax: x, ay: y, weave: false, mode: 'holding', z: ez, prevZ: ez, fireTimer: 99
+  }, extra || {})), [x, y, extra, C.ENEMY_Z]);
+  const enemy0 = async () => (await state(page)).enemies[0];
 
   await quiet(page);
-  await D(page, () => window.__descentDebug.spawn('rock', { x: 120, y: -100, r: 20, z: 9 }));
-  check('a rock off the line is not in the sights', (await state(page)).inSights === false);
-  await hold(page, 'Space', 400);
-  await page.waitForTimeout(300);
+  await sitter(0, 0);
+  check('an alien on the line lights the sight', (await state(page)).inSights === true);
+  await hold(page, 'Space', 60);
+  await page.waitForTimeout(350);
+  let e = await enemy0();
+  check('one shot is one hit, and it takes more than one', e && e.hp === C.ENEMY_HP - 1, e);
+  await hold(page, 'Space', 1200);
+  await page.waitForTimeout(350);
   s = await state(page);
-  check('shots fly straight: a rock off the line survives', s.shotsFired > 0 && s.rocksDestroyed === 0, s);
+  check('keep firing and it goes down', s.enemiesDowned === 1 && s.enemies.length === 0, s);
 
-  // Walls stop shots, except through their gap.
   await quiet(page);
-  await D(page, () => {
+  await sitter(120, -100);
+  check('an alien off the line does not light the sight', (await state(page)).inSights === false);
+  await hold(page, 'Space', 500);
+  await page.waitForTimeout(350);
+  e = await enemy0();
+  check('shots fly straight: an alien off the line is untouched', e && e.hp === C.ENEMY_HP, e);
+
+  // Cover: scenery between you and it soaks up your shots.
+  await quiet(page);
+  await D(page, () => window.__descentDebug.setInvincible(true));
+  await sitter(0, 0);
+  await D(page, (z) => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 30, z: z }), COVER_Z);
+  await hold(page, 'Space', 250);
+  await page.waitForTimeout(350);
+  e = await enemy0();
+  check('a rock in the way shields the alien', e && e.hp === C.ENEMY_HP, e);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.setInvincible(true));
+  await sitter(0, 0);
+  await D(page, (z) => window.__descentDebug.spawn('wall', { gx: 120, gy: -100, z: z }), COVER_Z);
+  await hold(page, 'Space', 250);
+  await page.waitForTimeout(350);
+  e = await enemy0();
+  check('a wall in the way shields the alien', e && e.hp === C.ENEMY_HP, e);
+
+  await quiet(page);
+  await sitter(0, 0);
+  await D(page, (z) => window.__descentDebug.spawn('wall', { gx: 0, gy: 0, z: z }), COVER_Z);
+  await hold(page, 'Space', 250);
+  await page.waitForTimeout(350);
+  e = await enemy0();
+  check('...but shots go through the gap', e && e.hp < C.ENEMY_HP, e);
+
+  // Its fire: charged up visibly, aimed at where you are, dodgeable.
+  await quiet(page);
+  await D(page, () => window.__descentDebug.setInvincible(true));
+  await sitter(0, 0, { fireTimer: 0.8 });
+  let sawCharge = false, chargedBeforeShot = false;
+  for (let i = 0; i < 40; i++) {
+    s = await state(page);
+    if (s.enemies[0] && s.enemies[0].charge > 0) sawCharge = true;
+    if (s.enemyFired > 0) { chargedBeforeShot = sawCharge; break; }
+    await page.waitForTimeout(30);
+  }
+  check('it fires on its own', s.enemyFired === 1, s.enemyFired);
+  check('every shot is telegraphed by a visible charge first', chargedBeforeShot);
+  await page.waitForTimeout(SHOT_MS);
+  check('its own shot is aimed at you: holding still, it lands', (await state(page)).hits === 1);
+
+  await quiet(page);
+  await D(page, (z) => window.__descentDebug.spawn('shot', { z0: z }), C.ENEMY_Z);
+  await page.waitForTimeout(SHOT_MS);
+  s = await state(page);
+  check('hold still and its shot hits you', s.shields === C.SHIELDS - 1, s);
+
+  await quiet(page);
+  await D(page, (z) => window.__descentDebug.spawn('shot', { z0: z }), C.ENEMY_Z);
+  await hold(page, 'ArrowRight', 400);
+  await page.waitForTimeout(SHOT_MS);
+  s = await state(page);
+  check('move and it misses', s.shields === C.SHIELDS && s.hits === 0, s);
+
+  await quiet(page);
+  await D(page, (ez) => {
     const d = window.__descentDebug;
     d.setInvincible(true);
-    d.spawn('wall', { gx: 120, gy: -100, z: 4 });
-    d.spawn('rock', { x: 0, y: 0, r: 22, z: 10 });
-  });
-  await hold(page, 'Space', 250);
-  await page.waitForTimeout(400);
-  s = await state(page);
-  check('a wall in the way soaks up the shots', s.shotsFired > 0 && s.rocksDestroyed === 0, s);
+    d.spawn('wall', { gx: 120, gy: -100, z: ez + 1 });
+    d.spawn('shot', { z0: ez });
+  }, C.ENEMY_Z);
+  await page.waitForTimeout(SHOT_MS);
+  check('a wall shields you from its fire too', (await state(page)).shotsBlocked === 1);
 
   await quiet(page);
-  await D(page, () => {
+  await D(page, (ez) => {
     const d = window.__descentDebug;
-    d.spawn('wall', { gx: 0, gy: 0, z: 4 });
-    d.spawn('rock', { x: 0, y: 0, r: 22, z: 10 });
-  });
-  await hold(page, 'Space', 250);
-  await page.waitForTimeout(400);
+    d.setInvincible(true);
+    d.spawn('wall', { gx: 0, gy: 0, z: ez + 1 });
+    d.spawn('shot', { z0: ez });
+  }, C.ENEMY_Z);
+  await page.waitForTimeout(SHOT_MS);
+  check('...unless it comes through the gap', (await state(page)).shotsBlocked === 0);
+
+  await quiet(page);
+  await sitter(0, 0, { stay: 0.3 });
+  await page.waitForTimeout(500);
+  check('ignored, it pulls back', (await enemy0()) && (await enemy0()).mode === 'leaving');
+  await page.waitForTimeout(1500);
   s = await state(page);
-  check('...but shots go through the gap', s.rocksDestroyed === 1, s);
+  check('...and goes, with no harm done', s.enemies.length === 0 && s.enemiesDowned === 0 && s.shields === C.SHIELDS, s);
+
+  // Integration: nobody spawns these by hand in a real run.
+  await quiet(page);
+  await D(page, () => { window.__descentDebug.setSpawning(true); window.__descentDebug.setInvincible(true); });
+  await page.waitForTimeout((C.ENEMY_FIRST + 0.5) * 1000);
+  s = await state(page);
+  check('an alien arrives by itself', s.enemies.length === 1, s.enemies);
+  await page.waitForTimeout((C.ENEMY_ARRIVE + 2.5) * 1000);
+  s = await state(page);
+  check('...and opens fire by itself', s.enemyFired > 0, s);
+  check('only one alien at a time', s.enemies.length <= 1, s.enemies.length);
+  await D(page, () => window.__descentDebug.setSpawning(false));
 
   // The touch fire button.
   await quiet(page);
