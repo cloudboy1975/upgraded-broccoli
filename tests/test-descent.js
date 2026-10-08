@@ -192,6 +192,47 @@ harness.run(async (page, check, ctx) => {
   check('the boost fades, back to normal top speed while held',
     s.boost === 0 && Math.abs(Math.abs(s.vx) - C.SHIP_MAX_SPEED) < 5 || (s.boost === 0 && Math.abs(s.shipX) === C.X_LIMIT), s);
 
+  // Flicks from anywhere on the wider stick area, not just its middle.
+  // Each: thumb lands, rests, then snaps 50px in the given direction.
+  async function flickFrom(x, y, dx, dy) {
+    await quiet(page);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(250);
+    await page.mouse.move(x + dx, y + dy);
+    const pk = await peaksDuring(350);
+    const st = await state(page);
+    await page.mouse.up();
+    return Object.assign(pk, { fired: st.shotsFired, x: st.shipX, y: st.shipY });
+  }
+  const flickSpots = {
+    // Rightward from the seam: the thumb ends up over the FIRE half. It
+    // must stay a steering flick - the stick holds on to its own touch -
+    // and must not fire.
+    'the middle seam, across into the fire half': [box.x + box.width - 20, cy, 50, 0],
+    'the hit slop, flicking up over the picture': [box.x + box.width / 2, box.y - 30, 0, -50],
+    'the top corner, flicking up and right': [box.x + 30, box.y + 10, 35, -35]
+  };
+  for (const name of Object.keys(flickSpots)) {
+    const f = await flickFrom(...flickSpots[name]);
+    check('a flick boosts from ' + name, f.boost > 0.8, f);
+    check('...and steers the way it was flicked, without firing (' + name + ')',
+      f.fired === 0 && (flickSpots[name][2] > 0 ? f.x > 10 : true) && (flickSpots[name][3] < 0 ? f.y < -10 : true), f);
+  }
+
+  // Slow steering that starts in the slop or at the seam is still not a flick.
+  await quiet(page);
+  await page.mouse.move(box.x + box.width / 2, box.y - 30);
+  await page.mouse.down();
+  let slowSlop = 0;
+  for (let i = 1; i <= 20; i++) {
+    await page.mouse.move(box.x + box.width / 2 + i * 2.5, box.y - 30);
+    slowSlop = Math.max(slowSlop, (await state(page)).boost);
+    await page.waitForTimeout(20);
+  }
+  await page.mouse.up();
+  check('slow steering from the hit slop gets no boost', slowSlop === 0, slowSlop);
+
   // A trembling thumb is not a flick.
   await quiet(page);
   await page.mouse.move(cx, cy);
