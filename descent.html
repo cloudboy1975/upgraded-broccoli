@@ -167,15 +167,35 @@
   }
   .stick-anchor.visible, .stick-knob.visible { opacity: 1; }
 
-  /* The right thumb is deliberately empty for now: it is where the fire
-     button goes once there is something to shoot, the same spot it
-     sits in head-on.html. A faint ring holds the place. */
-  .thumb-slot {
-    width: 74px;
-    height: 74px;
+  /* Right thumb: fire, in the same spot as head-on.html's. Hold it
+     down to keep firing. */
+  .fire-btn {
+    width: 84px;
+    height: 84px;
     border-radius: 50%;
-    border: 1px dashed rgba(226, 232, 240, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.45);
+    background: radial-gradient(circle at 35% 30%, rgba(34, 197, 94, 0.28), rgba(20, 83, 45, 0.25) 70%);
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 0.08s, background 0.12s;
+  }
+  .fire-btn.active {
+    transform: scale(0.93);
+    background: radial-gradient(circle at 35% 30%, rgba(34, 197, 94, 0.75), rgba(20, 83, 45, 0.55) 70%);
+  }
+  .fire-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(187, 247, 208, 0.85);
+    pointer-events: none;
   }
 </style>
 </head>
@@ -201,7 +221,7 @@
       <span class="stick-anchor" id="stickAnchor" aria-hidden="true"></span>
       <span class="stick-knob" id="stickKnob" aria-hidden="true"></span>
     </div>
-    <div class="thumb-slot" aria-hidden="true"></div>
+    <button type="button" class="fire-btn" id="fireBtn" aria-label="Fire (hold to keep firing)"><span class="fire-dot" aria-hidden="true"></span></button>
   </div>
 
 <script src="phaser.min.js"></script>
@@ -265,7 +285,7 @@
   var SHIP_RESPONSE = 9;       // how quickly velocity catches up with the stick (1/s)
   var SHIP_HIT_RADIUS = 11;
   var SHIP_DRAW_SIZE = 18;
-  var SHIELDS = 3;
+  var SHIELDS = 5;
   var INVULN_TIME = 1.3;       // seconds of grace after a hit
 
   // ---- Pace ----------------------------------------------------------
@@ -326,6 +346,19 @@
   var COLOR_SPIRE = 0x2a0a0a;
   var COLOR_SPIRE_EDGE = 0x991b1b;
   var COLOR_HIT = 0xef4444;
+  var COLOR_BULLET = 0x22c55e;         // head-on.html's bullets
+  var COLOR_SIGHT = 0xbbf7d0;
+
+  // ---- The guns ------------------------------------------------------
+  // Shots leave the ship and fly straight ahead along its own line, so
+  // the gun sight and the marker on the next wall are both exactly
+  // where they will go. A rock bursts in one hit; walls and spires just
+  // soak shots up.
+  var FIRE_INTERVAL = 0.14;    // seconds between shots while fire is held
+  var BULLET_SPEED = 26;       // depth units per second, on top of nothing - the world closes on them too
+  var BULLET_RADIUS = 9;       // generous: a near miss on a rock still counts
+  var BULLET_RANGE = Z_SPAWN + 1;
+  var SIGHT_Z = 5;             // depth the gun sight is drawn at
 
   var BEST_KEY = 'descent-best-v1';
   var AXIS_KEY = 'descent-axis-v1';
@@ -416,7 +449,22 @@
       o.start(now);
       o.stop(now + 0.4);
     }
-    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump };
+    function blip(f0, f1, dur, type, vol) {
+      if (!ctx) return;
+      var now = ctx.currentTime;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, now);
+      o.frequency.exponentialRampToValueAtTime(f1, now + dur);
+      g.gain.setValueAtTime(vol, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      o.connect(g).connect(ctx.destination);
+      o.start(now);
+      o.stop(now + dur + 0.05);
+    }
+    function shot() { blip(900, 300, 0.08, 'square', 0.05); }
+    function boom() { blip(220, 30, 0.35, 'sawtooth', 0.12); }
+    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump, shot: shot, boom: boom };
   })();
 
   // ==================================================================
@@ -531,6 +579,32 @@
   });
   renderAxis();
 
+  var touchFire = false, kbFire = false;
+  function fireHeld() { return touchFire || kbFire; }
+
+  (function bindFireButton(el) {
+    var activeId = null;
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      touchFire = true;
+      el.classList.add('active');
+    });
+    function release(e) {
+      if (e && e.pointerId !== activeId) return;
+      activeId = null;
+      touchFire = false;
+      el.classList.remove('active');
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+    window.addEventListener('blur', function () { release(); });
+  })(document.getElementById('fireBtn'));
+
   var KEY_DIRS = {
     ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right'
@@ -542,15 +616,21 @@
     if (e.code === 'KeyY' && !e.repeat) { setInvertY(!invertY); return; }
     if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'crashed') {
       e.preventDefault();
-      scene.restart();
+      // A held Space from firing must not also restart the moment the
+      // crash screen comes up - only a fresh press does.
+      if (!e.repeat) scene.restart();
+      return;
     }
+    if (e.code === 'Space') { kbFire = true; e.preventDefault(); }
   });
   window.addEventListener('keyup', function (e) {
     var dir = KEY_DIRS[e.code];
     if (dir) { kb[dir] = false; updateKbVector(); }
+    if (e.code === 'Space') kbFire = false;
   });
   window.addEventListener('blur', function () {
     kb.up = kb.down = kb.left = kb.right = false;
+    kbFire = false;
     updateKbVector();
   });
   document.addEventListener('touchmove', function (e) {
@@ -613,6 +693,11 @@
       obstacles: [],
       streaks: [],
       shards: [],
+      bullets: [],
+      bursts: [],
+      fireCooldown: 0,
+      shotsFired: 0,
+      rocksDestroyed: 0,
       invincible: this.state ? this.state.invincible : false,
       spawning: this.state ? this.state.spawning : true
     };
@@ -650,6 +735,7 @@
       this.stepShip(dt);
       this.stepSpawning(dt);
       this.stepObstacles(dt, speed);
+      this.stepGuns(dt, speed);
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else {
       s.crashAge += dt;
@@ -660,6 +746,7 @@
     }
     this.stepStreaks(dt, flying ? speedAt(s.t) : speedAt(s.t) * Math.max(0, 1 - s.crashAge / 0.8));
     this.stepShards(dt);
+    this.stepBursts(dt, flying ? speedAt(s.t) : 0);
 
     var phase = phaseAt(s.t);
     if (phase !== s.phase) { s.phase = phase; s.phaseAge = 0; }
@@ -879,7 +966,7 @@
       try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
     }
     var line = document.getElementById('crashLine');
-    line.textContent = dist.toLocaleString() + ' m flown · best ' + this.best.toLocaleString() + ' m';
+    line.textContent = dist.toLocaleString() + ' m flown · ' + s.rocksDestroyed + ' rocks shot · best ' + this.best.toLocaleString() + ' m';
     var self = this;
     setTimeout(function () {
       if (self.state.mode === 'crashed') document.getElementById('crashOverlay').classList.add('visible');
@@ -900,6 +987,75 @@
       if (st[i].z < Z_NEAR) st[i] = this.newStreak(Z_SPAWN + rand(0, 2));
     }
   };
+  // ---- Guns ----------------------------------------------------------
+  MainScene.prototype.stepGuns = function (dt, speed) {
+    var s = this.state;
+    s.fireCooldown = Math.max(0, s.fireCooldown - dt);
+    if (fireHeld() && s.fireCooldown === 0) {
+      s.fireCooldown = FIRE_INTERVAL;
+      s.shotsFired++;
+      s.bullets.push({ kind: 'bullet', x: s.shipX, y: s.shipY, z: Z_SHIP, prevZ: Z_SHIP });
+      Sound.shot();
+    }
+    var G = groundYAt(s.t);
+    for (var i = s.bullets.length - 1; i >= 0; i--) {
+      var b = s.bullets[i];
+      b.prevZ = b.z;
+      b.z += BULLET_SPEED * dt;
+      var spent = b.z > BULLET_RANGE;
+      // Obstacles have already moved this frame, so each pair is tested
+      // on whether their depths CROSSED - at these closing speeds a
+      // bullet and a rock can pass straight through each other between
+      // two frames.
+      for (var j = 0; j < s.obstacles.length && !spent; j++) {
+        var o = s.obstacles[j];
+        if (o.dead || o.kind === 'cloud') continue;
+        var before = b.prevZ - o.prevZ, after = b.z - o.z;
+        if (before > 0 || after < 0) continue;  // not crossed this frame
+        if (o.kind === 'rock') {
+          if (Math.hypot(b.x - o.x, b.y - o.y) < o.r + BULLET_RADIUS) {
+            this.destroyRock(o);
+            spent = true;
+          }
+        } else if (o.kind === 'wall') {
+          spent = !(Math.abs(b.x - o.gx) < o.gw / 2 && Math.abs(b.y - o.gy) < o.gh / 2);
+        } else if (o.kind === 'spire') {
+          var f = clamp((b.y - o.top) / Math.max(1, G - o.top), 0, 1);
+          spent = b.y > o.top && Math.abs(b.x - o.x) < lerp(o.w * 0.2, o.w * 0.65, f);
+        }
+      }
+      if (spent) s.bullets.splice(i, 1);
+    }
+  };
+
+  MainScene.prototype.destroyRock = function (o) {
+    var s = this.state;
+    o.dead = true;
+    s.rocksDestroyed++;
+    s.bursts.push({ kind: 'burst', x: o.x, y: o.y, z: o.z, r: o.r, age: 0, life: 0.5, spin: rand(0, Math.PI) });
+    Sound.boom();
+  };
+
+  // A burst stays where the rock was, so it keeps coming at you with
+  // the world rather than hanging in front of the camera.
+  MainScene.prototype.stepBursts = function (dt, speed) {
+    var bs = this.state.bursts;
+    for (var i = bs.length - 1; i >= 0; i--) {
+      bs[i].age += dt;
+      bs[i].z -= speed * dt;
+      if (bs[i].age > bs[i].life || bs[i].z < Z_NEAR) bs.splice(i, 1);
+    }
+  };
+
+  // True when a rock ahead sits on the ship's line of fire.
+  MainScene.prototype.rockInSights = function () {
+    var s = this.state;
+    return s.obstacles.some(function (o) {
+      return o.kind === 'rock' && !o.dead && o.z > Z_SHIP &&
+        Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r + BULLET_RADIUS;
+    });
+  };
+
   MainScene.prototype.stepShards = function (dt) {
     var sh = this.state.shards;
     for (var i = sh.length - 1; i >= 0; i--) {
@@ -928,13 +1084,13 @@
 
     this.drawStreaks();
 
-    var obs = s.obstacles.slice().sort(function (a, b) { return b.z - a.z; });
+    var obs = s.obstacles.concat(s.bullets, s.bursts).sort(function (a, b) { return b.z - a.z; });
     this.nextWall = this.findNextWall();
     for (var i = 0; i < obs.length; i++) {
       this.drawObstacle(obs[i].z >= Z_SHIP ? this.gFar : this.gNear, obs[i]);
     }
 
-    if (s.mode === 'flying') this.drawShip();
+    if (s.mode === 'flying') { this.drawShip(); this.drawSight(); }
     this.drawShards();
     this.drawFx();
     this.drawHud();
@@ -1089,6 +1245,9 @@
   };
 
   MainScene.prototype.drawObstacle = function (g, o) {
+    if (o.kind === 'bullet') return this.drawBullet(g, o);
+    if (o.kind === 'burst') return this.drawBurst(g, o);
+    if (o.dead) return; // shot this frame; its burst is drawn instead
     var a = depthAlpha(o.z);
     if (a <= 0) return;
     var z = o.z;
@@ -1195,6 +1354,49 @@
     }
   };
 
+  // A shot is a short streak along its own depth, like the speed lines.
+  MainScene.prototype.drawBullet = function (g, b) {
+    var z0 = b.z, z1 = b.z + 0.9;
+    var a = clamp((BULLET_RANGE - b.z) / 2, 0, 1);
+    g.lineStyle(Math.max(2.5, 5 / z0), COLOR_BULLET, a);
+    g.lineBetween(this.sx(b.x, z0), this.sy(b.y, z0), this.sx(b.x, z1), this.sy(b.y, z1));
+  };
+
+  // A rock going up: an expanding ring and spokes, in the rock's plane.
+  MainScene.prototype.drawBurst = function (g, o) {
+    var t = o.age / o.life, z = Math.max(o.z, Z_NEAR);
+    var cx = this.sx(o.x, z), cy = this.sy(o.y, z);
+    // A minimum size, so a rock shot far off still visibly goes up.
+    var r = Math.max(10 + t * 14, o.r * (0.6 + t * 1.6) / z);
+    var a = 1 - t;
+    if (t < 0.3) {
+      g.fillStyle(COLOR_FLAME_INNER, (0.3 - t) / 0.3 * 0.8);
+      g.fillCircle(cx, cy, r * 0.7);
+    }
+    g.lineStyle(Math.max(1.5, 3 / z), COLOR_FLAME_INNER, a);
+    g.strokeCircle(cx, cy, r);
+    g.lineStyle(Math.max(1, 2 / z), COLOR_FLAME_OUTER, a);
+    for (var i = 0; i < 8; i++) {
+      var ang = o.spin + i * Math.PI / 4;
+      g.lineBetween(cx + Math.cos(ang) * r * 0.5, cy + Math.sin(ang) * r * 0.5,
+                    cx + Math.cos(ang) * r * 1.25, cy + Math.sin(ang) * r * 1.25);
+    }
+  };
+
+  // The gun sight: four ticks round the point the guns are aimed at, a
+  // little way ahead. It brightens when a rock is on the line.
+  MainScene.prototype.drawSight = function () {
+    var s = this.state, g = this.gFx;
+    var x = this.sx(s.shipX, SIGHT_Z), y = this.sy(s.shipY, SIGHT_Z);
+    var locked = this.rockInSights();
+    var gap = 5, len = 6;
+    g.lineStyle(locked ? 2 : 1.5, locked ? COLOR_FLAME_INNER : COLOR_SIGHT, locked ? 1 : 0.55);
+    g.lineBetween(x - gap - len, y, x - gap, y);
+    g.lineBetween(x + gap, y, x + gap + len, y);
+    g.lineBetween(x, y - gap - len, x, y - gap);
+    g.lineBetween(x, y + gap, x, y + gap + len);
+  };
+
   MainScene.prototype.drawShards = function () {
     var g = this.gFx, sh = this.state.shards;
     for (var i = 0; i < sh.length; i++) {
@@ -1225,7 +1427,7 @@
     var g = this.shieldGfx;
     g.clear();
     for (var i = 0; i < SHIELDS; i++) {
-      var x = CX - 22 + i * 22, y = 15;
+      var x = CX + (i - (SHIELDS - 1) / 2) * 20, y = 15;
       g.lineStyle(1.5, COLOR_SHIP, i < s.shields ? 0.9 : 0.2);
       g.beginPath();
       g.moveTo(x, y - 5); g.lineTo(x + 8, y + 5); g.lineTo(x, y + 2); g.lineTo(x - 8, y + 5);
@@ -1248,7 +1450,9 @@
         mode: s.mode, t: s.t, phase: phaseAt(s.t), distance: s.distance,
         shipX: s.shipX, shipY: s.shipY, vx: s.vx, vy: s.vy,
         shields: s.shields, hits: s.hits, invuln: s.invuln,
-        groundY: groundYAt(s.t), shipYLimit: scene.shipYLimit(),
+        groundY: groundYAt(s.t),
+        bullets: s.bullets.length, shotsFired: s.shotsFired, rocksDestroyed: s.rocksDestroyed,
+        inSights: scene.rockInSights(), fireHeld: fireHeld(), shipYLimit: scene.shipYLimit(),
         obstacles: s.obstacles.map(function (o) {
           return { kind: o.kind, z: o.z, align: o.kind === 'wall' ? scene.wallAlignment(o) : null };
         }),

@@ -215,6 +215,74 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('crossing a wall while only close still costs a shield', s.shields === C.SHIELDS - 1, s);
 
+  // ---- Guns ----------------------------------------------------------
+  check('five lives', C.SHIELDS === 5, C.SHIELDS);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.setInvincible(true));
+  await hold(page, 'Space', 500);
+  s = await state(page);
+  check('holding Space keeps firing', s.shotsFired >= 3, s.shotsFired);
+  await page.waitForTimeout(200);
+  const firedAfterRelease = (await state(page)).shotsFired;
+  await page.waitForTimeout(300);
+  check('letting go stops the guns', (await state(page)).shotsFired === firedAfterRelease);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 22, z: 9 }));
+  check('a rock on the line puts it in the sights', (await state(page)).inSights === true);
+  await hold(page, 'Space', 400);
+  await page.waitForTimeout(300);
+  s = await state(page);
+  check('a rock on the line can be shot down', s.rocksDestroyed === 1 && !s.obstacles.some(o => o.kind === 'rock'), s);
+  await page.waitForTimeout(2200);
+  s = await state(page);
+  check('...and then it cannot hit you', s.shields === C.SHIELDS && s.hits === 0, s);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('rock', { x: 120, y: -100, r: 20, z: 9 }));
+  check('a rock off the line is not in the sights', (await state(page)).inSights === false);
+  await hold(page, 'Space', 400);
+  await page.waitForTimeout(300);
+  s = await state(page);
+  check('shots fly straight: a rock off the line survives', s.shotsFired > 0 && s.rocksDestroyed === 0, s);
+
+  // Walls stop shots, except through their gap.
+  await quiet(page);
+  await D(page, () => {
+    const d = window.__descentDebug;
+    d.setInvincible(true);
+    d.spawn('wall', { gx: 120, gy: -100, z: 4 });
+    d.spawn('rock', { x: 0, y: 0, r: 22, z: 10 });
+  });
+  await hold(page, 'Space', 250);
+  await page.waitForTimeout(400);
+  s = await state(page);
+  check('a wall in the way soaks up the shots', s.shotsFired > 0 && s.rocksDestroyed === 0, s);
+
+  await quiet(page);
+  await D(page, () => {
+    const d = window.__descentDebug;
+    d.spawn('wall', { gx: 0, gy: 0, z: 4 });
+    d.spawn('rock', { x: 0, y: 0, r: 22, z: 10 });
+  });
+  await hold(page, 'Space', 250);
+  await page.waitForTimeout(400);
+  s = await state(page);
+  check('...but shots go through the gap', s.rocksDestroyed === 1, s);
+
+  // The touch fire button.
+  await quiet(page);
+  const fb = await page.locator('#fireBtn').boundingBox();
+  await page.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  s = await state(page);
+  await page.mouse.up();
+  check('holding the fire button fires', s.fireHeld && s.shotsFired >= 2, s);
+  await page.waitForTimeout(50);
+  check('releasing it stops', (await state(page)).fireHeld === false);
+
   // ---- The stretches -------------------------------------------------
   await quiet(page);
   await D(page, (t) => window.__descentDebug.skipTo(t), C.CLOUDS_START + 1);
@@ -262,9 +330,13 @@ harness.run(async (page, check, ctx) => {
   check('it keeps going: no end to the surface stretch', s.mode === 'flying' && s.phase === 'surface', s);
 
   // ---- Crash and fly again ------------------------------------------
+  // Flown into walls with Space held the whole way down, the way a
+  // player still on the trigger crashes - walls, because shots would
+  // clear rocks out of the way.
   await quiet(page);
+  await page.keyboard.down('Space');
   for (let i = 0; i < C.SHIELDS; i++) {
-    await D(page, () => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 30, z: 1.3 }));
+    await D(page, () => window.__descentDebug.spawn('wall', { gx: 120, gy: -100, z: 1.3 }));
     await page.waitForTimeout(1800); // past the grace period after each hit
   }
   s = await state(page);
@@ -274,6 +346,11 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(400);
   s = await state(page);
   check('the clock stops on a crash', s.distance === distAtCrash, { distAtCrash, now: s.distance });
+
+  await page.keyboard.down('Space');            // still held: this one arrives as a key repeat
+  await page.waitForTimeout(150);
+  check('a held Space (key repeat) does not restart', (await state(page)).mode === 'crashed');
+  await page.keyboard.up('Space');
 
   await page.click('#againBtn');
   await page.waitForTimeout(200);

@@ -120,8 +120,12 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   what gives the depth. The world is built from flat cutouts, which
   fits a game about two-dimensional aliens.
 - **The same stick as the yard.** Left thumb, analog, centred wherever
-  you press. Arrows/WASD on a keyboard. The right thumb is left empty
-  for the fire button.
+  you press. Arrows/WASD on a keyboard.
+- **Guns.** Hold the fire button (right thumb), or Space, to keep
+  firing. Shots fly straight ahead along the ship's line, so the gun
+  sight (four ticks a little way ahead) is where they go. The sight
+  turns yellow when a rock is in line. One hit blows a rock up. Walls
+  and spires soak up shots, except through a wall's gap.
 - **Arcade or flight-sim Y axis.** The button in the header (or `Y` on a
   keyboard) switches between them. In arcade mode, the default, up is
   up. In flight-sim mode the stick works like a yoke: push forward to
@@ -140,7 +144,7 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   onto the *surface*. There the ground rises toward you, rock spires
   stand up out of it, and the pace keeps increasing until you crash.
   For now there's no landing.
-- Three shields, a short grace period after each hit, distance flown as
+- Five shields, a short grace period after each hit, distance flown as
   the score, and your best distance saved locally.
 - Tests: `tests/test-descent.js`.
 
