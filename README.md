@@ -120,8 +120,13 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   what gives the depth. The world is built from flat cutouts, which
   fits a game about two-dimensional aliens.
 - **The same stick as the yard.** Left thumb, analog, centred wherever
-  you press. Arrows/WASD on a keyboard. Up is up. The right thumb is
-  left empty for the fire button.
+  you press. Arrows/WASD on a keyboard. The right thumb is left empty
+  for the fire button.
+- **Arcade or flight-sim Y axis.** The button in the header (or `Y` on a
+  keyboard) switches between them. In arcade mode, the default, up is
+  up. In flight-sim mode the stick works like a yoke: push forward to
+  dive, pull back to climb. Left and right never change, and your choice
+  is saved on the device.
 - **Three stretches, one clock:** *entry* (head-on's red planet swells
   to fill the view, with heat streaks and meteors), the *cloud layer*
   (cloud sheets you can't see through, and violet walls with a gap to

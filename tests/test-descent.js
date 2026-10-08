@@ -79,6 +79,55 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('letting go of the stick centres it', s.input.x === 0 && s.input.y === 0, s.input);
 
+  // ---- The Y-axis toggle: arcade <-> flight sim ---------------------
+  s = await state(page);
+  check('arcade is the default', s.invertY === false &&
+    /arcade/i.test(await page.textContent('#axisBtn')), s.invertY);
+
+  await page.click('#axisBtn');
+  s = await state(page);
+  check('the toggle switches to flight sim', s.invertY === true &&
+    /flight/i.test(await page.textContent('#axisBtn')), s.invertY);
+  check('the toggle does not keep focus (Space must still mean fly again)',
+    await page.evaluate(() => document.activeElement !== document.getElementById('axisBtn')));
+
+  await quiet(page);
+  await hold(page, 'ArrowUp', 350);
+  s = await state(page);
+  check('flight sim: up dives', s.shipY > 20, s.shipY);
+
+  await quiet(page);
+  await hold(page, 'ArrowDown', 350);
+  s = await state(page);
+  check('flight sim: down climbs', s.shipY < -20, s.shipY);
+
+  await quiet(page);
+  await hold(page, 'ArrowRight', 350);
+  s = await state(page);
+  check('flight sim: left/right are unchanged', s.shipX > 20, s.shipX);
+
+  await quiet(page);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 30, { steps: 4 });
+  await page.waitForTimeout(400);
+  s = await state(page);
+  await page.mouse.up();
+  check('flight sim: pushing the stick up dives too', s.shipY > 15, s.shipY);
+
+  await page.reload();
+  await page.waitForTimeout(600);
+  s = await state(page);
+  check('the choice survives a reload', s.invertY === true, s.invertY);
+
+  await page.keyboard.press('KeyY');
+  s = await state(page);
+  check('Y on the keyboard toggles it back to arcade', s.invertY === false, s.invertY);
+  await quiet(page);
+  await hold(page, 'ArrowUp', 350);
+  s = await state(page);
+  check('arcade again: up climbs', s.shipY < -20, s.shipY);
+
   // ---- Collisions ----------------------------------------------------
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 25, z: 1.6 }));

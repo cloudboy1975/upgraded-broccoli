@@ -61,6 +61,25 @@
     padding: 3px 9px;
   }
 
+  /* The Y-axis toggle. Up in the header, out of the way of the thumbs:
+     it is set once, not touched mid-flight. */
+  .hud-right { display: flex; align-items: center; gap: 8px; }
+  .axis-btn {
+    font: inherit;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid rgba(226, 232, 240, 0.2);
+    border-radius: 999px;
+    padding: 3px 9px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .axis-btn.flight { color: var(--accent); border-color: rgba(251, 146, 60, 0.6); }
+
   #gameRoot { position: relative; flex: 1; min-height: 0; }
   #gameRoot canvas { display: block; }
 
@@ -163,7 +182,10 @@
 <body>
   <div class="hud-bar">
     <a class="back-link" href="index.html">&larr; All</a>
-    <div class="chapter-tag">Descent &middot; prototype</div>
+    <div class="hud-right">
+      <button type="button" class="axis-btn" id="axisBtn" aria-label="Toggle Y axis between arcade and flight-sim"></button>
+      <div class="chapter-tag">Descent &middot; prototype</div>
+    </div>
   </div>
 
   <div id="gameRoot">
@@ -300,6 +322,7 @@
   var COLOR_HIT = 0xef4444;
 
   var BEST_KEY = 'descent-best-v1';
+  var AXIS_KEY = 'descent-axis-v1';
 
   // ---- Helpers -------------------------------------------------------
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -476,6 +499,32 @@
     document.getElementById('stickKnob')
   );
 
+  // ---- Y axis: arcade or flight sim --------------------------------
+  // Arcade (the default): push up, the ship goes up. Flight sim: the
+  // stick is the yoke - push forward to dive, pull back to climb. Only
+  // the vertical is flipped; left is left either way. Applied where the
+  // ship reads the stick, so the stick and the keys flip together.
+  var invertY = false;
+  try { invertY = localStorage.getItem(AXIS_KEY) === 'flight'; } catch (e) {}
+  var axisBtn = document.getElementById('axisBtn');
+  function renderAxis() {
+    axisBtn.textContent = invertY ? '\u2195 Flight sim' : '\u2195 Arcade';
+    axisBtn.classList.toggle('flight', invertY);
+    axisBtn.setAttribute('aria-pressed', invertY ? 'true' : 'false');
+  }
+  function setInvertY(on) {
+    invertY = !!on;
+    try { localStorage.setItem(AXIS_KEY, invertY ? 'flight' : 'arcade'); } catch (e) {}
+    renderAxis();
+  }
+  axisBtn.addEventListener('click', function () {
+    setInvertY(!invertY);
+    // Never keep focus: Space would otherwise flip it back on the
+    // crash screen instead of flying again.
+    axisBtn.blur();
+  });
+  renderAxis();
+
   var KEY_DIRS = {
     ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right'
@@ -484,6 +533,7 @@
     Sound.ensureAudio();
     var dir = KEY_DIRS[e.code];
     if (dir) { kb[dir] = true; updateKbVector(); e.preventDefault(); return; }
+    if (e.code === 'KeyY' && !e.repeat) { setInvertY(!invertY); return; }
     if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'crashed') {
       e.preventDefault();
       scene.restart();
@@ -626,7 +676,8 @@
     var s = this.state;
     var k = 1 - Math.exp(-SHIP_RESPONSE * dt);
     s.vx += (inputState.x * SHIP_MAX_SPEED - s.vx) * k;
-    s.vy += (inputState.y * SHIP_MAX_SPEED - s.vy) * k;
+    var stickY = invertY ? -inputState.y : inputState.y;
+    s.vy += (stickY * SHIP_MAX_SPEED - s.vy) * k;
     // Pinned against an edge, the push into it is dropped rather than
     // stored, so pulling away responds at once instead of first having
     // to unwind speed the ship never actually had.
@@ -1138,6 +1189,7 @@
         groundY: groundYAt(s.t), shipYLimit: scene.shipYLimit(),
         obstacles: s.obstacles.map(function (o) { return { kind: o.kind, z: o.z }; }),
         input: { x: inputState.x, y: inputState.y },
+        invertY: invertY,
         overlay: document.getElementById('crashOverlay').classList.contains('visible')
       };
     },
