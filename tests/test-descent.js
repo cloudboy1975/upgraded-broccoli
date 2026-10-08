@@ -160,13 +160,16 @@ harness.run(async (page, check, ctx) => {
   check('clouds are weather, not obstacles', s.hits === 0, s);
 
   // ---- Wall gaps show whether you are lined up ----------------------
+  // Just outside the clear zone: amber, and still a hit. Derived from the
+  // gap size so retuning the gaps does not silently turn it green.
+  const CLOSE_GX = C.GAP_W / 2 - C.SHIP_HIT_RADIUS * 0.5 + C.SHIP_HIT_RADIUS;
   const wallAlign = async () => (await state(page)).obstacles.find(o => o.kind === 'wall').align;
   await quiet(page);
   await D(page, () => window.__descentDebug.spawn('wall', { gx: 0, gy: 0, z: 10 }));
   check('gap on the ship reads as lined up (green)', await wallAlign() === 'clear');
 
   await quiet(page);
-  await D(page, () => window.__descentDebug.spawn('wall', { gx: 65, gy: 0, z: 10 }));
+  await D(page, (gx) => window.__descentDebug.spawn('wall', { gx: gx, gy: 0, z: 10 }), CLOSE_GX);
   check('gap just off the ship reads as close (amber)', await wallAlign() === 'close');
 
   await quiet(page);
@@ -207,7 +210,7 @@ harness.run(async (page, check, ctx) => {
 
   // Amber is a warning, not a pass: crossing a wall while close still hurts.
   await quiet(page);
-  await D(page, () => window.__descentDebug.spawn('wall', { gx: 65, gy: 0, z: 1.6 }));
+  await D(page, (gx) => window.__descentDebug.spawn('wall', { gx: gx, gy: 0, z: 1.6 }), CLOSE_GX);
   await page.waitForTimeout(600);
   s = await state(page);
   check('crossing a wall while only close still costs a shield', s.shields === C.SHIELDS - 1, s);

@@ -292,8 +292,8 @@
   var AIMED_SHARE = 0.45;      // share of rocks/spires that are thrown at where you are
   var WALL_CLEAR_Z = 1.4;      // depth kept clear either side of a wall, so a rock never plugs the gap
   var MARKER_MIN_PX = 7;       // smallest the aiming marker on a wall is drawn
-  var GAP_W = 140;
-  var GAP_H = 124;
+  var GAP_W = 160;
+  var GAP_H = 140;
 
   // ---- Colours -------------------------------------------------------
   var COLOR_SHIP = 0xe2e8f0;           // head-on.html's ship
@@ -1258,7 +1258,7 @@
       };
     },
     constants: function () {
-      return { X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELDS: SHIELDS, Z_SPAWN: Z_SPAWN,
+      return { GAP_W: GAP_W, GAP_H: GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELDS: SHIELDS, Z_SPAWN: Z_SPAWN,
         CLOUDS_START: CLOUDS_START, SURFACE_START: SURFACE_START, GROUND_Y: GROUND_Y,
         GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME };
     },
