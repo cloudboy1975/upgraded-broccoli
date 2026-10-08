@@ -317,6 +317,11 @@
   var COLOR_HEAT = 0xff8a1e;
   var COLOR_WALL = 0x3b0764;           // the boss's violet: these are theirs
   var COLOR_WALL_EDGE = 0xa78bfa;
+  // The gap's outline says whether you are lined up with it, from where
+  // the ship is right now: green, you would go through; amber, nearly;
+  // red, you would hit the slab.
+  var COLOR_ALIGN = { clear: 0x22c55e, close: 0xfbbf24, off: 0xef4444 };
+  var ALIGN_CLOSE_MARGIN = 2;  // ship hit-radii outside the clear zone that still count as "close"
   var COLOR_SPIRE = 0x2a0a0a;
   var COLOR_SPIRE_EDGE = 0x991b1b;
   var COLOR_HIT = 0xef4444;
@@ -820,11 +825,7 @@
     if (o.kind === 'rock') {
       return Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r * 0.9 + r;
     }
-    if (o.kind === 'wall') {
-      var inGap = Math.abs(s.shipX - o.gx) < o.gw / 2 - r * 0.5 &&
-                  Math.abs(s.shipY - o.gy) < o.gh / 2 - r * 0.5;
-      return !inGap;
-    }
+    if (o.kind === 'wall') return this.wallAlignment(o) !== 'clear';
     if (o.kind === 'spire') {
       var ground = groundYAt(s.t);
       if (s.shipY + r < o.top) return false;
@@ -834,6 +835,17 @@
       return Math.abs(s.shipX - o.x) < half + r * 0.7;
     }
     return false;
+  };
+
+  // One test for both the collision and the gap's colour, so green can
+  // never mean anything but "you will go through".
+  MainScene.prototype.wallAlignment = function (o) {
+    var s = this.state, r = SHIP_HIT_RADIUS;
+    var dx = Math.abs(s.shipX - o.gx) - (o.gw / 2 - r * 0.5);
+    var dy = Math.abs(s.shipY - o.gy) - (o.gh / 2 - r * 0.5);
+    var worst = Math.max(dx, dy);
+    if (worst < 0) return 'clear';
+    return worst < r * ALIGN_CLOSE_MARGIN ? 'close' : 'off';
   };
 
   MainScene.prototype.onHit = function (o) {
@@ -1066,6 +1078,10 @@
       g.fillRect(gr, gt, R - gr, gb - gt);
       g.lineStyle(Math.max(1, 2 / z), COLOR_WALL_EDGE, a);
       g.strokeRect(L, T, R - L, B - T);
+      // Walls still ahead show their alignment; once past, it is moot.
+      if (z >= Z_SHIP) {
+        g.lineStyle(Math.max(2, 3 / z), COLOR_ALIGN[this.wallAlignment(o)], a);
+      }
       g.strokeRect(gl, gt, gr - gl, gb - gt);
     } else if (o.kind === 'spire') {
       var G2 = groundYAt(this.state.t);
@@ -1187,7 +1203,9 @@
         shipX: s.shipX, shipY: s.shipY, vx: s.vx, vy: s.vy,
         shields: s.shields, hits: s.hits, invuln: s.invuln,
         groundY: groundYAt(s.t), shipYLimit: scene.shipYLimit(),
-        obstacles: s.obstacles.map(function (o) { return { kind: o.kind, z: o.z }; }),
+        obstacles: s.obstacles.map(function (o) {
+          return { kind: o.kind, z: o.z, align: o.kind === 'wall' ? scene.wallAlignment(o) : null };
+        }),
         input: { x: inputState.x, y: inputState.y },
         invertY: invertY,
         overlay: document.getElementById('crashOverlay').classList.contains('visible')

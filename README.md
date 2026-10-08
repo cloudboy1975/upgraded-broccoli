@@ -130,7 +130,10 @@ It isn't connected to the boss fight yet. The plan is to hand off from
 - **Three stretches, one clock:** *entry* (head-on's red planet swells
   to fill the view, with heat streaks and meteors), the *cloud layer*
   (cloud sheets you can't see through, and violet walls with a gap to
-  fly through), then a white-out as you break through the cloud base
+  fly through. The gap's outline is **green** if the ship is lined up
+  with it, **amber** if it's close, and **red** if it isn't. The colour
+  uses the same test as the collision, so green always means you'll get
+  through), then a white-out as you break through the cloud base
   onto the *surface*. There the ground rises toward you, rock spires
   stand up out of it, and the pace keeps increasing until you crash.
   For now there's no landing.

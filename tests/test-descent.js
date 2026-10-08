@@ -159,6 +159,35 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('clouds are weather, not obstacles', s.hits === 0, s);
 
+  // ---- Wall gaps show whether you are lined up ----------------------
+  const wallAlign = async () => (await state(page)).obstacles.find(o => o.kind === 'wall').align;
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('wall', { gx: 0, gy: 0, z: 10 }));
+  check('gap on the ship reads as lined up (green)', await wallAlign() === 'clear');
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('wall', { gx: 65, gy: 0, z: 10 }));
+  check('gap just off the ship reads as close (amber)', await wallAlign() === 'close');
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('wall', { gx: 130, gy: -100, z: 10 }));
+  check('gap well away reads as off (red)', await wallAlign() === 'off');
+
+  // Steering changes it: fly toward the gap and watch it turn green.
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('wall', { gx: 110, gy: 0, z: 13 }));
+  const alignBefore = await wallAlign();
+  await hold(page, 'ArrowRight', 600);
+  const alignAfter = await wallAlign();
+  check('steering into the gap turns it from red to green', alignBefore === 'off' && alignAfter === 'clear', { alignBefore, alignAfter });
+
+  // Amber is a warning, not a pass: crossing a wall while close still hurts.
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('wall', { gx: 65, gy: 0, z: 1.6 }));
+  await page.waitForTimeout(600);
+  s = await state(page);
+  check('crossing a wall while only close still costs a shield', s.shields === C.SHIELDS - 1, s);
+
   // ---- The stretches -------------------------------------------------
   await quiet(page);
   await D(page, (t) => window.__descentDebug.skipTo(t), C.CLOUDS_START + 1);
