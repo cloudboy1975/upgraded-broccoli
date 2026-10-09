@@ -200,7 +200,7 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   restores 20%, up to full. You're usually lined up with the alien
   when you shoot it down, so staying put collects it. Swerve and it's
   gone. It also has **catch slop**: you only need to pass near it, not
-  through it. It counts from about 28px further out than it's drawn.
+  through it. It counts from about 48px further out than it's drawn.
   A catch from out there shows as a quick green streak into the ship.
 - Tests: `tests/test-descent.js`.
 
