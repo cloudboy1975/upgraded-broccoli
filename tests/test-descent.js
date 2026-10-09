@@ -647,16 +647,44 @@ harness.run(async (page, check, ctx) => {
   check('a shot at the foot brings the whole tower down',
     s.spiresDowned === 1 && !s.obstacles.some(o => o.kind === 'spire') && s.chunks === 1, s);
 
+  // ---- Variety: walls irregular, aliens sometimes in pairs, towers calmer
+  const sample = (what, n, arg) => D(page, ([w, n, a]) => window.__descentDebug.sample(w, n, a), [what, n, arg]);
+
+  const wallGaps = await sample('wall', 400, 'surface');
+  const wMin = Math.min(...wallGaps), wMax = Math.max(...wallGaps);
+  check('walls come irregularly: spacing varies about three-fold, not +-20%', wMax / wMin > 2.6, { wMin, wMax });
+
+  const near = await sample('nearGap', 200);
+  check('a quick follow-up wall puts its gap within reach of the first',
+    near.every(g => Math.abs(g.gx) <= C.WALL_DOUBLE_REACH_X + 0.01 && Math.abs(g.gy) <= C.WALL_DOUBLE_REACH_Y + 0.01), near.slice(0, 3));
+
+  const waves = await sample('wave', 1000);
+  const pairs = waves.filter(n => n === 2).length;
+  check('aliens come in pairs now and then - a minority of waves', pairs > 150 && pairs < 450, pairs);
+
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawnWave(2));
+  await page.waitForTimeout(1600);
+  s = await state(page);
+  const [a, b] = s.enemies;
+  check('a pair is two aliens of different colours', s.enemies.length === 2 && a.color !== b.color, s.enemies);
+  check('...one on each side', a && b && Math.sign(a.x) !== Math.sign(b.x), s.enemies.map(e => e.x));
+  check('...firing out of step', a && b && Math.abs(a.fireTimer - b.fireTimer) > C.ENEMY_FIRE_INTERVAL * 0.3, s.enemies.map(e => e.fireTimer));
+  await D(page, () => window.__descentDebug.clear());
+
+  const lateSpires = await sample('spire', 400, 0.3);
+  check('towers keep a minimum spacing even late in a run', Math.min(...lateSpires) >= C.SPIRE_MIN_GAP, Math.min(...lateSpires));
+
   // Integration: nobody spawns these by hand in a real run.
   await quiet(page);
   await D(page, () => { window.__descentDebug.setSpawning(true); window.__descentDebug.setInvincible(true); });
   await page.waitForTimeout((C.ENEMY_FIRST + 0.5) * 1000);
   s = await state(page);
-  check('an alien arrives by itself', s.enemies.length === 1, s.enemies);
+  check('an alien arrives by itself (or a pair)', s.enemies.length >= 1 && s.enemies.length <= 2, s.enemies);
   await page.waitForTimeout((C.ENEMY_ARRIVE + 2.5) * 1000);
   s = await state(page);
   check('...and opens fire by itself', s.enemyFired > 0, s);
-  check('only one alien at a time', s.enemies.length <= 1, s.enemies.length);
+  check('never more than two aliens at a time', s.enemies.length <= 2, s.enemies.length);
   await D(page, () => window.__descentDebug.setSpawning(false));
 
   // The touch fire button.

@@ -141,6 +141,11 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   go. It turns yellow when an alien is in line. Rocks and walls are for
   dodging, not shooting: shots spark off them, and they give cover both
   ways.
+- **Spacing.** Walls come at irregular intervals, and now and then a
+  second wall follows close behind with its gap within reach of the
+  first. Towers stay at least 0.75s apart even late in a run. Only one
+  in five is aimed at you, and those land near your line rather than
+  right on it.
 - **Towers come apart where you hit them.** This is inspired by the
   original Star Wars arcade game. A shot cuts a tower off at the height
   it hits. Everything above the cut breaks off as one flat piece and
@@ -154,7 +159,9 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   the rocks keep coming. It takes four hits. Before every shot its eye
   fills orange and a ring closes in on it, then a slow orange shot
   comes at where you were, so moving dodges it. Ignore it and after
-  about ten seconds it pulls back and leaves. While one is around,
+  about ten seconds it pulls back and leaves. About one time in three,
+  two come at once: one of each colour, one on each side, with their
+  shots out of step so they never arrive together. While one is around,
   rocks come about 40% less often, so dodging and aiming at the same
   time stays fun. This is one fixed balance for the prototype. The
   real game would build up to it over time.

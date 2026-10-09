@@ -371,7 +371,24 @@
   // time you have to react to each thing goes down.
   var ROCK_INTERVAL = { entry: 0.75, clouds: 1.2, surface: 1.6 };
   var WALL_INTERVAL = { clouds: 3.4, surface: 3.0 };
-  var SPIRE_INTERVAL = 0.9;
+  // Walls come irregularly: each gap after the last is anywhere from
+  // about half to two-thirds again the base interval, and now and then
+  // a second wall follows close behind - its gap within reach of the
+  // first, so the pair is a quick jink rather than a wall you cannot
+  // make. (Steady +-20% read as a metronome.)
+  var WALL_JITTER_MIN = 0.55;
+  var WALL_JITTER_MAX = 1.7;
+  var WALL_DOUBLE_CHANCE = 0.18;
+  var WALL_DOUBLE_DELAY = [1.3, 1.7]; // seconds to the follow-up wall
+  var WALL_DOUBLE_REACH_X = 110;      // its gap is at most this far from the first's
+  var WALL_DOUBLE_REACH_Y = 70;
+  // Towers: spaced out, and mostly NOT aimed at you. The ones that are
+  // land near your line rather than dead on it. Earlier they came every
+  // ~0.3s late in a run, half of them straight down your throat.
+  var SPIRE_INTERVAL = 1.3;
+  var SPIRE_MIN_GAP = 0.75;    // seconds; never closer than this, however late in the run
+  var SPIRE_AIMED_SHARE = 0.2;
+  var SPIRE_AIM_SPREAD = 55;   // px either side of the ship an aimed tower may land
   // Towers can be shot, Star Wars arcade style: a hit cuts the tower at
   // the height it struck, and everything above the cut is blown off and
   // tumbles away. Hit the tip and you trim it; hit the foot and the
@@ -382,7 +399,7 @@
   var CHUNK_GRAVITY = 320;     // px/s^2 on the blown-off piece
   var CHUNK_LIFE = 1.6;
   var SURFACE_INTERVAL_FLOOR = 0.55; // the surface tightens over time, down to this fraction
-  var AIMED_SHARE = 0.45;      // share of rocks/spires that are thrown at where you are
+  var AIMED_SHARE = 0.45;      // share of rocks that are thrown at where you are
   var WALL_CLEAR_Z = 1.4;      // depth kept clear either side of a wall, so a rock never plugs the gap
   var MARKER_MIN_PX = 7;       // smallest the aiming marker on a wall is drawn
   var GAP_W = 160;
@@ -453,6 +470,11 @@
   var ENEMY_FIRST = 5;         // seconds into a run before the first
   var ENEMY_GAP_MIN = 3;       // seconds between one going and the next arriving
   var ENEMY_GAP_MAX = 6;
+  // Sometimes two come at once: one of each colour, one holding the left
+  // and one the right, weaving less so they keep to their sides, and
+  // firing out of step so their shots never arrive together.
+  var ENEMY_PAIR_CHANCE = 0.3;
+  var ENEMY_PAIR_WEAVE_X = 40;
   var ENEMY_FIRE_INTERVAL = 2; // seconds between its shots
   var ENEMY_FIRST_SHOT = 1;    // grace after it arrives before its first
   var ENEMY_CHARGE = 0.55;     // the visible wind-up before each shot
@@ -945,6 +967,14 @@
   };
 
   // ---- Spawning ------------------------------------------------------
+  function wallDelay(phase, pace) {
+    return WALL_INTERVAL[phase] * pace * rand(WALL_JITTER_MIN, WALL_JITTER_MAX);
+  }
+  function spireDelay(pace) {
+    return Math.max(SPIRE_MIN_GAP, SPIRE_INTERVAL * pace * rand(0.7, 1.4));
+  }
+  function enemyWaveSize() { return Math.random() < ENEMY_PAIR_CHANCE ? 2 : 1; }
+
   MainScene.prototype.stepSpawning = function (dt) {
     var s = this.state;
     if (!s.spawning) return;
@@ -966,22 +996,31 @@
     if (WALL_INTERVAL[phase]) {
       timers.wall -= dt;
       if (timers.wall <= 0 && this.clearOfEverything()) {
-        timers.wall = WALL_INTERVAL[phase] * pace * rand(0.8, 1.25);
-        this.spawnWall();
+        var follow = s.wallFollow;
+        s.wallFollow = null;
+        var w = this.spawnWall(follow ? this.nearGap(follow) : null);
+        if (!follow && Math.random() < WALL_DOUBLE_CHANCE) {
+          // A follow-up close behind. Not shortened by the late-run pace
+          // below 0.8: it has to stay makeable.
+          s.wallFollow = { gx: w.gx, gy: w.gy };
+          timers.wall = rand(WALL_DOUBLE_DELAY[0], WALL_DOUBLE_DELAY[1]) * Math.max(pace, 0.8);
+        } else {
+          timers.wall = wallDelay(phase, pace);
+        }
       }
     }
     if (!s.enemies.length) {
       timers.enemy -= dt;
       if (timers.enemy <= 0) {
         timers.enemy = rand(ENEMY_GAP_MIN, ENEMY_GAP_MAX);
-        this.spawnEnemy();
+        this.spawnEnemyWave(enemyWaveSize());
       }
     }
     if (phase === 'surface' && groundYAt(s.t) < 900) {
       timers.spire -= dt;
       if (timers.spire <= 0) {
-        timers.spire = SPIRE_INTERVAL * pace * rand(0.6, 1.4);
-        if (this.clearOfWalls()) this.spawnSpire(Math.random() < AIMED_SHARE);
+        timers.spire = spireDelay(pace);
+        if (this.clearOfWalls()) this.spawnSpire(Math.random() < SPIRE_AIMED_SHARE);
       }
     }
   };
@@ -1033,11 +1072,22 @@
     }, opts || {}));
   };
 
+  // Where a follow-up wall's gap goes: somewhere new, but within reach
+  // of the gap you are about to fly through.
+  MainScene.prototype.nearGap = function (prev) {
+    var s = this.state;
+    var bottom = Math.min(Y_BOTTOM, groundYAt(s.t) - GROUND_CLEARANCE);
+    return {
+      gx: clamp(prev.gx + rand(-WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_X), -X_LIMIT + GAP_W / 2 - 20, X_LIMIT - GAP_W / 2 + 20),
+      gy: clamp(prev.gy + rand(-WALL_DOUBLE_REACH_Y, WALL_DOUBLE_REACH_Y), Y_TOP + GAP_H / 2 - 20, bottom - GAP_H / 2 + 20)
+    };
+  };
+
   // A rock column standing on the ground. Only once there IS ground.
   MainScene.prototype.spawnSpire = function (aimed, opts) {
     var s = this.state;
     var w = rand(30, 58);
-    var x = aimed ? s.shipX + rand(-20, 20) : rand(-X_LIMIT - 30, X_LIMIT + 30);
+    var x = aimed ? s.shipX + rand(-SPIRE_AIM_SPREAD, SPIRE_AIM_SPREAD) : rand(-X_LIMIT - 30, X_LIMIT + 30);
     var top = rand(Y_TOP + 10, GROUND_Y - 70);
     var o = this.addObstacle(Object.assign({
       kind: 'spire', x: x, w: w, top: top
@@ -1326,6 +1376,25 @@
     return e;
   };
 
+  // One alien, or a pair: one of each colour, one on each side, their
+  // shots out of step.
+  MainScene.prototype.spawnEnemyWave = function (n) {
+    if (n < 2) return [this.spawnEnemy()];
+    var flip = Math.random() < 0.5 ? 1 : 0;
+    var side = Math.random() < 0.5 ? -1 : 1;
+    var reach = X_LIMIT - ENEMY_PAIR_WEAVE_X - 10;
+    var first = this.spawnEnemy({
+      color: COLOR_ENEMY[flip], weaveX: ENEMY_PAIR_WEAVE_X,
+      ax: side * rand(reach * 0.55, reach)
+    });
+    var second = this.spawnEnemy({
+      color: COLOR_ENEMY[1 - flip], weaveX: ENEMY_PAIR_WEAVE_X,
+      ax: -side * rand(reach * 0.55, reach),
+      fireTimer: first.fireTimer + ENEMY_FIRE_INTERVAL / 2
+    });
+    return [first, second];
+  };
+
   MainScene.prototype.stepEnemies = function (dt) {
     var s = this.state;
     for (var i = s.enemies.length - 1; i >= 0; i--) {
@@ -1335,7 +1404,7 @@
       e.prevZ = e.z;
       e.flash = Math.max(0, e.flash - dt);
       if (e.weave) {
-        e.x = e.ax + Math.sin(e.age * 0.8 + e.phaseX) * ENEMY_WEAVE_X;
+        e.x = e.ax + Math.sin(e.age * 0.8 + e.phaseX) * (e.weaveX || ENEMY_WEAVE_X);
         e.y = e.ay + Math.sin(e.age * 1.1 + e.phaseY) * ENEMY_WEAVE_Y;
       }
       if (e.mode === 'arriving') {
@@ -1958,7 +2027,7 @@
         shield: s.shield, pickups: s.pickups, hits: s.hits, invuln: s.invuln,
         groundY: groundYAt(s.t),
         bullets: s.bullets.length, shotsFired: s.shotsFired,
-        enemies: s.enemies.map(function (e) { return { mode: e.mode, hp: e.hp, z: e.z, x: e.x, y: e.y, charge: enemyCharge(e) }; }),
+        enemies: s.enemies.map(function (e) { return { mode: e.mode, hp: e.hp, z: e.z, x: e.x, y: e.y, charge: enemyCharge(e), color: e.color, fireTimer: e.fireTimer }; }),
         enemyShots: s.enemyShots.length, enemiesDowned: s.enemiesDowned, shotsBlocked: s.shotsBlocked, enemyFired: s.enemyFired,
         chunks: s.chunks.length, spireHits: s.spireHits, spiresDowned: s.spiresDowned,
         inSights: scene.enemyInSights(), fireHeld: fireHeld(), shipYLimit: scene.shipYLimit(),
@@ -1978,6 +2047,8 @@
         ENEMY_HP: ENEMY_HP, ENEMY_Z: ENEMY_Z, ENEMY_FIRST: ENEMY_FIRST, ENEMY_RADIUS: ENEMY_RADIUS,
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED,
+        ENEMY_FIRE_INTERVAL: ENEMY_FIRE_INTERVAL, SPIRE_MIN_GAP: SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: SPIRE_AIM_SPREAD,
+        WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,
         GLOW_HANG: GLOW_HANG, GLOW_SPEED: GLOW_SPEED,
         GLOW_RADIUS: GLOW_RADIUS, GLOW_CATCH_SLOP: GLOW_CATCH_SLOP,
         SPIRE_BLAST: SPIRE_BLAST, SPIRE_MIN_STUMP: SPIRE_MIN_STUMP, CHUNK_LIFE: CHUNK_LIFE };
@@ -2019,7 +2090,21 @@
       o.prevZ = o.z;
       return true;
     },
-    restart: function () { scene.restart(); }
+    restart: function () { scene.restart(); },
+    // The spawner's dice, sampled - so spacing and mix can be checked
+    // without flying for minutes.
+    sample: function (what, n, arg) {
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        out.push(what === 'wall' ? wallDelay(arg || 'surface', 1)
+          : what === 'spire' ? spireDelay(arg == null ? 1 : arg)
+          : what === 'wave' ? enemyWaveSize()
+          : what === 'nearGap' ? scene.nearGap({ gx: 0, gy: 0 })
+          : null);
+      }
+      return out;
+    },
+    spawnWave: function (n) { scene.spawnEnemyWave(n); return true; }
   };
 
   new Phaser.Game({
