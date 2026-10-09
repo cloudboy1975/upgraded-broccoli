@@ -104,6 +104,75 @@
     letter-spacing: 0.04em;
   }
   .overlay-line { color: var(--muted); font-size: 0.9rem; }
+  /* ---- Settings lab ------------------------------------------------
+     head-on.html's sortie lab, for this file's knobs. Opened with the
+     backquote key, or by triple-tapping the "Descent" tag top right (the
+     way in on a phone). The run PAUSES while it is open - a descent you
+     cannot stop would crash under the panel - and picks up where it left
+     off on Close. Changes apply on the spot and persist in this browser. */
+  .lab {
+    --line: #334155;
+    --bg-2: #1e293b;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    background: rgba(8, 12, 24, 0.97);
+    color: var(--text);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    touch-action: pan-y;
+    font-size: 0.8rem;
+  }
+  .lab.visible { display: block; }
+  .lab-inner { max-width: 460px; margin: 0 auto; }
+  .lab h2 { margin: 0 0 2px; font-size: 1rem; letter-spacing: 0.02em; }
+  .lab-sub { color: var(--muted); font-size: 0.72rem; margin-bottom: 12px; }
+  .lab-section {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: rgba(30, 41, 59, 0.5);
+  }
+  .lab-section h3 {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .lab-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .lab-row:last-child { margin-bottom: 0; }
+  .lab-row label { flex: 0 0 128px; color: var(--muted); }
+  .lab-row input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--accent); }
+  .lab-row input[type="checkbox"] { accent-color: var(--accent); }
+  .lab-row .lab-val {
+    flex: 0 0 58px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .lab-row.changed .lab-val { color: var(--accent); }
+  .lab-btn {
+    border: 1px solid var(--line);
+    background: var(--bg-2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 4px 9px;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lab-btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0d03; }
+  .lab-btn.wide { width: 100%; padding: 8px; }
+  .lab-actions { display: flex; gap: 8px; }
+  .lab-actions + .lab-actions, .lab-row + .lab-actions { margin-top: 8px; }
+  .chapter-tag { cursor: pointer; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+
   .btn {
     margin-top: 6px;
     font: inherit;
@@ -230,7 +299,7 @@
     <a class="back-link" href="index.html">&larr; All</a>
     <div class="hud-right">
       <button type="button" class="axis-btn" id="axisBtn" aria-label="Toggle Y axis between arcade and flight-sim"></button>
-      <div class="chapter-tag">Descent &middot; prototype</div>
+      <div class="chapter-tag" id="labTap" title="Triple-tap for the settings lab">Descent &middot; prototype</div>
     </div>
   </div>
 
@@ -250,6 +319,32 @@
     </div>
     <div class="pad fire-pad" id="fireBtn" role="button" aria-label="Fire: hold anywhere on the right half">
       <span class="fire-face" aria-hidden="true"><span class="fire-dot"></span></span>
+    </div>
+  </div>
+
+  <!-- Built at boot from the LAB_SPEC table in the script, which lists
+       the knobs; only the containers live here. -->
+  <div class="lab" id="lab" aria-hidden="true">
+    <div class="lab-inner">
+      <h2>Settings lab</h2>
+      <div class="lab-sub">The run is paused while this is open. Changes apply at once and persist in this browser; values that differ from the default show in orange.</div>
+      <div class="lab-section">
+        <h3>Run</h3>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide" data-jump="entry">Entry</button>
+          <button type="button" class="lab-btn wide" data-jump="clouds">Clouds</button>
+          <button type="button" class="lab-btn wide" data-jump="surface">Surface</button>
+        </div>
+        <div class="lab-row" style="margin-top:8px">
+          <label for="labNoDamage">No damage</label>
+          <input type="checkbox" id="labNoDamage">
+        </div>
+      </div>
+      <div id="labSections"></div>
+      <div class="lab-actions">
+        <button type="button" class="lab-btn wide" id="labResetBtn">Reset to defaults</button>
+        <button type="button" class="lab-btn wide primary" id="labCloseBtn">Close</button>
+      </div>
     </div>
   </div>
 
@@ -492,6 +587,64 @@
   var BEST_KEY = 'descent-best-v1';
   var AXIS_KEY = 'descent-axis-v1';
 
+  // ---- Tuning: the live values -------------------------------------
+  // Every constant above is a DEFAULT. The game reads the live values
+  // from TUNING, which the settings lab edits on the spot and saves in
+  // this browser. Seeded here, below every constant it reads - a key
+  // seeded from a constant defined further down would arrive undefined.
+  // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
+  // shared by reference, so editing them edits what the game reads.
+  var TUNING_KEY = 'descent-tuning-v1';
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS'];
+  var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
+  var TUNING_DEFAULTS = (function () {
+    var d = {
+      SHIP_MAX_SPEED: SHIP_MAX_SPEED, SHIP_RESPONSE: SHIP_RESPONSE, FLICK_START: FLICK_START, FLICK_FULL: FLICK_FULL,
+      FLICK_SPEED_BOOST: FLICK_SPEED_BOOST, FLICK_RESPONSE_BOOST: FLICK_RESPONSE_BOOST, FLICK_DECAY: FLICK_DECAY,
+      SPEED_START: SPEED_START, SPEED_RAMP: SPEED_RAMP, SPEED_MAX: SPEED_MAX, INVULN_TIME: INVULN_TIME,
+      GLOW_HEAL: GLOW_HEAL, GLOW_CATCH_SLOP: GLOW_CATCH_SLOP, GLOW_HANG: GLOW_HANG, GLOW_SPEED: GLOW_SPEED,
+      AIMED_SHARE: AIMED_SHARE, ROCKS_WITH_ENEMY: ROCKS_WITH_ENEMY, WALL_JITTER_MIN: WALL_JITTER_MIN,
+      WALL_JITTER_MAX: WALL_JITTER_MAX, WALL_DOUBLE_CHANCE: WALL_DOUBLE_CHANCE, GAP_W: GAP_W, GAP_H: GAP_H,
+      SPIRE_INTERVAL: SPIRE_INTERVAL, SPIRE_MIN_GAP: SPIRE_MIN_GAP, SPIRE_AIMED_SHARE: SPIRE_AIMED_SHARE,
+      SPIRE_AIM_SPREAD: SPIRE_AIM_SPREAD, SPIRE_BLAST: SPIRE_BLAST, ENEMY_HP: ENEMY_HP, ENEMY_STAY: ENEMY_STAY,
+      ENEMY_FIRST: ENEMY_FIRST, ENEMY_GAP_MIN: ENEMY_GAP_MIN, ENEMY_GAP_MAX: ENEMY_GAP_MAX,
+      ENEMY_PAIR_CHANCE: ENEMY_PAIR_CHANCE, ENEMY_FIRE_INTERVAL: ENEMY_FIRE_INTERVAL, ENEMY_CHARGE: ENEMY_CHARGE,
+      ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED, ENEMY_WEAVE_X: ENEMY_WEAVE_X, ENEMY_WEAVE_Y: ENEMY_WEAVE_Y,
+      FIRE_INTERVAL: FIRE_INTERVAL, BULLET_RADIUS: BULLET_RADIUS
+    };
+    Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
+    return d;
+  })();
+  var TUNING = {};
+  function resetTuning() {
+    TUNING_SCALARS.forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; });
+    Object.keys(TUNING_TABLES).forEach(function (t) {
+      var tbl = TUNING_TABLES[t], def = TUNING_DEFAULTS[t];
+      Object.keys(def).forEach(function (k) { tbl[k] = def[k]; });
+      TUNING[t] = tbl;
+    });
+  }
+  // Merged key by key, so a saved blob from an older build (missing a
+  // knob added since, or carrying one since removed) loads cleanly.
+  function loadTuning() {
+    resetTuning();
+    try {
+      var saved = JSON.parse(localStorage.getItem(TUNING_KEY) || 'null');
+      if (!saved) return;
+      TUNING_SCALARS.forEach(function (k) { if (typeof saved[k] === 'number') TUNING[k] = saved[k]; });
+      Object.keys(TUNING_TABLES).forEach(function (t) {
+        if (!saved[t]) return;
+        Object.keys(TUNING_TABLES[t]).forEach(function (k) {
+          if (typeof saved[t][k] === 'number') TUNING_TABLES[t][k] = saved[t][k];
+        });
+      });
+    } catch (e) {} // a corrupt or missing store just means defaults
+  }
+  function saveTuning() {
+    try { localStorage.setItem(TUNING_KEY, JSON.stringify(TUNING)); } catch (e) {}
+  }
+  loadTuning();
+
   // ---- Helpers -------------------------------------------------------
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -517,7 +670,7 @@
     if (t < SURFACE_START) return 'clouds';
     return 'surface';
   }
-  function speedAt(t) { return Math.min(SPEED_MAX, SPEED_START + SPEED_RAMP * t); }
+  function speedAt(t) { return Math.min(TUNING.SPEED_MAX, TUNING.SPEED_START + TUNING.SPEED_RAMP * t); }
   function groundYAt(t) {
     if (t < SURFACE_START) return Infinity;
     return lerp(GROUND_START_Y, GROUND_Y, smooth((t - SURFACE_START) / GROUND_SETTLE_TIME));
@@ -630,7 +783,7 @@
     while (stickTrail.length > 2 && stickTrail[1].t <= from) stickTrail.shift();
     var base = stickTrail[0];
     var rate = Math.hypot(x - base.x, y - base.y) / (FLICK_WINDOW_MS / 1000);
-    var f = clamp((rate - FLICK_START) / (FLICK_FULL - FLICK_START), 0, 1);
+    var f = clamp((rate - TUNING.FLICK_START) / (TUNING.FLICK_FULL - TUNING.FLICK_START), 0, 1);
     if (f > thumbFlick) thumbFlick = f;
   }
   var HOLD_WATCHDOG_MS = 12000;
@@ -769,6 +922,8 @@
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right'
   };
   window.addEventListener('keydown', function (e) {
+    if (e.code === 'Backquote') { e.preventDefault(); setLabOpen(!labOpen); return; }
+    if (labOpen) { if (e.code === 'Escape') setLabOpen(false); return; }
     Sound.ensureAudio();
     var dir = KEY_DIRS[e.code];
     if (dir) { kb[dir] = true; updateKbVector(); e.preventDefault(); return; }
@@ -853,7 +1008,7 @@
       crashAge: 0,
       phase: null,
       phaseAge: 0,
-      timers: { rock: 1.2, wall: 2.5, spire: 0.5, enemy: ENEMY_FIRST },
+      timers: { rock: 1.2, wall: 2.5, spire: 0.5, enemy: TUNING.ENEMY_FIRST },
       obstacles: [],
       streaks: [],
       shards: [],
@@ -884,6 +1039,7 @@
 
   // ---- Update --------------------------------------------------------
   MainScene.prototype.update = function (time, deltaMs) {
+    if (labOpen) return; // paused under the settings lab
     try {
       var dt = Math.min(deltaMs / 1000, 0.05) * debug.timeScale;
       this.step(dt);
@@ -932,12 +1088,12 @@
     // The ghost waits a beat at the old level, then drains down to the
     // new one; on a heal it simply follows the bar up.
     if (s.shieldGhost < s.shield) s.shieldGhost = s.shield;
-    else if (s.invuln < INVULN_TIME - 0.35) s.shieldGhost = Math.max(s.shield, s.shieldGhost - 60 * dt);
+    else if (s.invuln < TUNING.INVULN_TIME - 0.35) s.shieldGhost = Math.max(s.shield, s.shieldGhost - 60 * dt);
     s.shake = Math.max(0, s.shake - dt * 3);
     this.shakeX = s.shake ? rand(-1, 1) * s.shake * 8 : 0;
     this.shakeY = s.shake ? rand(-1, 1) * s.shake * 8 : 0;
 
-    Sound.setWind(flying ? 0.4 + 0.6 * (speedAt(s.t) - SPEED_START) / (SPEED_MAX - SPEED_START) + (phase === 'entry' ? 0.4 * Math.sin(Math.PI * s.t / ENTRY_TIME) : 0) : 0,
+    Sound.setWind(flying ? 0.4 + 0.6 * (speedAt(s.t) - TUNING.SPEED_START) / (TUNING.SPEED_MAX - TUNING.SPEED_START) + (phase === 'entry' ? 0.4 * Math.sin(Math.PI * s.t / ENTRY_TIME) : 0) : 0,
       phase === 'entry' ? 1 : phase === 'clouds' ? 0.4 : 0.6);
   };
 
@@ -947,11 +1103,11 @@
 
   MainScene.prototype.stepShip = function (dt) {
     var s = this.state;
-    thumbFlick *= Math.exp(-dt / FLICK_DECAY);
+    thumbFlick *= Math.exp(-dt / TUNING.FLICK_DECAY);
     if (thumbFlick < 0.01) thumbFlick = 0;
     s.boost = thumbFlick;
-    var maxSpeed = SHIP_MAX_SPEED * (1 + FLICK_SPEED_BOOST * s.boost);
-    var k = 1 - Math.exp(-SHIP_RESPONSE * (1 + FLICK_RESPONSE_BOOST * s.boost) * dt);
+    var maxSpeed = TUNING.SHIP_MAX_SPEED * (1 + TUNING.FLICK_SPEED_BOOST * s.boost);
+    var k = 1 - Math.exp(-TUNING.SHIP_RESPONSE * (1 + TUNING.FLICK_RESPONSE_BOOST * s.boost) * dt);
     s.vx += (inputState.x * maxSpeed - s.vx) * k;
     var stickY = invertY ? -inputState.y : inputState.y;
     s.vy += (stickY * maxSpeed - s.vy) * k;
@@ -968,12 +1124,12 @@
 
   // ---- Spawning ------------------------------------------------------
   function wallDelay(phase, pace) {
-    return WALL_INTERVAL[phase] * pace * rand(WALL_JITTER_MIN, WALL_JITTER_MAX);
+    return WALL_INTERVAL[phase] * pace * rand(TUNING.WALL_JITTER_MIN, TUNING.WALL_JITTER_MAX);
   }
   function spireDelay(pace) {
-    return Math.max(SPIRE_MIN_GAP, SPIRE_INTERVAL * pace * rand(0.7, 1.4));
+    return Math.max(TUNING.SPIRE_MIN_GAP, TUNING.SPIRE_INTERVAL * pace * rand(0.7, 1.4));
   }
-  function enemyWaveSize() { return Math.random() < ENEMY_PAIR_CHANCE ? 2 : 1; }
+  function enemyWaveSize() { return Math.random() < TUNING.ENEMY_PAIR_CHANCE ? 2 : 1; }
 
   MainScene.prototype.stepSpawning = function (dt) {
     var s = this.state;
@@ -981,7 +1137,7 @@
     var phase = phaseAt(s.t);
     // Nothing spawns in the white-out: you cannot see it coming.
     if (whiteoutAt(s.t + (Z_SPAWN - Z_SHIP) / speedAt(s.t)) > 0.15) return;
-    var pace = SPEED_START / speedAt(s.t);
+    var pace = TUNING.SPEED_START / speedAt(s.t);
     if (phase === 'surface') {
       pace *= lerp(1, SURFACE_INTERVAL_FLOOR, clamp((s.t - SURFACE_START) / 90, 0, 1));
     }
@@ -990,8 +1146,8 @@
     timers.rock -= dt;
     if (timers.rock <= 0) {
       timers.rock = ROCK_INTERVAL[phase] * pace * rand(0.7, 1.3) *
-        (s.enemies.length ? ROCKS_WITH_ENEMY : 1);
-      if (this.clearOfWalls()) this.spawnRock(Math.random() < AIMED_SHARE);
+        (s.enemies.length ? TUNING.ROCKS_WITH_ENEMY : 1);
+      if (this.clearOfWalls()) this.spawnRock(Math.random() < TUNING.AIMED_SHARE);
     }
     if (WALL_INTERVAL[phase]) {
       timers.wall -= dt;
@@ -999,7 +1155,7 @@
         var follow = s.wallFollow;
         s.wallFollow = null;
         var w = this.spawnWall(follow ? this.nearGap(follow) : null);
-        if (!follow && Math.random() < WALL_DOUBLE_CHANCE) {
+        if (!follow && Math.random() < TUNING.WALL_DOUBLE_CHANCE) {
           // A follow-up close behind. Not shortened by the late-run pace
           // below 0.8: it has to stay makeable.
           s.wallFollow = { gx: w.gx, gy: w.gy };
@@ -1012,7 +1168,7 @@
     if (!s.enemies.length) {
       timers.enemy -= dt;
       if (timers.enemy <= 0) {
-        timers.enemy = rand(ENEMY_GAP_MIN, ENEMY_GAP_MAX);
+        timers.enemy = rand(TUNING.ENEMY_GAP_MIN, TUNING.ENEMY_GAP_MAX);
         this.spawnEnemyWave(enemyWaveSize());
       }
     }
@@ -1020,7 +1176,7 @@
       timers.spire -= dt;
       if (timers.spire <= 0) {
         timers.spire = spireDelay(pace);
-        if (this.clearOfWalls()) this.spawnSpire(Math.random() < SPIRE_AIMED_SHARE);
+        if (this.clearOfWalls()) this.spawnSpire(Math.random() < TUNING.SPIRE_AIMED_SHARE);
       }
     }
   };
@@ -1065,10 +1221,10 @@
   MainScene.prototype.spawnWall = function (opts) {
     var s = this.state;
     var bottom = Math.min(Y_BOTTOM, groundYAt(s.t) - GROUND_CLEARANCE);
-    var gx = rand(-X_LIMIT + GAP_W / 2 - 20, X_LIMIT - GAP_W / 2 + 20);
-    var gy = rand(Y_TOP + GAP_H / 2 - 20, bottom - GAP_H / 2 + 20);
+    var gx = rand(-X_LIMIT + TUNING.GAP_W / 2 - 20, X_LIMIT - TUNING.GAP_W / 2 + 20);
+    var gy = rand(Y_TOP + TUNING.GAP_H / 2 - 20, bottom - TUNING.GAP_H / 2 + 20);
     return this.addObstacle(Object.assign({
-      kind: 'wall', gx: gx, gy: gy, gw: GAP_W, gh: GAP_H
+      kind: 'wall', gx: gx, gy: gy, gw: TUNING.GAP_W, gh: TUNING.GAP_H
     }, opts || {}));
   };
 
@@ -1078,8 +1234,8 @@
     var s = this.state;
     var bottom = Math.min(Y_BOTTOM, groundYAt(s.t) - GROUND_CLEARANCE);
     return {
-      gx: clamp(prev.gx + rand(-WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_X), -X_LIMIT + GAP_W / 2 - 20, X_LIMIT - GAP_W / 2 + 20),
-      gy: clamp(prev.gy + rand(-WALL_DOUBLE_REACH_Y, WALL_DOUBLE_REACH_Y), Y_TOP + GAP_H / 2 - 20, bottom - GAP_H / 2 + 20)
+      gx: clamp(prev.gx + rand(-WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_X), -X_LIMIT + TUNING.GAP_W / 2 - 20, X_LIMIT - TUNING.GAP_W / 2 + 20),
+      gy: clamp(prev.gy + rand(-WALL_DOUBLE_REACH_Y, WALL_DOUBLE_REACH_Y), Y_TOP + TUNING.GAP_H / 2 - 20, bottom - TUNING.GAP_H / 2 + 20)
     };
   };
 
@@ -1087,7 +1243,7 @@
   MainScene.prototype.spawnSpire = function (aimed, opts) {
     var s = this.state;
     var w = rand(30, 58);
-    var x = aimed ? s.shipX + rand(-SPIRE_AIM_SPREAD, SPIRE_AIM_SPREAD) : rand(-X_LIMIT - 30, X_LIMIT + 30);
+    var x = aimed ? s.shipX + rand(-TUNING.SPIRE_AIM_SPREAD, TUNING.SPIRE_AIM_SPREAD) : rand(-X_LIMIT - 30, X_LIMIT + 30);
     var top = rand(Y_TOP + 10, GROUND_Y - 70);
     var o = this.addObstacle(Object.assign({
       kind: 'spire', x: x, w: w, top: top
@@ -1131,7 +1287,7 @@
     for (var i = s.obstacles.length - 1; i >= 0; i--) {
       var o = s.obstacles[i];
       o.prevZ = o.z;
-      if (o.kind === 'glow') o.z -= (o.age > GLOW_HANG ? GLOW_SPEED : 0) * dt;
+      if (o.kind === 'glow') o.z -= (o.age > TUNING.GLOW_HANG ? TUNING.GLOW_SPEED : 0) * dt;
       else o.z -= speed * dt;
       o.age += dt;
       if (o.spin) o.rot += o.spin * dt;
@@ -1147,7 +1303,7 @@
       return Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r * 0.9 + r;
     }
     if (o.kind === 'wall') return this.wallAlignment(o) !== 'clear';
-    if (o.kind === 'glow') return Math.hypot(s.shipX - o.x, s.shipY - o.y) < GLOW_RADIUS + r + GLOW_CATCH_SLOP;
+    if (o.kind === 'glow') return Math.hypot(s.shipX - o.x, s.shipY - o.y) < GLOW_RADIUS + r + TUNING.GLOW_CATCH_SLOP;
     if (o.kind === 'spire') {
       var ground = groundYAt(s.t);
       if (s.shipY + r < o.top) return false;
@@ -1175,7 +1331,7 @@
     if (o.kind === 'rock' || o.kind === 'shot') o.dead = true;
     if (s.invuln > 0 || s.invincible) return;
     s.shield = Math.max(0, s.shield - (DAMAGE[o.kind] || DAMAGE.rock));
-    s.invuln = INVULN_TIME;
+    s.invuln = TUNING.INVULN_TIME;
     s.flash = 1;
     s.shake = 1;
     Sound.thump();
@@ -1189,7 +1345,7 @@
     var s = this.state;
     o.dead = true;
     s.pickups++;
-    s.shield = Math.min(SHIELD_MAX, s.shield + GLOW_HEAL);
+    s.shield = Math.min(SHIELD_MAX, s.shield + TUNING.GLOW_HEAL);
     s.healFlash = 1;
     s.catchStreak = { x: o.x, y: o.y, age: 0 };
     Sound.heal();
@@ -1258,7 +1414,7 @@
     var s = this.state;
     s.fireCooldown = Math.max(0, s.fireCooldown - dt);
     if (fireHeld() && s.fireCooldown === 0) {
-      s.fireCooldown = FIRE_INTERVAL;
+      s.fireCooldown = TUNING.FIRE_INTERVAL;
       s.shotsFired++;
       s.bullets.push({ kind: 'bullet', x: s.shipX, y: s.shipY, z: Z_SHIP, prevZ: Z_SHIP });
       Sound.shot();
@@ -1280,7 +1436,7 @@
       for (var k = 0; k < s.enemies.length && !spent; k++) {
         var e = s.enemies[k];
         if (e.mode === 'leaving' || !crossed(b, e)) continue;
-        if (Math.hypot(b.x - e.x, b.y - e.y) < ENEMY_RADIUS + BULLET_RADIUS) {
+        if (Math.hypot(b.x - e.x, b.y - e.y) < ENEMY_RADIUS + TUNING.BULLET_RADIUS) {
           spent = true;
           this.damageEnemy(e);
         }
@@ -1294,7 +1450,7 @@
   // that came off, thrown up and sideways and left to fall.
   MainScene.prototype.blastSpire = function (o, hitY) {
     var s = this.state, G = groundYAt(s.t);
-    var cut = Math.min(G, hitY + SPIRE_BLAST);
+    var cut = Math.min(G, hitY + TUNING.SPIRE_BLAST);
     var whole = G - cut < SPIRE_MIN_STUMP;
     if (whole) cut = G;
     var top = o.top, mid = (top + cut) / 2;
@@ -1357,18 +1513,18 @@
   // ---- Aliens --------------------------------------------------------
   MainScene.prototype.spawnEnemy = function (opts) {
     var s = this.state;
-    var floor = Math.min(Y_BOTTOM, groundYAt(s.t) - GROUND_CLEARANCE) - ENEMY_WEAVE_Y - 20;
+    var floor = Math.min(Y_BOTTOM, groundYAt(s.t) - GROUND_CLEARANCE) - TUNING.ENEMY_WEAVE_Y - 20;
     var e = Object.assign({
       kind: 'enemy',
-      ax: rand(-X_LIMIT + ENEMY_WEAVE_X, X_LIMIT - ENEMY_WEAVE_X),
-      ay: rand(Y_TOP + ENEMY_WEAVE_Y, Math.max(Y_TOP + ENEMY_WEAVE_Y, Math.min(40, floor))),
+      ax: rand(-X_LIMIT + TUNING.ENEMY_WEAVE_X, X_LIMIT - TUNING.ENEMY_WEAVE_X),
+      ay: rand(Y_TOP + TUNING.ENEMY_WEAVE_Y, Math.max(Y_TOP + TUNING.ENEMY_WEAVE_Y, Math.min(40, floor))),
       phaseX: rand(0, Math.PI * 2), phaseY: rand(0, Math.PI * 2),
       weave: true,
       color: COLOR_ENEMY[Math.floor(Math.random() * COLOR_ENEMY.length)],
-      hp: ENEMY_HP, flash: 0,
+      hp: TUNING.ENEMY_HP, flash: 0,
       mode: 'arriving', age: 0, modeAge: 0,
-      stay: ENEMY_STAY,
-      fireTimer: ENEMY_FIRST_SHOT + ENEMY_CHARGE,
+      stay: TUNING.ENEMY_STAY,
+      fireTimer: ENEMY_FIRST_SHOT + TUNING.ENEMY_CHARGE,
       z: Z_SPAWN, prevZ: Z_SPAWN
     }, opts || {});
     e.x = e.ax; e.y = e.ay;
@@ -1390,7 +1546,7 @@
     var second = this.spawnEnemy({
       color: COLOR_ENEMY[1 - flip], weaveX: ENEMY_PAIR_WEAVE_X,
       ax: -side * rand(reach * 0.55, reach),
-      fireTimer: first.fireTimer + ENEMY_FIRE_INTERVAL / 2
+      fireTimer: first.fireTimer + TUNING.ENEMY_FIRE_INTERVAL / 2
     });
     return [first, second];
   };
@@ -1404,8 +1560,8 @@
       e.prevZ = e.z;
       e.flash = Math.max(0, e.flash - dt);
       if (e.weave) {
-        e.x = e.ax + Math.sin(e.age * 0.8 + e.phaseX) * (e.weaveX || ENEMY_WEAVE_X);
-        e.y = e.ay + Math.sin(e.age * 1.1 + e.phaseY) * ENEMY_WEAVE_Y;
+        e.x = e.ax + Math.sin(e.age * 0.8 + e.phaseX) * (e.weaveX || TUNING.ENEMY_WEAVE_X);
+        e.y = e.ay + Math.sin(e.age * 1.1 + e.phaseY) * TUNING.ENEMY_WEAVE_Y;
       }
       if (e.mode === 'arriving') {
         e.z = lerp(Z_SPAWN, ENEMY_Z, smooth(e.modeAge / ENEMY_ARRIVE));
@@ -1414,7 +1570,7 @@
         e.z = ENEMY_Z;
         e.fireTimer -= dt;
         if (e.fireTimer <= 0) {
-          e.fireTimer = ENEMY_FIRE_INTERVAL * rand(0.85, 1.15);
+          e.fireTimer = TUNING.ENEMY_FIRE_INTERVAL * rand(0.85, 1.15);
           this.enemyFire(e);
         }
         if (e.modeAge >= e.stay) { e.mode = 'leaving'; e.modeAge = 0; }
@@ -1427,8 +1583,8 @@
 
   // 0..1 through the visible wind-up before a shot; 0 when not charging.
   function enemyCharge(e) {
-    if (e.mode !== 'holding' || e.fireTimer > ENEMY_CHARGE) return 0;
-    return 1 - e.fireTimer / ENEMY_CHARGE;
+    if (e.mode !== 'holding' || e.fireTimer > TUNING.ENEMY_CHARGE) return 0;
+    return 1 - e.fireTimer / TUNING.ENEMY_CHARGE;
   }
 
   // Aimed at where the ship IS: hold still and it hits you, move and
@@ -1445,7 +1601,7 @@
     for (var i = s.enemyShots.length - 1; i >= 0; i--) {
       var p = s.enemyShots[i];
       p.prevZ = p.z;
-      p.z -= ENEMY_SHOT_SPEED * dt;
+      p.z -= TUNING.ENEMY_SHOT_SPEED * dt;
       // A straight line from the alien to the point it aimed at.
       var f = (p.z0 - p.z) / (p.z0 - Z_SHIP);
       p.x = lerp(p.x0, p.tx, f);
@@ -1482,7 +1638,7 @@
   MainScene.prototype.enemyInSights = function () {
     var s = this.state;
     return s.enemies.some(function (e) {
-      return e.mode !== 'leaving' && Math.hypot(s.shipX - e.x, s.shipY - e.y) < ENEMY_RADIUS + BULLET_RADIUS;
+      return e.mode !== 'leaving' && Math.hypot(s.shipX - e.x, s.shipY - e.y) < ENEMY_RADIUS + TUNING.BULLET_RADIUS;
     });
   };
 
@@ -1776,8 +1932,8 @@
     var s = this.state, g = this.gShip;
     if (s.invuln > 0 && Math.floor(s.invuln * 12) % 2 === 0) return;
     var x = this.sx(s.shipX, Z_SHIP), y = this.sy(s.shipY, Z_SHIP);
-    var bank = clamp(s.vx / SHIP_MAX_SPEED, -1.4, 1.4) * 0.5;
-    var pitch = 1 + (s.vy / SHIP_MAX_SPEED) * 0.25;
+    var bank = clamp(s.vx / TUNING.SHIP_MAX_SPEED, -1.4, 1.4) * 0.5;
+    var pitch = 1 + (s.vy / TUNING.SHIP_MAX_SPEED) * 0.25;
     var r = SHIP_DRAW_SIZE;
     var c = Math.cos(bank), sn = Math.sin(bank);
     function P(px, py) { py *= pitch; return [x + px * c - py * sn, y + px * sn + py * c]; }
@@ -1878,7 +2034,7 @@
     }
     // Damage: one notch out of the diamond's edge per hit taken.
     g.fillStyle(COLOR_ENEMY_EYE, a);
-    for (var i = 0; i < ENEMY_HP - e.hp; i++) {
+    for (var i = 0; i < TUNING.ENEMY_HP - e.hp; i++) {
       var nx = x + (i % 2 ? 1 : -1) * r * 0.4, ny = y + (i < 2 ? -1 : 1) * r * 0.5;
       g.fillCircle(nx, ny, r * 0.12);
     }
@@ -2014,6 +2170,192 @@
   };
 
   // ==================================================================
+  // Settings lab
+  // ==================================================================
+  // One row per knob. `key` is a TUNING scalar, or 'TABLE.field' for one
+  // of the per-kind tables. Ranges are generous on purpose: this is for
+  // finding out what too much feels like.
+  var LAB_SPEC = [
+    { title: 'Ship & stick', rows: [
+      ['SHIP_MAX_SPEED', 'Top speed', 120, 450, 5, ' px/s'],
+      ['SHIP_RESPONSE', 'Responsiveness', 2, 25, 0.5, '/s'],
+      ['FLICK_START', 'Flick: starts at', 2, 15, 0.5, ' w/s'],
+      ['FLICK_FULL', 'Flick: full at', 6, 30, 0.5, ' w/s'],
+      ['FLICK_SPEED_BOOST', 'Flick: extra speed', 0, 2, 0.05, '\u00d7'],
+      ['FLICK_RESPONSE_BOOST', 'Flick: extra response', 0, 5, 0.1, '\u00d7'],
+      ['FLICK_DECAY', 'Flick: fade', 0.05, 1, 0.05, ' s']
+    ] },
+    { title: 'Pace', rows: [
+      ['SPEED_START', 'Speed at start', 2, 8, 0.1, ''],
+      ['SPEED_RAMP', 'Speed-up per second', 0, 0.15, 0.005, ''],
+      ['SPEED_MAX', 'Top speed', 4, 14, 0.5, '']
+    ] },
+    { title: 'Shield & glows', rows: [
+      ['DAMAGE.rock', 'Rock hit', 0, 50, 1, '%'],
+      ['DAMAGE.spire', 'Tower hit', 0, 50, 1, '%'],
+      ['DAMAGE.shot', 'Alien shot', 0, 50, 1, '%'],
+      ['DAMAGE.wall', 'Wall scrape', 0, 50, 1, '%'],
+      ['INVULN_TIME', 'Grace after a hit', 0, 3, 0.1, ' s'],
+      ['GLOW_HEAL', 'Glow heals', 0, 60, 1, '%'],
+      ['GLOW_CATCH_SLOP', 'Glow catch slop', 0, 200, 1, ' px'],
+      ['GLOW_HANG', 'Glow hangs for', 0, 2, 0.05, ' s'],
+      ['GLOW_SPEED', 'Glow drift speed', 0.5, 5, 0.1, '']
+    ] },
+    { title: 'Rocks', rows: [
+      ['ROCK_INTERVAL.entry', 'Every (entry)', 0.2, 4, 0.05, ' s'],
+      ['ROCK_INTERVAL.clouds', 'Every (clouds)', 0.2, 4, 0.05, ' s'],
+      ['ROCK_INTERVAL.surface', 'Every (surface)', 0.2, 4, 0.05, ' s'],
+      ['AIMED_SHARE', 'Aimed at you', 0, 1, 0.05, ''],
+      ['ROCKS_WITH_ENEMY', 'Fewer with aliens', 0.5, 4, 0.1, '\u00d7']
+    ] },
+    { title: 'Walls', rows: [
+      ['WALL_INTERVAL.clouds', 'Every (clouds)', 1, 8, 0.1, ' s'],
+      ['WALL_INTERVAL.surface', 'Every (surface)', 1, 8, 0.1, ' s'],
+      ['WALL_JITTER_MIN', 'Spacing: shortest', 0.2, 1.5, 0.05, '\u00d7'],
+      ['WALL_JITTER_MAX', 'Spacing: longest', 0.5, 3, 0.05, '\u00d7'],
+      ['WALL_DOUBLE_CHANCE', 'Quick double', 0, 1, 0.05, ''],
+      ['GAP_W', 'Gap width', 60, 300, 5, ' px'],
+      ['GAP_H', 'Gap height', 60, 280, 5, ' px']
+    ] },
+    { title: 'Towers', rows: [
+      ['SPIRE_INTERVAL', 'Every', 0.3, 4, 0.05, ' s'],
+      ['SPIRE_MIN_GAP', 'Never closer than', 0, 3, 0.05, ' s'],
+      ['SPIRE_AIMED_SHARE', 'Aimed at you', 0, 1, 0.05, ''],
+      ['SPIRE_AIM_SPREAD', 'Aim spread', 0, 150, 5, ' px'],
+      ['SPIRE_BLAST', 'Shot cuts extra', 0, 60, 1, ' px']
+    ] },
+    { title: 'Aliens', rows: [
+      ['ENEMY_HP', 'Hits to down', 1, 12, 1, ''],
+      ['ENEMY_STAY', 'Stays for', 2, 30, 0.5, ' s'],
+      ['ENEMY_FIRST', 'First at', 0, 30, 0.5, ' s'],
+      ['ENEMY_GAP_MIN', 'Next after: least', 0, 15, 0.5, ' s'],
+      ['ENEMY_GAP_MAX', 'Next after: most', 0, 20, 0.5, ' s'],
+      ['ENEMY_PAIR_CHANCE', 'Pair chance', 0, 1, 0.05, ''],
+      ['ENEMY_FIRE_INTERVAL', 'Fires every', 0.5, 6, 0.1, ' s'],
+      ['ENEMY_CHARGE', 'Charge warning', 0.1, 1.5, 0.05, ' s'],
+      ['ENEMY_SHOT_SPEED', 'Shot speed', 0.8, 6, 0.1, ''],
+      ['ENEMY_WEAVE_X', 'Weave side-to-side', 0, 140, 5, ' px'],
+      ['ENEMY_WEAVE_Y', 'Weave up-and-down', 0, 100, 5, ' px']
+    ] },
+    { title: 'Guns', rows: [
+      ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
+      ['BULLET_RADIUS', 'Shot reach', 2, 30, 1, ' px']
+    ] }
+  ];
+
+  var labOpen = false;
+  var labEl = document.getElementById('lab');
+  var labSyncers = [];
+
+  function labGet(key) {
+    var dot = key.indexOf('.');
+    return dot < 0 ? TUNING[key] : TUNING_TABLES[key.slice(0, dot)][key.slice(dot + 1)];
+  }
+  function labDefault(key) {
+    var dot = key.indexOf('.');
+    return dot < 0 ? TUNING_DEFAULTS[key] : TUNING_DEFAULTS[key.slice(0, dot)][key.slice(dot + 1)];
+  }
+  function labSet(key, v) {
+    var dot = key.indexOf('.');
+    if (dot < 0) TUNING[key] = v;
+    else TUNING_TABLES[key.slice(0, dot)][key.slice(dot + 1)] = v;
+  }
+  function labFmt(v, step) {
+    var places = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
+    return v.toFixed(places);
+  }
+
+  (function buildLab() {
+    var host = document.getElementById('labSections');
+    LAB_SPEC.forEach(function (sec) {
+      var box = document.createElement('div');
+      box.className = 'lab-section';
+      var h = document.createElement('h3');
+      h.textContent = sec.title;
+      box.appendChild(h);
+      sec.rows.forEach(function (r) {
+        var key = r[0], step = r[4], unit = r[5];
+        var row = document.createElement('div');
+        row.className = 'lab-row';
+        var label = document.createElement('label');
+        label.textContent = r[1];
+        var input = document.createElement('input');
+        input.type = 'range';
+        input.min = r[2]; input.max = r[3]; input.step = step;
+        input.dataset.key = key;
+        var val = document.createElement('span');
+        val.className = 'lab-val';
+        function show() {
+          var v = labGet(key);
+          val.textContent = labFmt(v, step) + unit;
+          row.classList.toggle('changed', Math.abs(v - labDefault(key)) > step / 2);
+        }
+        input.addEventListener('input', function () {
+          labSet(key, parseFloat(input.value));
+          show();
+          saveTuning();
+        });
+        row.appendChild(label); row.appendChild(input); row.appendChild(val);
+        box.appendChild(row);
+        labSyncers.push(function () { input.value = labGet(key); show(); });
+      });
+      host.appendChild(box);
+    });
+  })();
+
+  function labSyncAll() { labSyncers.forEach(function (f) { f(); }); }
+
+  function setLabOpen(open) {
+    labOpen = open;
+    labEl.classList.toggle('visible', open);
+    labEl.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (open) {
+      // Whatever was held when the panel came up would otherwise stay
+      // held behind it, and the ship would come out of the pause still
+      // steering or firing.
+      kb.up = kb.down = kb.left = kb.right = false;
+      kbFire = false; touchFire = false;
+      touchX = touchY = 0;
+      thumbFlick = 0;
+      updateKbVector();
+      labSyncAll();
+      if (scene) document.getElementById('labNoDamage').checked = !!scene.state.invincible;
+    }
+  }
+
+  document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
+  document.getElementById('labResetBtn').addEventListener('click', function () {
+    resetTuning();
+    saveTuning();
+    labSyncAll();
+  });
+  document.getElementById('labNoDamage').addEventListener('change', function (e) {
+    if (scene) scene.state.invincible = e.target.checked; // for this run only - never saved
+  });
+  // Jump: a fresh run, started at the beginning of that stretch.
+  Array.prototype.forEach.call(document.querySelectorAll('[data-jump]'), function (btn) {
+    btn.addEventListener('click', function () {
+      if (!scene) return;
+      scene.restart();
+      var where = btn.getAttribute('data-jump');
+      scene.state.t = where === 'clouds' ? CLOUDS_START : where === 'surface' ? SURFACE_START : 0;
+      scene.state.invincible = document.getElementById('labNoDamage').checked;
+      setLabOpen(false);
+    });
+  });
+
+  // The way in on a phone: three quick taps on the "Descent" tag.
+  (function () {
+    var taps = 0, tapTimer = null;
+    document.getElementById('labTap').addEventListener('pointerup', function () {
+      taps++;
+      clearTimeout(tapTimer);
+      if (taps >= 3) { taps = 0; setLabOpen(true); return; }
+      tapTimer = setTimeout(function () { taps = 0; }, 600);
+    });
+  })();
+
+  // ==================================================================
   // Debug hook, for the tests. Returns plain values only.
   // ==================================================================
   var debug = window.__descentDebug = {
@@ -2041,17 +2383,17 @@
       };
     },
     constants: function () {
-      return { SHIP_MAX_SPEED: SHIP_MAX_SPEED, GAP_W: GAP_W, GAP_H: GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELD_MAX: SHIELD_MAX, DAMAGE: DAMAGE, GLOW_HEAL: GLOW_HEAL, Z_SPAWN: Z_SPAWN,
+      return { SHIP_MAX_SPEED: TUNING.SHIP_MAX_SPEED, GAP_W: TUNING.GAP_W, GAP_H: TUNING.GAP_H, SHIP_HIT_RADIUS: SHIP_HIT_RADIUS, X_LIMIT: X_LIMIT, Y_TOP: Y_TOP, Y_BOTTOM: Y_BOTTOM, SHIELD_MAX: SHIELD_MAX, DAMAGE: DAMAGE, GLOW_HEAL: TUNING.GLOW_HEAL, Z_SPAWN: Z_SPAWN,
         CLOUDS_START: CLOUDS_START, SURFACE_START: SURFACE_START, GROUND_Y: GROUND_Y,
         GROUND_CLEARANCE: GROUND_CLEARANCE, GROUND_SETTLE_TIME: GROUND_SETTLE_TIME,
-        ENEMY_HP: ENEMY_HP, ENEMY_Z: ENEMY_Z, ENEMY_FIRST: ENEMY_FIRST, ENEMY_RADIUS: ENEMY_RADIUS,
-        ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: BULLET_RADIUS,
-        ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED,
-        ENEMY_FIRE_INTERVAL: ENEMY_FIRE_INTERVAL, SPIRE_MIN_GAP: SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: SPIRE_AIM_SPREAD,
+        ENEMY_HP: TUNING.ENEMY_HP, ENEMY_Z: ENEMY_Z, ENEMY_FIRST: TUNING.ENEMY_FIRST, ENEMY_RADIUS: ENEMY_RADIUS,
+        ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: TUNING.BULLET_RADIUS,
+        ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: TUNING.ENEMY_SHOT_SPEED,
+        ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
         WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,
-        GLOW_HANG: GLOW_HANG, GLOW_SPEED: GLOW_SPEED,
-        GLOW_RADIUS: GLOW_RADIUS, GLOW_CATCH_SLOP: GLOW_CATCH_SLOP,
-        SPIRE_BLAST: SPIRE_BLAST, SPIRE_MIN_STUMP: SPIRE_MIN_STUMP, CHUNK_LIFE: CHUNK_LIFE };
+        GLOW_HANG: TUNING.GLOW_HANG, GLOW_SPEED: TUNING.GLOW_SPEED,
+        GLOW_RADIUS: GLOW_RADIUS, GLOW_CATCH_SLOP: TUNING.GLOW_CATCH_SLOP,
+        SPIRE_BLAST: TUNING.SPIRE_BLAST, SPIRE_MIN_STUMP: SPIRE_MIN_STUMP, CHUNK_LIFE: CHUNK_LIFE };
     },
     skipTo: function (t) { scene.state.t = t; },
     // The marker on the next wall, with that wall's gap in screen space.
@@ -2091,6 +2433,13 @@
       return true;
     },
     restart: function () { scene.restart(); },
+    lab: {
+      isOpen: function () { return labOpen; },
+      setOpen: function (o) { setLabOpen(!!o); },
+      tuning: function () { return JSON.parse(JSON.stringify(TUNING)); },
+      defaults: function () { return JSON.parse(JSON.stringify(TUNING_DEFAULTS)); },
+      storageKey: TUNING_KEY
+    },
     // The spawner's dice, sampled - so spacing and mix can be checked
     // without flying for minutes.
     sample: function (what, n, arg) {

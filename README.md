@@ -210,6 +210,16 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   to be in its general vicinity, not on it. It counts from about 85px
   further out than it's drawn, roughly a quarter of the flying area.
   A catch from out there shows as a quick green streak into the ship.
+- **Settings lab.** Press backquote (`` ` ``), or triple-tap the
+  "Descent" tag at the top right on a phone. It has the same look as
+  Head-On's sortie lab: a slider for each of the 49 settings, grouped
+  as ship & stick, pace, shield & glows, rocks, walls, towers, aliens
+  and guns. Changes take effect immediately and are saved in this
+  browser. A value that differs from its default shows in orange, and
+  **Reset to defaults** puts everything back. The run pauses while the
+  lab is open. **Entry / Clouds / Surface** start a fresh run at that
+  stretch, and **No damage** makes you invulnerable for the current run
+  (it isn't saved).
 - Tests: `tests/test-descent.js`.
 
 #### Left off the lawn, into the trees

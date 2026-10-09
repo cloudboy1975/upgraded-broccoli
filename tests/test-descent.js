@@ -774,6 +774,100 @@ harness.run(async (page, check, ctx) => {
   check('Fly again starts a fresh run',
     s.mode === 'flying' && s.shield === C.SHIELD_MAX && s.t < 1 && !s.overlay, s);
 
+  // ---- Settings lab ----------------------------------------------------
+  const lab = (fn, arg) => D(page, fn, arg);
+  const labOpen = () => lab(() => window.__descentDebug.lab.isOpen());
+  // Moves one slider the way a hand does: set it, fire 'input'.
+  const setSlider = (key, v) => lab(([k, v]) => {
+    const el = document.querySelector('#lab input[data-key="' + k + '"]');
+    el.value = v;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return el ? true : false;
+  }, [key, v]);
+
+  await quiet(page);
+  check('the lab starts closed', (await labOpen()) === false);
+
+  // Every knob in the table has a slider - none quietly missing.
+  const tuned = await lab(() => window.__descentDebug.lab.tuning());
+  const wanted = [];
+  Object.keys(tuned).forEach(k => {
+    if (typeof tuned[k] === 'number') wanted.push(k);
+    else Object.keys(tuned[k]).forEach(f => wanted.push(k + '.' + f));
+  });
+  const have = await lab(() => Array.from(document.querySelectorAll('#lab input[type=range]')).map(i => i.dataset.key));
+  check('every tunable has a slider', wanted.every(k => have.includes(k)) && have.length === wanted.length,
+    { missing: wanted.filter(k => !have.includes(k)), extra: have.filter(k => !wanted.includes(k)) });
+
+  await page.keyboard.press('Backquote');
+  check('backquote opens it', (await labOpen()) === true);
+  const t0 = (await state(page)).t;
+  await page.waitForTimeout(400);
+  check('the run is paused while it is open', (await state(page)).t === t0);
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(100);
+  await page.keyboard.up('ArrowRight');
+  check('keys do not steer the ship behind the lab', (await state(page)).input.x === 0);
+  await page.keyboard.press('Escape');
+  check('escape closes it', (await labOpen()) === false);
+  await page.waitForTimeout(200);
+  check('...and the run picks up again', (await state(page)).t > t0);
+
+  // The phone way in: triple-tap the Descent tag.
+  const tag = await page.locator('#labTap').boundingBox();
+  for (let i = 0; i < 3; i++) await page.mouse.click(tag.x + tag.width / 2, tag.y + tag.height / 2);
+  check('triple-tapping the Descent tag opens it', (await labOpen()) === true);
+  await page.click('#labCloseBtn');
+  check('Close closes it', (await labOpen()) === false);
+
+  // A slider changes the live game, not just a number.
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await setSlider('SHIP_MAX_SPEED', 400);
+  await setSlider('DAMAGE.rock', 35);
+  check('a slider writes the live value',
+    (await lab(() => window.__descentDebug.lab.tuning())).SHIP_MAX_SPEED === 400);
+  check('...and marks itself changed from the default',
+    await lab(() => document.querySelector('#lab input[data-key="SHIP_MAX_SPEED"]').closest('.lab-row').classList.contains('changed')));
+  await lab(() => window.__descentDebug.lab.setOpen(false));
+  await quiet(page);
+  // Measured before it reaches the edge, where its speed drops to zero.
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(300);
+  s = await state(page);
+  await page.keyboard.up('ArrowRight');
+  check('...the ship really flies at the new top speed', s.vx > 300, s.vx);
+  await quiet(page);
+  await D(page, () => window.__descentDebug.spawn('rock', { x: 0, y: 0, r: 25, z: 1.6 }));
+  await page.waitForTimeout(600);
+  check('...and a per-kind table (rock damage) is live too', (await state(page)).shield === C.SHIELD_MAX - 35);
+
+  await page.reload();
+  await page.waitForTimeout(700);
+  const reloaded = await lab(() => window.__descentDebug.lab.tuning());
+  check('settings survive a reload', reloaded.SHIP_MAX_SPEED === 400 && reloaded.DAMAGE.rock === 35, reloaded);
+
+  // Jump straight to a stretch.
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await page.click('[data-jump="surface"]');
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('the Surface button starts a run at the surface, lab closed', s.phase === 'surface' && (await labOpen()) === false, s.phase);
+
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await page.check('#labNoDamage');
+  await lab(() => window.__descentDebug.lab.setOpen(false));
+  await D(page, () => window.__descentDebug.spawn('rock', { x: window.__descentDebug.state().shipX, y: window.__descentDebug.state().shipY, r: 25, z: 1.6 }));
+  await page.waitForTimeout(600);
+  check('No damage means no damage', (await state(page)).shield === C.SHIELD_MAX);
+
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await page.click('#labResetBtn');
+  const reset = await lab(() => window.__descentDebug.lab.tuning());
+  const defs = await lab(() => window.__descentDebug.lab.defaults());
+  check('Reset puts every knob back', JSON.stringify(reset) === JSON.stringify(defs), { reset, defs });
+  check('...and clears the changed marks', await lab(() => !document.querySelector('#lab .lab-row.changed')));
+  await page.click('#labCloseBtn');
+
   check('no page errors', ctx.errors.length === 0, ctx.errors);
   const re = await D(page, () => window.__descentDebug.runtimeErrors);
   check('the descent never crashed (the code, not the ship)', re.count === 0, re);
