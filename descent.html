@@ -344,15 +344,6 @@
   // hangs where the alien was for a beat, then drifts in slowly.
   var GLOW_HANG = 0.4;         // seconds it hangs before drifting
   var GLOW_SPEED = 1.5;        // depth units/s once it drifts
-  // ...and it steers as it comes. The trouble it fixes: a glow and a
-  // wall can ask for two different places at once, and then the wall
-  // takes back what the glow would have given. So when a wall will
-  // reach you before the glow does, the glow heads for that wall's gap
-  // - be lined up with the hole and you are lined up with the glow. With
-  // no wall in the way it only leans gently toward the ship, enough to
-  // forgive a near miss but not enough to chase you down.
-  var GLOW_STEER_GAP = 3;      // 1/s: how hard it makes for a gap
-  var GLOW_STEER_SHIP = 0.8;   // 1/s: how hard it leans toward the ship
   var INVULN_TIME = 1.3;       // seconds of grace after a hit
 
   // ---- Pace ----------------------------------------------------------
@@ -1083,10 +1074,7 @@
     for (var i = s.obstacles.length - 1; i >= 0; i--) {
       var o = s.obstacles[i];
       o.prevZ = o.z;
-      if (o.kind === 'glow') {
-        o.z -= (o.age > GLOW_HANG ? GLOW_SPEED : 0) * dt;
-        this.steerGlow(o, dt, speed);
-      }
+      if (o.kind === 'glow') o.z -= (o.age > GLOW_HANG ? GLOW_SPEED : 0) * dt;
       else o.z -= speed * dt;
       o.age += dt;
       if (o.spin) o.rot += o.spin * dt;
@@ -1136,29 +1124,6 @@
     Sound.thump();
     if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
     if (s.shield <= 0) this.crash();
-  };
-
-  // Where a glow is heading: the gap of the last wall that will reach
-  // the ship before the glow does, or failing that the ship itself.
-  MainScene.prototype.glowTarget = function (o, speed) {
-    var s = this.state;
-    var glowEta = Math.max(0, GLOW_HANG - o.age) + (o.z - Z_SHIP) / GLOW_SPEED;
-    var wall = null, wallEta = -1;
-    s.obstacles.forEach(function (w) {
-      if (w.kind !== 'wall' || w.z < Z_SHIP || speed <= 0) return;
-      var eta = (w.z - Z_SHIP) / speed;
-      if (eta < glowEta && eta > wallEta) { wall = w; wallEta = eta; }
-    });
-    if (wall) return { x: wall.gx, y: wall.gy, rate: GLOW_STEER_GAP, wall: true };
-    return { x: s.shipX, y: s.shipY, rate: GLOW_STEER_SHIP, wall: false };
-  };
-
-  MainScene.prototype.steerGlow = function (o, dt, speed) {
-    var tgt = this.glowTarget(o, speed);
-    var k = 1 - Math.exp(-tgt.rate * dt);
-    o.x += (tgt.x - o.x) * k;
-    o.y += (tgt.y - o.y) * k;
-    o.towardGap = tgt.wall;
   };
 
   // A glow is taken even mid-grace: being hit a moment ago is no reason
@@ -1981,8 +1946,7 @@
         inSights: scene.enemyInSights(), fireHeld: fireHeld(), shipYLimit: scene.shipYLimit(),
         obstacles: s.obstacles.map(function (o) {
           return { kind: o.kind, z: o.z, align: o.kind === 'wall' ? scene.wallAlignment(o) : null,
-            top: o.kind === 'spire' ? o.top : null, top0: o.kind === 'spire' ? o.top0 : null,
-            x: o.x, y: o.y, gx: o.gx, gy: o.gy, towardGap: o.towardGap };
+            top: o.kind === 'spire' ? o.top : null, top0: o.kind === 'spire' ? o.top0 : null };
         }),
         input: { x: inputState.x, y: inputState.y },
         invertY: invertY,
@@ -2022,7 +1986,6 @@
     setShip: function (x, y) { var s = scene.state; s.shipX = x; s.shipY = y; s.vx = s.vy = 0; },
     spawn: function (kind, opts) {
       if (kind === 'enemy') { scene.spawnEnemy(opts); return true; }
-      if (kind === 'glow') { scene.addObstacle(Object.assign({ kind: 'glow', x: 0, y: 0, z: ENEMY_Z }, opts || {})); return true; }
       if (kind === 'shot') {
         var sh = Object.assign({ kind: 'shot', x0: 0, y0: 0, z0: ENEMY_Z, tx: scene.state.shipX, ty: scene.state.shipY }, opts || {});
         sh.z = sh.z == null ? sh.z0 : sh.z; sh.prevZ = sh.z; sh.x = sh.x0; sh.y = sh.y0;

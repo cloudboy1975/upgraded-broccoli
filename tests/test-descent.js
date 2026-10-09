@@ -571,51 +571,6 @@ harness.run(async (page, check, ctx) => {
   check('a glow still counts during the grace after a hit',
     s.pickups === 1 && s.shield === 50 - C.DAMAGE.rock + C.GLOW_HEAL, s);
 
-  // ---- Glows steer: toward the next gap, or gently toward you --------
-  const glowNow = async () => (await state(page)).obstacles.find(o => o.kind === 'glow');
-  const spawnGlow = (x, y) => D(page, ([x, y, z]) => window.__descentDebug.spawn('glow', { x: x, y: y, z: z }), [x, y, C.ENEMY_Z]);
-
-  // No wall: a glow that would have just missed still finds you...
-  await quiet(page);
-  await D(page, () => window.__descentDebug.setShield(50));
-  await spawnGlow(55, -35);
-  await page.waitForTimeout(GLOW_MS);
-  s = await state(page);
-  check('no wall: a glow that would just miss leans in and is caught', s.pickups === 1 && s.shield === 50 + C.GLOW_HEAL, s);
-
-  // ...but one well off to the side does not come and find you.
-  await quiet(page);
-  await spawnGlow(150, -130);
-  await page.waitForTimeout(GLOW_MS);
-  check('no wall: a glow well off to the side is still missed - it only leans', (await state(page)).pickups === 0);
-
-  // A wall arriving first: the glow makes for its gap, so flying the gap
-  // is catching the glow. The ship sits in the gap; the glow starts far
-  // from it, right where a straight-in glow would have met the wall.
-  await quiet(page);
-  await D(page, () => {
-    const d = window.__descentDebug;
-    d.setShield(50);
-    d.setShip(100, -40);
-    d.spawn('wall', { gx: 100, gy: -40, z: 3.4 });
-  });
-  await spawnGlow(-60, 60);
-  await page.waitForTimeout(300);
-  const g1 = await glowNow();
-  check('with a wall coming first, the glow heads for its gap', g1 && g1.towardGap === true && g1.x > 10, g1);
-  await page.waitForTimeout(GLOW_MS);
-  s = await state(page);
-  check('...so flying the gap catches it, and the wall takes nothing',
-    s.pickups === 1 && s.hits === 0 && s.shield === 50 + C.GLOW_HEAL, s);
-
-  // A wall that will arrive AFTER the glow is not its business.
-  await quiet(page);
-  await D(page, () => window.__descentDebug.spawn('wall', { gx: 100, gy: -40, z: 13 }));
-  await spawnGlow(0, 0);
-  await page.waitForTimeout(300);
-  const g2 = await glowNow();
-  check('a wall arriving after the glow does not pull it', g2 && g2.towardGap === false && Math.abs(g2.x) < 5, g2);
-
   // ---- Towers: shot where you hit them --------------------------------
   // On the settled surface, a tower straight ahead with its tip at -60.
   const towerAt = async (shipY, extra) => {
