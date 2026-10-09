@@ -571,6 +571,22 @@ harness.run(async (page, check, ctx) => {
   check('a glow still counts during the grace after a hit',
     s.pickups === 1 && s.shield === 50 - C.DAMAGE.rock + C.GLOW_HEAL, s);
 
+  // ---- Catch slop: near the glow is enough ---------------------------
+  // The glow comes straight in (it does not steer); what changed is how
+  // close counts. Offsets are measured from the edge of the old reach.
+  const oldReach = C.GLOW_RADIUS + C.SHIP_HIT_RADIUS;
+  const glowPast = async (offset) => {
+    await quiet(page);
+    await D(page, () => window.__descentDebug.setShield(50));
+    await D(page, ([x, z]) => window.__descentDebug.spawn('glow', { x: x, y: 0, z: z }), [offset, C.ENEMY_Z]);
+    await page.waitForTimeout(GLOW_MS);
+    return state(page);
+  };
+  s = await glowPast(oldReach + C.GLOW_CATCH_SLOP * 0.7);
+  check('a glow that passes beside you, not through you, is still caught', s.pickups === 1 && s.shield === 50 + C.GLOW_HEAL, s);
+  s = await glowPast(oldReach + C.GLOW_CATCH_SLOP + 15);
+  check('...but the slop has an edge: one further off is missed', s.pickups === 0 && s.shield === 50, s);
+
   // ---- Towers: shot where you hit them --------------------------------
   // On the settled surface, a tower straight ahead with its tip at -60.
   const towerAt = async (shipY, extra) => {

@@ -339,6 +339,11 @@
   // you - stay put and it is yours, swerve and it is gone.
   var GLOW_HEAL = 20;
   var GLOW_RADIUS = 26;        // generous: a glow is a reward, not a test
+  // Catch slop: on top of that, a glow is caught if it passes within
+  // this much more of the ship - you need to go near it, not through
+  // it. The glow is drawn no bigger; a catch from out here is shown as
+  // the ship pulling it in.
+  var GLOW_CATCH_SLOP = 28;
   // It does not ride in with the world - at full pace it would be on
   // you a third of a second after the kill, before you had seen it. It
   // hangs where the alien was for a beat, then drifts in slowly.
@@ -900,6 +905,7 @@
 
     s.flash = Math.max(0, s.flash - dt * 2.5);
     s.healFlash = Math.max(0, s.healFlash - dt * 2);
+    if (s.catchStreak && (s.catchStreak.age += dt) > 0.25) s.catchStreak = null;
     // The ghost waits a beat at the old level, then drains down to the
     // new one; on a heal it simply follows the bar up.
     if (s.shieldGhost < s.shield) s.shieldGhost = s.shield;
@@ -1090,7 +1096,7 @@
       return Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r * 0.9 + r;
     }
     if (o.kind === 'wall') return this.wallAlignment(o) !== 'clear';
-    if (o.kind === 'glow') return Math.hypot(s.shipX - o.x, s.shipY - o.y) < GLOW_RADIUS + r;
+    if (o.kind === 'glow') return Math.hypot(s.shipX - o.x, s.shipY - o.y) < GLOW_RADIUS + r + GLOW_CATCH_SLOP;
     if (o.kind === 'spire') {
       var ground = groundYAt(s.t);
       if (s.shipY + r < o.top) return false;
@@ -1134,6 +1140,7 @@
     s.pickups++;
     s.shield = Math.min(SHIELD_MAX, s.shield + GLOW_HEAL);
     s.healFlash = 1;
+    s.catchStreak = { x: o.x, y: o.y, age: 0 };
     Sound.heal();
   };
 
@@ -1892,6 +1899,16 @@
 
   MainScene.prototype.drawFx = function () {
     var s = this.state, g = this.gFx;
+    // A glow caught from a little way off: a green streak from where it
+    // was into the ship, so a catch that did not touch reads as a pull.
+    if (s.catchStreak) {
+      var cs = s.catchStreak, ca = 1 - cs.age / 0.25;
+      var shx = this.sx(s.shipX, Z_SHIP), shy = this.sy(s.shipY, Z_SHIP);
+      g.lineStyle(3, COLOR_GLOW, ca);
+      g.lineBetween(this.sx(cs.x, Z_SHIP), this.sy(cs.y, Z_SHIP), shx, shy);
+      g.lineStyle(2, COLOR_GLOW, ca);
+      g.strokeCircle(shx, shy, 14 + 14 * (1 - ca));
+    }
     var w = whiteoutAt(s.t);
     if (w > 0) { g.fillStyle(COLOR_CLOUD, w * 0.95); g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); }
     if (s.flash > 0) {
@@ -1961,6 +1978,7 @@
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED,
         GLOW_HANG: GLOW_HANG, GLOW_SPEED: GLOW_SPEED,
+        GLOW_RADIUS: GLOW_RADIUS, GLOW_CATCH_SLOP: GLOW_CATCH_SLOP,
         SPIRE_BLAST: SPIRE_BLAST, SPIRE_MIN_STUMP: SPIRE_MIN_STUMP, CHUNK_LIFE: CHUNK_LIFE };
     },
     skipTo: function (t) { scene.state.t = t; },
@@ -1986,6 +2004,7 @@
     setShip: function (x, y) { var s = scene.state; s.shipX = x; s.shipY = y; s.vx = s.vy = 0; },
     spawn: function (kind, opts) {
       if (kind === 'enemy') { scene.spawnEnemy(opts); return true; }
+      if (kind === 'glow') { scene.addObstacle(Object.assign({ kind: 'glow', x: 0, y: 0, z: ENEMY_Z }, opts || {})); return true; }
       if (kind === 'shot') {
         var sh = Object.assign({ kind: 'shot', x0: 0, y0: 0, z0: ENEMY_Z, tx: scene.state.shipX, ty: scene.state.shipY }, opts || {});
         sh.z = sh.z == null ? sh.z0 : sh.z; sh.prevZ = sh.z; sh.x = sh.x0; sh.y = sh.y0;
