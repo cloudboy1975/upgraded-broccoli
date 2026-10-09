@@ -198,9 +198,10 @@ It isn't connected to the boss fight yet. The plan is to hand off from
 - **Green glows.** A downed alien leaves a green glow where it was.
   It hangs there a moment, then drifts toward you, and flying into it
   restores 20%, up to full. You're usually lined up with the alien
-  when you shoot it down, so staying put collects it. Swerve and it's
-  gone. It also has **catch slop**: you only need to pass near it, not
-  through it. It counts from about 48px further out than it's drawn.
+  when you shoot it down, so staying put collects it. Swerve
+  well away and it's gone. It also has **catch slop**: you only need
+  to be in its general vicinity, not on it. It counts from about 85px
+  further out than it's drawn, roughly a quarter of the flying area.
   A catch from out there shows as a quick green streak into the ship.
 - Tests: `tests/test-descent.js`.
 

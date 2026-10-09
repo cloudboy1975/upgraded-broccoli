@@ -548,10 +548,12 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__descentDebug.setShield(50));
   await sitter(0, 0, { hp: 1 });
   await hold(page, 'Space', 60);
-  await hold(page, 'ArrowRight', 500);
+  // A real swerve - right across to the edge, not a nudge: with catch
+  // slop, being anywhere near it still counts.
+  await hold(page, 'ArrowRight', 1000);
   await page.waitForTimeout(GLOW_MS);
   s = await state(page);
-  check('swerve away and the glow is lost', s.pickups === 0 && s.shield === 50, s);
+  check('swerve well away and the glow is lost', s.pickups === 0 && s.shield === 50, s);
 
   await quiet(page);
   await sitter(0, 0, { hp: 1 });
