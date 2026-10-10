@@ -774,6 +774,27 @@ harness.run(async (page, check, ctx) => {
   check('Fly again starts a fresh run',
     s.mode === 'flying' && s.shield === C.SHIELD_MAX && s.t < 1 && !s.overlay, s);
 
+  // ---- Sunset: the surface runs from afternoon to night ---------------
+  const skyAt = (t) => D(page, (t) => window.__descentDebug.sky(t), t);
+  const sunStart = C.SURFACE_START + C.SUNSET_DELAY;
+  const day = await skyAt(sunStart - 0.5), dusk = await skyAt(sunStart + C.SUNSET_TIME / 2),
+        night = await skyAt(sunStart + C.SUNSET_TIME), later = await skyAt(sunStart + C.SUNSET_TIME * 3),
+        clouds = await skyAt(C.CLOUDS_START + 5);
+  check('the sun is up when you land: no stars yet', day.p === 0 && day.stars === 0 && day.sunDrop === 0, day);
+  check('mid-sunset the sun is part way down and the sky has changed',
+    dusk.p > 0.4 && dusk.p < 0.6 && dusk.sunDrop > 0.3 && dusk.sunDrop < 1 && dusk.top !== day.top, dusk);
+  check('by night the sun is gone and the stars are out', night.p === 1 && night.sunDrop === 1 && night.stars === 1, night);
+  check('...and it stays night', later.p === 1 && later.top === night.top, later);
+  check('the sunset is the surface\'s alone: nothing changes in the clouds', clouds.p === 0, clouds);
+  check('night is darker than afternoon', (night.top & 0xff) + ((night.top >> 8) & 0xff) + (night.top >> 16) <
+    (day.top & 0xff) + ((day.top >> 8) & 0xff) + (day.top >> 16), { day: day.top, night: night.top });
+
+  // Real time moves it, not just the clock hook.
+  await quiet(page);
+  await D(page, (t) => window.__descentDebug.skipTo(t), sunStart);
+  await page.waitForTimeout(1500);
+  check('flying on brings the dusk', (await D(page, () => window.__descentDebug.sky())).p > 0);
+
   // ---- Settings lab ----------------------------------------------------
   const lab = (fn, arg) => D(page, fn, arg);
   const labOpen = () => lab(() => window.__descentDebug.lab.isOpen());
@@ -852,6 +873,11 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(150);
   s = await state(page);
   check('the Surface button starts a run at the surface, lab closed', s.phase === 'surface' && (await labOpen()) === false, s.phase);
+
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await page.click('[data-jump="night"]');
+  await page.waitForTimeout(150);
+  check('the Night button starts a run at nightfall', (await D(page, () => window.__descentDebug.sky())).p === 1);
 
   await lab(() => window.__descentDebug.lab.setOpen(true));
   await page.check('#labNoDamage');

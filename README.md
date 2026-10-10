@@ -195,6 +195,14 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   it fits in the gap, you fit), then a white-out as you break through the cloud base
   onto the *surface*. There the ground rises toward you, rock spires
   stand up out of it, and the pace keeps increasing until you crash.
+  The sun sets while you're down there. A flat banded disc, sliced
+  across its lower half, sinks behind the horizon off to the right
+  while the sky runs from red afternoon through a burning dusk to
+  night. The stars come out, the ground darkens, and the grid lines
+  pick up a faint violet glow. After that it stays night. The sun
+  starts 3s after you land and takes 45s to reach full night; both
+  are in the settings lab, which also has **Dusk** and **Night** jump
+  buttons.
   For now there's no landing.
 - **A shield bar, not lives.** Different hits cost different amounts:
   rocks, spires and alien fire take 20%, and scraping a wall takes 10%.

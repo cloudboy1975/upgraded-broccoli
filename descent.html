@@ -335,6 +335,10 @@
           <button type="button" class="lab-btn wide" data-jump="clouds">Clouds</button>
           <button type="button" class="lab-btn wide" data-jump="surface">Surface</button>
         </div>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide" data-jump="dusk">Dusk</button>
+          <button type="button" class="lab-btn wide" data-jump="night">Night</button>
+        </div>
         <div class="lab-row" style="margin-top:8px">
           <label for="labNoDamage">No damage</label>
           <input type="checkbox" id="labNoDamage">
@@ -461,6 +465,15 @@
   var GROUND_START_Y = 2600;   // world y of the ground as you clear the clouds
   var GROUND_Y = 175;          // ...and where it settles: close enough that it, not Y_BOTTOM, is the floor
 
+  // ---- Sunset ---------------------------------------------------------
+  // On the surface the sun goes down. It starts a little above the
+  // horizon, off to the right, and sinks below it while the sky runs
+  // from the red afternoon you land in, through dusk, to night - and the
+  // stars come out. Then it stays night. A flat banded disc, the sun of
+  // a thousand album covers: the same flat look as everything else.
+  var SUNSET_DELAY = 3;        // seconds on the surface before it starts to go down
+  var SUNSET_TIME = 45;        // seconds from the start of the sunset to full night
+
   // Spawning. Intervals are in seconds at SPEED_START and shrink as the
   // pace rises, so the spacing in DEPTH stays about the same while the
   // time you have to react to each thing goes down.
@@ -530,6 +543,17 @@
   var ALIGN_CLOSE_MARGIN = 2;  // ship hit-radii outside the clear zone that still count as "close"
   var COLOR_SPIRE = 0x2a0a0a;
   var COLOR_SPIRE_EDGE = 0x991b1b;
+  // The sky through the sunset: afternoon (as it was), dusk, night.
+  var SKY_KEYS = [
+    { top: 0x2a1030, horizon: 0xb4533a, ground: 0x450a0a, band: 0x7f1d1d, line: 0x2a0505, lineA: 0.8 },
+    { top: 0x1e1b4b, horizon: 0xe2603a, ground: 0x2f0a14, band: 0x561626, line: 0x1a0410, lineA: 0.8 },
+    { top: 0x03041a, horizon: 0x24164a, ground: 0x0d0714, band: 0x1a0d26, line: 0x5b3a9e, lineA: 0.55 }
+  ];
+  var COLOR_SUN_TOP = 0xfde68a;
+  var COLOR_SUN_MID = 0xfb923c;
+  var COLOR_SUN_LOW = 0xdb2777;
+  var SUN_RADIUS = 46;         // px on screen: it is at infinity, so it never grows
+  var SUN_OFFSET_X = 70;       // px right of the vanishing point
   var COLOR_HIT = 0xef4444;
   var COLOR_BULLET = 0x22c55e;         // head-on.html's bullets
   var COLOR_SIGHT = 0xbbf7d0;
@@ -595,7 +619,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -610,7 +634,8 @@
       ENEMY_FIRST: ENEMY_FIRST, ENEMY_GAP_MIN: ENEMY_GAP_MIN, ENEMY_GAP_MAX: ENEMY_GAP_MAX,
       ENEMY_PAIR_CHANCE: ENEMY_PAIR_CHANCE, ENEMY_FIRE_INTERVAL: ENEMY_FIRE_INTERVAL, ENEMY_CHARGE: ENEMY_CHARGE,
       ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED, ENEMY_WEAVE_X: ENEMY_WEAVE_X, ENEMY_WEAVE_Y: ENEMY_WEAVE_Y,
-      FIRE_INTERVAL: FIRE_INTERVAL, BULLET_RADIUS: BULLET_RADIUS
+      FIRE_INTERVAL: FIRE_INTERVAL, BULLET_RADIUS: BULLET_RADIUS,
+      SUNSET_DELAY: SUNSET_DELAY, SUNSET_TIME: SUNSET_TIME
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -681,6 +706,25 @@
     if (t < SURFACE_START) return lerp(18, 2.2, (t - CLOUDS_START) / CLOUD_TIME);
     return lerp(2.2, 0.15, smooth((t - SURFACE_START) / GROUND_SETTLE_TIME));
   }
+  // 0 before the sun starts down, 1 at full night.
+  function sunsetAt(t) {
+    return clamp((t - SURFACE_START - TUNING.SUNSET_DELAY) / Math.max(0.01, TUNING.SUNSET_TIME), 0, 1);
+  }
+  // Everything the sky and ground look like at sunset progress p.
+  function skyAt(p) {
+    var a = p < 0.5 ? SKY_KEYS[0] : SKY_KEYS[1], b = p < 0.5 ? SKY_KEYS[1] : SKY_KEYS[2];
+    var f = smooth(p < 0.5 ? p * 2 : (p - 0.5) * 2);
+    return {
+      p: p,
+      top: mixColor(a.top, b.top, f), horizon: mixColor(a.horizon, b.horizon, f),
+      ground: mixColor(a.ground, b.ground, f), band: mixColor(a.band, b.band, f),
+      line: mixColor(a.line, b.line, f), lineA: lerp(a.lineA, b.lineA, f),
+      stars: smooth((p - 0.45) / 0.45),           // out from late dusk, all there by night
+      sunDrop: smooth(p / 0.8),                   // 0 = up, 1 = fully set; gone before full dark
+      glow: Math.sin(Math.PI * clamp(p / 0.85, 0, 1)) // the horizon burns brightest mid-sunset
+    };
+  }
+
   // 0..1..0 across the cloud base: the white-out you punch through.
   function whiteoutAt(t) {
     var d = Math.abs(t - SURFACE_START);
@@ -1028,6 +1072,12 @@
       spawning: this.state ? this.state.spawning : true
     };
     for (var i = 0; i < 90; i++) this.state.streaks.push(this.newStreak(rand(Z_NEAR, Z_SPAWN)));
+    // The night sky: fixed points at infinity, placed as a fraction of the
+    // way from the horizon up, and a twinkle phase each.
+    this.state.stars = [];
+    for (var j = 0; j < 80; j++) {
+      this.state.stars.push({ x: rand(-30, GAME_WIDTH + 30), h: Math.pow(Math.random(), 0.7), size: Math.random() < 0.15 ? 2 : 1, tw: rand(0, Math.PI * 2) });
+    }
     document.getElementById('crashOverlay').classList.remove('visible');
   };
 
@@ -1735,26 +1785,82 @@
     var G = groundYAt(s.t);
     var zFar = 60;
     var horizon = this.sy(G, zFar);
-    bandedFill(g, -20, horizon, COLOR_SKY_TOP, COLOR_SKY_HORIZON, 8);
-    g.fillStyle(COLOR_GROUND, 1);
+    var sky = skyAt(sunsetAt(s.t));
+    bandedFill(g, -20, horizon, sky.top, mixColor(sky.horizon, 0xffb86b, 0.25 * sky.glow), 10);
+    this.drawStars(g, horizon, sky);
+    this.drawSun(g, horizon, sky);
+    g.fillStyle(sky.ground, 1);
     g.fillRect(-20, horizon, GAME_WIDTH + 40, GAME_HEIGHT - horizon + 20);
 
     // Bands at fixed world depths, scrolled by distance flown.
     var spacing = 1.2;
     var offset = (s.distance / METRES_PER_Z) % (spacing * 2);
-    g.fillStyle(COLOR_GROUND_BAND, 1);
+    g.fillStyle(sky.band, 1);
     for (var z = spacing * 2 - offset; z < zFar; z += spacing * 2) {
       var z0 = Math.max(z, Z_NEAR * 0.5), z1 = z + spacing;
       var y0 = this.sy(G, z0), y1 = this.sy(G, z1);
       if (y1 > GAME_HEIGHT + 20) continue;
       g.fillRect(-20, y1, GAME_WIDTH + 40, Math.min(y0, GAME_HEIGHT + 20) - y1);
     }
-    g.lineStyle(1, COLOR_GROUND_LINE, 0.8);
+    g.lineStyle(1, sky.line, sky.lineA);
     for (var k = -8; k <= 8; k++) {
       var x = k * 80;
       g.lineBetween(this.sx(x, 0.3), this.sy(G, 0.3), this.sx(x, zFar), this.sy(G, zFar));
     }
   };
+
+  // Stars: in the sky only, fading in through dusk, twinkling a little.
+  // At infinity, so they barely move when you steer.
+  MainScene.prototype.drawStars = function (g, horizon, sky) {
+    if (sky.stars <= 0) return;
+    var st = this.state.stars, t = this.state.t;
+    var dx = -this.camX() * 0.02, top = -10;
+    for (var i = 0; i < st.length; i++) {
+      var y = horizon - 6 - st[i].h * (horizon - 6 - top);
+      // Thinner near the horizon, where the last of the light still is.
+      var a = sky.stars * (0.35 + 0.65 * st[i].h) * (0.75 + 0.25 * Math.sin(t * 2.3 + st[i].tw));
+      g.fillStyle(0xf8fafc, a);
+      g.fillRect(st[i].x + dx, y, st[i].size, st[i].size);
+    }
+  };
+
+  // The sun: a flat disc in horizontal bands, yellow at the top to pink at
+  // the bottom, with the lower half sliced by gaps that widen toward the
+  // horizon. It sinks behind the ground, which is drawn over it.
+  MainScene.prototype.drawSun = function (g, horizon, sky) {
+    if (sky.sunDrop >= 1) return;
+    var r = SUN_RADIUS;
+    var cx = CX + SUN_OFFSET_X - this.camX() * 0.03;
+    var cy = lerp(horizon - r * 1.25, horizon + r * 1.05, sky.sunDrop);
+    // Halo, strongest while it touches the horizon.
+    g.fillStyle(COLOR_SUN_MID, 0.10 + 0.12 * sky.glow);
+    g.fillCircle(cx, cy, r * 1.7);
+    g.fillStyle(COLOR_SUN_MID, 0.10 + 0.10 * sky.glow);
+    g.fillCircle(cx, cy, r * 1.3);
+    // One-pixel rows, so the edge is a curve and not a staircase. The
+    // slices are bands across the lower half, thicker toward the bottom.
+    var top = Math.floor(cy - r), bottom = Math.min(Math.ceil(cy + r), Math.floor(horizon));
+    for (var y = top; y < bottom; y++) {
+      var dy = y + 0.5 - cy;
+      var half = Math.sqrt(Math.max(0, r * r - dy * dy));
+      if (half <= 0) continue;
+      var f = (y + 0.5 - (cy - r)) / (2 * r);
+      if (inSunSlice(f)) continue;
+      var col = f < 0.5 ? mixColor(COLOR_SUN_TOP, COLOR_SUN_MID, f * 2) : mixColor(COLOR_SUN_MID, COLOR_SUN_LOW, (f - 0.5) * 2);
+      g.fillStyle(col, 1);
+      g.fillRect(cx - half, y, half * 2, 1);
+    }
+  };
+
+  // The gaps across the sun's lower half: [centre, thickness] as
+  // fractions of its height.
+  var SUN_SLICES = [[0.58, 0.012], [0.67, 0.02], [0.755, 0.03], [0.835, 0.04], [0.91, 0.05]];
+  function inSunSlice(f) {
+    for (var i = 0; i < SUN_SLICES.length; i++) {
+      if (Math.abs(f - SUN_SLICES[i][0]) < SUN_SLICES[i][1] / 2 + 0.003) return true;
+    }
+    return false;
+  }
 
   MainScene.prototype.drawStreaks = function () {
     var s = this.state, g = this.gBack;
@@ -1767,7 +1873,7 @@
     } else if (phase === 'clouds') {
       color = 0xf1d6cf; alpha = 0.25;
     } else {
-      color = 0xfca5a5; alpha = 0.2;
+      color = mixColor(0xfca5a5, 0xc7d2fe, sunsetAt(s.t)); alpha = 0.2;
     }
     var stretch = 0.25 + 0.1 * speedAt(s.t);
     for (var i = 0; i < s.streaks.length; i++) {
@@ -2237,6 +2343,10 @@
       ['ENEMY_WEAVE_X', 'Weave side-to-side', 0, 140, 5, ' px'],
       ['ENEMY_WEAVE_Y', 'Weave up-and-down', 0, 100, 5, ' px']
     ] },
+    { title: 'Sunset', rows: [
+      ['SUNSET_DELAY', 'Starts after landing', 0, 30, 0.5, ' s'],
+      ['SUNSET_TIME', 'Sunset to night', 5, 180, 1, ' s']
+    ] },
     { title: 'Guns', rows: [
       ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
       ['BULLET_RADIUS', 'Shot reach', 2, 30, 1, ' px']
@@ -2338,7 +2448,11 @@
       if (!scene) return;
       scene.restart();
       var where = btn.getAttribute('data-jump');
-      scene.state.t = where === 'clouds' ? CLOUDS_START : where === 'surface' ? SURFACE_START : 0;
+      scene.state.t = where === 'clouds' ? CLOUDS_START
+        : where === 'surface' ? SURFACE_START
+        : where === 'dusk' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME * 0.5
+        : where === 'night' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME
+        : 0;
       scene.state.invincible = document.getElementById('labNoDamage').checked;
       setLabOpen(false);
     });
@@ -2393,9 +2507,11 @@
         WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,
         GLOW_HANG: TUNING.GLOW_HANG, GLOW_SPEED: TUNING.GLOW_SPEED,
         GLOW_RADIUS: GLOW_RADIUS, GLOW_CATCH_SLOP: TUNING.GLOW_CATCH_SLOP,
+        SUNSET_DELAY: TUNING.SUNSET_DELAY, SUNSET_TIME: TUNING.SUNSET_TIME,
         SPIRE_BLAST: TUNING.SPIRE_BLAST, SPIRE_MIN_STUMP: SPIRE_MIN_STUMP, CHUNK_LIFE: CHUNK_LIFE };
     },
     skipTo: function (t) { scene.state.t = t; },
+    sky: function (t) { return skyAt(sunsetAt(t == null ? scene.state.t : t)); },
     // The marker on the next wall, with that wall's gap in screen space.
     nextWallMarker: function () {
       var o = scene.findNextWall();
