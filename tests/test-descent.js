@@ -795,6 +795,137 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(1500);
   check('flying on brings the dusk', (await D(page, () => window.__descentDebug.sky())).p > 0);
 
+  // ---- Nightfall and the guardian ---------------------------------------
+  const boss = () => D(page, () => window.__descentDebug.boss());
+  const nightT = C.SURFACE_START + C.SUNSET_DELAY + C.SUNSET_TIME;
+
+  // The obstacles fall away at nightfall: real spawner, real clock.
+  await quiet(page);
+  await D(page, (t) => {
+    const d = window.__descentDebug;
+    d.setInvincible(true);
+    d.skipTo(t);
+    d.spawnWave(2);
+    d.setSpawning(true);
+  }, nightT - 0.2);
+  await page.waitForTimeout(600);
+  let bs = await boss();
+  check('at nightfall the calm begins', bs.stage === 'calm', bs);
+  check('...and any aliens about give up and leave', (await state(page)).enemies.every(e => e.mode === 'leaving'));
+  await page.waitForTimeout(1500);
+  s = await state(page);
+  check('nothing new comes in the calm', !s.obstacles.some(o => o.kind !== 'cloud' && o.kind !== 'glow' && o.z > C.Z_SPAWN - 1.5), s.obstacles);
+
+  // Then it comes, in pieces, and assembles.
+  await D(page, () => window.__descentDebug.startBoss(0));
+  await page.waitForTimeout(200);
+  bs = await boss();
+  check('the guardian arrives: a square and four triangles', bs.stage === 'boss' && bs.pieces.length === 5 &&
+    bs.pieces.filter(p => p.kind === 'square').length === 1 && bs.pieces.filter(p => p.kind === 'tri').length === 4, bs.pieces);
+  check('...each a different colour', new Set(bs.pieces.map(p => p.color)).size === 5);
+  check('...flying in rather than appearing whole', bs.mode === 'assembling' && bs.pieces.some(p => !p.docked), bs);
+  await page.waitForTimeout((C.BOSS_ARRIVE_STAGGER * 4 + C.BOSS_DOCK_TIME + 0.4) * 1000);
+  bs = await boss();
+  check('...and docks into a star', bs.mode === 'fight' && bs.form === 'star' && bs.pieces.every(p => p.docked), bs);
+
+  // It moves: side to side, nearer and further, turning - never close enough to ram.
+  // Sampled in fast-forward, so a whole nearer-and-further cycle (about
+  // 14s for the Star) goes by - the closest point is what matters.
+  const zs = [], xs = [], rots = [];
+  await D(page, () => { window.__descentDebug.timeScale = 4; });
+  for (let i = 0; i < 40; i++) {
+    const b = await boss();
+    zs.push(b.z); xs.push(b.x); rots.push(b.rot);
+    await page.waitForTimeout(100);
+  }
+  await D(page, () => { window.__descentDebug.timeScale = 1; });
+  check('it drifts nearer and further', Math.max(...zs) - Math.min(...zs) > 0.15, { min: Math.min(...zs), max: Math.max(...zs) });
+  check('...side to side', Math.max(...xs) - Math.min(...xs) > 15);
+  check('...and turns', Math.abs(rots[rots.length - 1] - rots[0]) > 0.3);
+  check('...but never comes close enough to ram you', Math.min(...zs) >= C.BOSS_Z_MIN - 0.01, Math.min(...zs));
+
+  // It fires, and says so first.
+  await D(page, () => window.__descentDebug.setBossVolley(0.7));
+  let sawBossCharge = false, shotsBefore = (await boss()).shots, firedAt = null;
+  for (let i = 0; i < 40; i++) {
+    const b = await boss();
+    if (b.charge > 0) sawBossCharge = true;
+    if (b.shots > shotsBefore) { firedAt = i; break; }
+    await page.waitForTimeout(30);
+  }
+  check('it fires at you', firedAt !== null);
+  check('...every volley glows first', sawBossCharge);
+  const hitsBefore = (await state(page)).hits;
+  await page.waitForTimeout((C.BOSS_SHOT_TIME + 0.4) * 1000);
+  check('...the Star\'s volley converges on you: hold still and it lands', (await state(page)).hits > hitsBefore);
+
+  // Your guns hurt it.
+  bs = await boss();
+  const totalHp = (b) => b.pieces.reduce((n, p) => n + (p.alive ? p.hp : 0), 0);
+  const before = totalHp(bs);
+  for (let i = 0; i < 6; i++) {
+    const b = await boss();
+    await D(page, ([x, y]) => window.__descentDebug.setShip(x, y), [b.x, Math.min(b.y, 100)]);
+    await hold(page, 'Space', 120);
+  }
+  await page.waitForTimeout(300);
+  check('shots on it wear it down', totalHp(await boss()) < before, { before, now: totalHp(await boss()) });
+
+  // Losing pieces: each time, the rest regroup into a new form.
+  await D(page, () => window.__descentDebug.hitBoss('top', 99));
+  bs = await boss();
+  s = await state(page);
+  check('a piece shot to nothing is gone, and leaves a glow',
+    !bs.pieces.find(p => p.id === 'top').alive && s.obstacles.some(o => o.kind === 'glow'), bs.pieces);
+  check('...the rest regroup', bs.mode === 'reforming' && bs.form === 'triad' && bs.banner === 'TRIAD', bs);
+  await page.waitForTimeout((C.BOSS_REFORM_TIME + 0.3) * 1000);
+  check('...and fight on in the new form', (await boss()).mode === 'fight');
+
+  await D(page, () => window.__descentDebug.hitBoss('left', 99));
+  await page.waitForTimeout((C.BOSS_REFORM_TIME + 0.3) * 1000);
+  bs = await boss();
+  check('two triangles left make a bird', bs.form === 'bird', bs.form);
+  const wingTips = [];
+  for (let i = 0; i < 8; i++) {
+    const b = await boss();
+    wingTips.push(b.pieces.filter(p => p.alive && p.kind === 'tri').map(p => p.tipY - b.y));
+    await page.waitForTimeout(50);
+  }
+  const wing0 = wingTips.map(w => w[0]);
+  check('...whose wings flap', Math.max(...wing0) - Math.min(...wing0) > 10, wing0);
+
+  await D(page, () => window.__descentDebug.hitBoss('core', 99));
+  check('the bird flies on without its body', (await boss()).form === 'bird');
+  await D(page, () => window.__descentDebug.hitBoss('right', 99));
+  check('one triangle left is a dart', (await boss()).form === 'dart');
+
+  await D(page, () => window.__descentDebug.hitBoss('bottom', 99));
+  bs = await boss();
+  s = await state(page);
+  check('the last piece down: guardian down', bs.stage === 'won' && s.mode === 'won' && bs.mode === null, bs);
+  check('...and its shots in flight die with it', s.enemyShots === 0, s.enemyShots);
+  await page.waitForTimeout(3000);
+  check('...then the victory screen', (await state(page)).overlay === true &&
+    /guardian down/i.test(await page.textContent('#overlayTitle')));
+  await page.click('#againBtn');
+  await page.waitForTimeout(150);
+  bs = await boss();
+  s = await state(page);
+  check('Fly again starts a fresh run, no guardian', s.mode === 'flying' && bs.stage === null && s.t < 1, { s, bs });
+
+  // Other forms: losing the core first makes a pinwheel; the core alone is a cube.
+  await quiet(page);
+  await D(page, (t) => { const d = window.__descentDebug; d.setInvincible(true); d.skipTo(t); d.startBoss(0); }, nightT);
+  await page.waitForTimeout((C.BOSS_ARRIVE_STAGGER * 4 + C.BOSS_DOCK_TIME + 0.4) * 1000);
+  await D(page, () => window.__descentDebug.hitBoss('core', 99));
+  check('four triangles without the core: a pinwheel', (await boss()).form === 'pinwheel');
+  await quiet(page);
+  await D(page, (t) => { const d = window.__descentDebug; d.setInvincible(true); d.skipTo(t); d.startBoss(0); }, nightT);
+  await page.waitForTimeout((C.BOSS_ARRIVE_STAGGER * 4 + C.BOSS_DOCK_TIME + 0.4) * 1000);
+  await D(page, () => ['top', 'right', 'bottom', 'left'].forEach(id => window.__descentDebug.hitBoss(id, 99)));
+  check('the core on its own: a cube', (await boss()).form === 'cube');
+  await D(page, () => window.__descentDebug.restart());
+
   // ---- Settings lab ----------------------------------------------------
   const lab = (fn, arg) => D(page, fn, arg);
   const labOpen = () => lab(() => window.__descentDebug.lab.isOpen());
@@ -873,6 +1004,11 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(150);
   s = await state(page);
   check('the Surface button starts a run at the surface, lab closed', s.phase === 'surface' && (await labOpen()) === false, s.phase);
+
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await page.click('[data-jump="boss"]');
+  await page.waitForTimeout(800);
+  check('the Boss button goes straight to the guardian', (await D(page, () => window.__descentDebug.boss())).stage === 'boss');
 
   await lab(() => window.__descentDebug.lab.setOpen(true));
   await page.click('[data-jump="night"]');

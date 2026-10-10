@@ -219,6 +219,34 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   to be in its general vicinity, not on it. It counts from about 85px
   further out than it's drawn, roughly a quarter of the flying area.
   A catch from out there shows as a quick green streak into the ship.
+- **Nightfall and the guardian.** Once it's fully dark nothing new
+  comes. The last rocks and towers fly past, any aliens leave, and for
+  a few seconds it's just you and the stars. Then the guardian arrives
+  in pieces: a violet square core first, then four triangles (red,
+  yellow, cyan, pink), each flying in from its own side and docking on
+  a face of the square to form a star. It stays in front of you,
+  drifting nearer and further, side to side, and turning, but it never
+  comes close enough to ram you. Every volley is announced: the firing
+  tips glow first, and its shots come in the colour of the piece that
+  fired them. A row of coloured bars under the shield shows each
+  piece's health. Shoot a piece to nothing and it shatters into flat
+  shards of its own colour, leaves a green glow, and the survivors
+  regroup into a new form with its own movement and attack. A title
+  card names each form:
+
+  | What's left | Form | How it fights |
+  |---|---|---|
+  | core + 4 triangles | **The Star** | Slow spin. All four tips fire at you at once: move. |
+  | 4 triangles, no core | **Pinwheel** | Spins fast. Its tips fire one after another. |
+  | 3 triangles | **Triad** | Strafes wide. Fires a fan: one at you, one either side. |
+  | 2 triangles (with or without the core) | **The Bird** | The triangles become flapping wings. It swoops in a figure-of-eight and fires a stream of three that tracks you. |
+  | 1 triangle | **Dart** | Fast and jittery. Fires one shot where you are and one where you're heading. |
+  | the core alone | **The Cube** | Spins hard. Alternates a ring of six shots around you (holding still is safe) with a pair straight at you. |
+
+  When the last piece goes it's **Guardian down**, followed by the
+  victory screen. The calm, the hits each piece takes, its shot speed,
+  how often it fires and its size are all in the settings lab, and the
+  **Boss** jump button takes you straight to it.
 - **Settings lab.** Press backquote (`` ` ``), or triple-tap the
   "Descent" tag at the top right on a phone. It has the same look as
   Head-On's sortie lab: a slider for each of the 49 settings, grouped

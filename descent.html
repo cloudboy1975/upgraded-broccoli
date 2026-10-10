@@ -305,7 +305,7 @@
 
   <div id="gameRoot">
     <div class="overlay" id="crashOverlay">
-      <div class="overlay-title">Crashed</div>
+      <div class="overlay-title" id="overlayTitle">Crashed</div>
       <div class="overlay-line" id="crashLine"></div>
       <button type="button" class="btn" id="againBtn">Fly again</button>
     </div>
@@ -338,6 +338,7 @@
         <div class="lab-actions">
           <button type="button" class="lab-btn wide" data-jump="dusk">Dusk</button>
           <button type="button" class="lab-btn wide" data-jump="night">Night</button>
+          <button type="button" class="lab-btn wide" data-jump="boss">Boss</button>
         </div>
         <div class="lab-row" style="margin-top:8px">
           <label for="labNoDamage">No damage</label>
@@ -603,6 +604,38 @@
   var COLOR_ENEMY = [0x38bdf8, 0xf472b6]; // head-on.html's swoop and zigzag families
   var COLOR_ENEMY_SHOT = 0xff7a1a;        // head-on.html's enemy fire
   var COLOR_ENEMY_EYE = 0x0f172a;
+
+  // ---- The guardian: night's boss ------------------------------------
+  // Once it is fully dark nothing new comes: the last of the rocks and
+  // towers go by, any aliens leave, and for CALM_TIME it is just you
+  // and the stars. Then the guardian flies in, one piece at a time, and
+  // assembles in front of you: a square core with a triangle on each
+  // face - a star, five flat pieces, five colours. It drifts nearer and
+  // further, side to side, and turns. Every piece can be shot to pieces,
+  // and every time one goes the survivors regroup into a new form with
+  // its own way of moving and its own attack (see BOSS_FORMS).
+  var CALM_TIME = 6;            // seconds of stars between nightfall and the guardian
+  var BOSS_TRI_HP = 8;          // hits per triangle
+  var BOSS_CORE_HP = 14;        // hits for the square
+  var BOSS_SHOT_TIME = 0.95;    // seconds its shots take to reach you, from wherever it is
+  var BOSS_VOLLEY_SCALE = 1;    // x on every form's time between volleys
+  var BOSS_SIZE = 1;            // x on every piece's size
+  var BOSS_SQUARE = 76;         // side of the core, world px at its plane
+  var BOSS_TRI_BASE = 76;
+  var BOSS_TRI_H = 70;
+  var BOSS_Y = -35;             // the height it centres on
+  var BOSS_ARRIVE_STAGGER = 0.5; // seconds between pieces setting off
+  var BOSS_DOCK_TIME = 1.4;     // seconds for a piece to fly in and dock
+  var BOSS_REFORM_TIME = 1.1;   // seconds to regroup after losing a piece
+  var BOSS_CHARGE = 0.55;       // the glow before every volley
+  var BOSS_Z_MIN = 1.8;         // it never comes nearer than this, so it never rams you
+  var BOSS_PIECES = [           // id, kind, colour, the face it docks on (radians, 0 = up)
+    { id: 'core', kind: 'square', color: 0x8b5cf6 },
+    { id: 'top', kind: 'tri', color: 0xef4444, a: 0 },
+    { id: 'right', kind: 'tri', color: 0xfbbf24, a: Math.PI / 2 },
+    { id: 'bottom', kind: 'tri', color: 0x22d3ee, a: Math.PI },
+    { id: 'left', kind: 'tri', color: 0xf472b6, a: -Math.PI / 2 }
+  ];
   var COLOR_GLOW = 0x22c55e;
   var COLOR_SHIELD_MID = 0xfbbf24;
 
@@ -619,7 +652,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -636,7 +669,9 @@
       ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED, ENEMY_WEAVE_X: ENEMY_WEAVE_X, ENEMY_WEAVE_Y: ENEMY_WEAVE_Y,
       FIRE_INTERVAL: FIRE_INTERVAL, BULLET_RADIUS: BULLET_RADIUS,
       SUNSET_DELAY: SUNSET_DELAY, SUNSET_TIME: SUNSET_TIME,
-      SUN_RADIUS: SUN_RADIUS, SUN_OFFSET_X: SUN_OFFSET_X
+      SUN_RADIUS: SUN_RADIUS, SUN_OFFSET_X: SUN_OFFSET_X,
+      CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
+      BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -973,7 +1008,7 @@
     var dir = KEY_DIRS[e.code];
     if (dir) { kb[dir] = true; updateKbVector(); e.preventDefault(); return; }
     if (e.code === 'KeyY' && !e.repeat) { setInvertY(!invertY); return; }
-    if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'crashed') {
+    if ((e.code === 'Space' || e.code === 'Enter') && scene && (scene.state.mode === 'crashed' || scene.state.mode === 'won')) {
       e.preventDefault();
       // A held Space from firing must not also restart the moment the
       // crash screen comes up - only a fresh press does.
@@ -1067,6 +1102,11 @@
       enemies: [],
       enemyShots: [],
       enemiesDowned: 0,
+      bossStage: null,        // null, then 'calm', 'boss', 'won'
+      bossTimer: 0,
+      boss: null,
+      bossShots: 0,
+      banner: null,           // a title across the top: { text, age }
       enemyFired: 0,
       shotsBlocked: 0,
       invincible: this.state ? this.state.invincible : false,
@@ -1104,7 +1144,10 @@
 
   MainScene.prototype.step = function (dt) {
     var s = this.state;
-    var flying = s.mode === 'flying';
+    // 'won': the guardian is down and you fly on under the stars, the
+    // victory screen over the top.
+    var flying = s.mode === 'flying' || s.mode === 'won';
+    if (s.banner) s.banner.age += dt;
 
     if (flying) {
       s.t += dt;
@@ -1115,6 +1158,7 @@
       this.stepObstacles(dt, speed);
       this.stepEnemies(dt);
       this.stepEnemyShots(dt);
+      this.stepBoss(dt);
       this.stepGuns(dt, speed);
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else {
@@ -1185,6 +1229,9 @@
   MainScene.prototype.stepSpawning = function (dt) {
     var s = this.state;
     if (!s.spawning) return;
+    // Nightfall: the obstacles fall away. What is out already flies past.
+    if (!s.bossStage && sunsetAt(s.t) >= 1) this.beginCalm();
+    if (s.bossStage) return;
     var phase = phaseAt(s.t);
     // Nothing spawns in the white-out: you cannot see it coming.
     if (whiteoutAt(s.t + (Z_SPAWN - Z_SHIP) / speedAt(s.t)) > 0.15) return;
@@ -1417,6 +1464,7 @@
       this.best = dist;
       try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
     }
+    document.getElementById('overlayTitle').textContent = 'Crashed';
     var line = document.getElementById('crashLine');
     line.textContent = dist.toLocaleString() + ' m flown · ' + s.enemiesDowned + ' aliens downed · best ' + this.best.toLocaleString() + ' m';
     var self = this;
@@ -1484,6 +1532,10 @@
           else if (o.kind === 'spire') this.blastSpire(o, b.y);
         }
       }
+      if (!spent && s.boss && s.boss.mode === 'fight' && crossed(b, s.boss)) {
+        var hitPiece = this.bossPieceAt(b.x, b.y, TUNING.BULLET_RADIUS * 0.6);
+        if (hitPiece) { spent = true; this.damageBossPiece(hitPiece); }
+      }
       for (var k = 0; k < s.enemies.length && !spent; k++) {
         var e = s.enemies[k];
         if (e.mode === 'leaving' || !crossed(b, e)) continue;
@@ -1540,7 +1592,7 @@
       c.x += c.vx * dt;
       c.y += c.vy * dt;
       c.rot += c.spin * dt;
-      c.z -= speed * dt;
+      if (!c.holdsStation) c.z -= speed * dt;
       if (c.age > CHUNK_LIFE || c.y > G + 60 || c.z < Z_NEAR) s.chunks.splice(i, 1);
     }
   };
@@ -1652,7 +1704,7 @@
     for (var i = s.enemyShots.length - 1; i >= 0; i--) {
       var p = s.enemyShots[i];
       p.prevZ = p.z;
-      p.z -= TUNING.ENEMY_SHOT_SPEED * dt;
+      p.z -= (p.speed || TUNING.ENEMY_SHOT_SPEED) * dt;
       // A straight line from the alien to the point it aimed at.
       var f = (p.z0 - p.z) / (p.z0 - Z_SHIP);
       p.x = lerp(p.x0, p.tx, f);
@@ -1685,9 +1737,409 @@
     Sound.boom();
   };
 
+  // ==================================================================
+  // The guardian
+  // ==================================================================
+  // Its forms, by what is left. Each says how it moves (side-to-side
+  // reach and rate, an optional figure-of-eight, depth range and rate,
+  // spin) and how it attacks (pattern, seconds between volleys).
+  var BOSS_FORMS = {
+    star:     { name: 'THE STAR',  spin: 0.35, reachX: 70,  rateX: 0.45, eight: 0,  zMin: 1.9, zMax: 2.9, rateZ: 0.45, volley: 2.3, pattern: 'converge' },
+    pinwheel: { name: 'PINWHEEL',  spin: 2.4,  reachX: 60,  rateX: 0.6,  eight: 0,  zMin: 2.0, zMax: 2.8, rateZ: 0.6,  volley: 2.4, pattern: 'sequence' },
+    triad:    { name: 'TRIAD',     spin: 0.9,  reachX: 115, rateX: 0.8,  eight: 0,  zMin: 1.9, zMax: 2.8, rateZ: 0.5,  volley: 2.0, pattern: 'fan' },
+    bird:     { name: 'THE BIRD',  spin: 0,    reachX: 115, rateX: 0.9,  eight: 32, zMin: 1.8, zMax: 3.0, rateZ: 0.9,  volley: 2.1, pattern: 'stream' },
+    dart:     { name: 'DART',      spin: 0,    reachX: 125, rateX: 1.5,  eight: 20, zMin: 1.8, zMax: 2.6, rateZ: 1.2,  volley: 1.5, pattern: 'lead' },
+    cube:     { name: 'THE CUBE',  spin: 2.6,  reachX: 70,  rateX: 0.7,  eight: 0,  zMin: 2.0, zMax: 2.8, rateZ: 0.7,  volley: 1.9, pattern: 'ring' }
+  };
+  function bossFormOf(nTri, core) {
+    if (nTri === 4) return core ? 'star' : 'pinwheel';
+    if (nTri === 3) return 'triad';
+    if (nTri === 2) return 'bird';
+    if (nTri === 1) return 'dart';
+    return 'cube';
+  }
+  function wrapAngle(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+
+  MainScene.prototype.beginCalm = function (seconds) {
+    var s = this.state;
+    s.bossStage = 'calm';
+    s.bossTimer = seconds == null ? TUNING.CALM_TIME : seconds;
+    // Any aliens still about give up and go.
+    s.enemies.forEach(function (e) { if (e.mode !== 'leaving') { e.mode = 'leaving'; e.modeAge = 0; } });
+  };
+
+  MainScene.prototype.spawnBoss = function () {
+    var s = this.state;
+    var pieces = BOSS_PIECES.map(function (d, i) {
+      return {
+        id: d.id, kind: d.kind, color: d.color,
+        hp: d.kind === 'square' ? TUNING.BOSS_CORE_HP : TUNING.BOSS_TRI_HP,
+        maxHp: d.kind === 'square' ? TUNING.BOSS_CORE_HP : TUNING.BOSS_TRI_HP,
+        alive: true, flash: 0,
+        a: d.a || 0, slotA: d.a || 0, d: 0, slotD: 0,
+        // Where it flies in from: well out along its own face, far off.
+        fromX: d.kind === 'square' ? 0 : Math.sin(d.a) * 320,
+        fromY: d.kind === 'square' ? -260 : -Math.cos(d.a) * 260,
+        dockAt: i * BOSS_ARRIVE_STAGGER, docked: false
+      };
+    });
+    s.boss = {
+      kind: 'boss', mode: 'assembling', modeAge: 0, t: 0,
+      x: 0, y: BOSS_Y, z: 2.6, prevZ: 2.6, rot: 0,
+      form: 'star', volleyTimer: 1.6, queue: [], ringNext: true,
+      pieces: pieces
+    };
+    this.layoutBoss(true);
+    s.banner = { text: 'THE GUARDIAN', age: 0 };
+  };
+
+  // Slots for whatever is left: triangles spread evenly round the
+  // centre, except a pair, which become wings either side. With the core
+  // gone they close in on the empty middle.
+  MainScene.prototype.layoutBoss = function (initial) {
+    var b = this.state.boss;
+    var tris = b.pieces.filter(function (p) { return p.kind === 'tri' && p.alive; });
+    var core = b.pieces[0].alive;
+    var n = tris.length;
+    var slots = n === 4 ? [0, Math.PI / 2, Math.PI, -Math.PI / 2]
+      : n === 3 ? [0, 2 * Math.PI / 3, -2 * Math.PI / 3]
+      : n === 2 ? [-Math.PI / 2, Math.PI / 2]
+      : n === 1 ? [Math.PI] : [];
+    var d = core ? BOSS_SQUARE / 2 : (n === 1 ? -BOSS_TRI_H / 3 : n === 2 ? 0 : 3);
+    if (!initial && n) {
+      // Hand out the slots in the order the pieces already sit round the
+      // centre, turned whichever way moves them least - so regrouping
+      // looks like regrouping, not a shuffle.
+      tris.sort(function (p, q) { return wrapAngle(p.a) - wrapAngle(q.a); });
+      var sorted = slots.slice().sort(function (x, y) { return x - y; });
+      var best = 0, bestCost = Infinity;
+      for (var off = 0; off < n; off++) {
+        var cost = 0;
+        for (var i = 0; i < n; i++) cost += Math.abs(wrapAngle(sorted[(i + off) % n] - tris[i].a));
+        if (cost < bestCost) { bestCost = cost; best = off; }
+      }
+      tris.forEach(function (p, i) { p.slotA = sorted[(i + best) % n]; });
+    } else {
+      tris.forEach(function (p) { p.slotA = p.a; });
+    }
+    tris.forEach(function (p) { p.slotD = d; if (initial) p.d = d; });
+    b.form = bossFormOf(n, core);
+  };
+
+  // A piece's outline in world space (at the guardian's plane), and the
+  // point it fires from.
+  MainScene.prototype.bossPiecePoly = function (p) {
+    var b = this.state.boss, k = TUNING.BOSS_SIZE;
+    var cx = b.x, cy = b.y;
+    if (b.mode === 'assembling' && !p.docked) {
+      var u = this.dockProgress(p);
+      cx += (1 - u) * p.fromX; cy += (1 - u) * p.fromY;
+    }
+    if (p.kind === 'square') {
+      var h = BOSS_SQUARE / 2 * k, c = Math.cos(b.rot), s = Math.sin(b.rot);
+      var corners = [[-h, -h], [h, -h], [h, h], [-h, h]].map(function (q) {
+        return [cx + q[0] * c - q[1] * s, cy + q[0] * s + q[1] * c];
+      });
+      return { pts: corners, cx: cx, cy: cy, tipX: cx, tipY: cy };
+    }
+    var A = p.a + b.rot;
+    // The bird's wings flap about their hinge: the hinge stays put and
+    // only the wing turns.
+    var flapA = A;
+    if (b.form === 'bird') flapA = A + (p.slotA < 0 ? 1 : -1) * Math.sin(b.t * 7) * 0.55;
+    var dirX = Math.sin(A), dirY = -Math.cos(A);
+    var midX = cx + dirX * p.d * k, midY = cy + dirY * p.d * k;
+    var fx = Math.sin(flapA), fy = -Math.cos(flapA), px = Math.cos(flapA), py = Math.sin(flapA);
+    var hb = BOSS_TRI_BASE / 2 * k, hh = BOSS_TRI_H * k;
+    var apexX = midX + fx * hh, apexY = midY + fy * hh;
+    return {
+      pts: [[midX - px * hb, midY - py * hb], [apexX, apexY], [midX + px * hb, midY + py * hb]],
+      cx: (midX * 2 + apexX) / 3, cy: (midY * 2 + apexY) / 3, tipX: apexX, tipY: apexY
+    };
+  };
+
+  MainScene.prototype.dockProgress = function (p) {
+    return smooth((this.state.boss.modeAge - p.dockAt) / BOSS_DOCK_TIME);
+  };
+  // Each piece has its own depth while it flies in; docked, they share the guardian's.
+  MainScene.prototype.bossPieceZ = function (p) {
+    var b = this.state.boss;
+    if (b.mode !== 'assembling' || p.docked) return b.z;
+    return lerp(Z_SPAWN + 2, b.z, this.dockProgress(p));
+  };
+
+  function pointInPoly(x, y, pts) {
+    var inside = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      var xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+  function distToPoly(x, y, pts) {
+    var best = Infinity;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      var ax = pts[j][0], ay = pts[j][1], bx = pts[i][0], by = pts[i][1];
+      var dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy || 1;
+      var t = clamp(((x - ax) * dx + (y - ay) * dy) / len2, 0, 1);
+      best = Math.min(best, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+    }
+    return best;
+  }
+
+  // The live piece at (x, y) on the guardian's plane, triangles first
+  // (they are in front of the core in every form), within `slop`.
+  MainScene.prototype.bossPieceAt = function (x, y, slop) {
+    var b = this.state.boss;
+    if (!b) return null;
+    for (var i = b.pieces.length - 1; i >= 0; i--) {
+      var p = b.pieces[i];
+      if (!p.alive || (b.mode === 'assembling' && !p.docked)) continue;
+      var poly = this.bossPiecePoly(p).pts;
+      if (pointInPoly(x, y, poly) || distToPoly(x, y, poly) < slop) return p;
+    }
+    return null;
+  };
+
+  MainScene.prototype.stepBoss = function (dt) {
+    var s = this.state;
+    if (s.bossStage === 'calm') {
+      s.bossTimer -= dt;
+      if (s.bossTimer <= 0) { s.bossStage = 'boss'; this.spawnBoss(); }
+      return;
+    }
+    var b = s.boss;
+    if (!b) return;
+    b.t += dt;
+    b.modeAge += dt;
+    b.prevZ = b.z;
+    var f = BOSS_FORMS[b.form], self = this;
+    b.pieces.forEach(function (p) {
+      p.flash = Math.max(0, p.flash - dt);
+      // Regrouping: every piece eases toward its slot all the time.
+      var k = 1 - Math.exp(-5 * dt);
+      p.a += wrapAngle(p.slotA - p.a) * k;
+      p.d += (p.slotD - p.d) * k;
+    });
+
+    if (b.mode === 'assembling') {
+      b.pieces.forEach(function (p) {
+        if (!p.docked && self.dockProgress(p) >= 1) { p.docked = true; Sound.tick(); s.shake = Math.max(s.shake, 0.25); }
+      });
+      if (b.pieces.every(function (p) { return p.docked; })) { b.mode = 'fight'; b.modeAge = 0; }
+      return;
+    }
+    // Movement: side to side, an optional figure-of-eight, nearer and
+    // further. Eased toward, so a change of form glides rather than jumps.
+    var tx = Math.sin(b.t * f.rateX) * f.reachX;
+    var ty = BOSS_Y + Math.sin(b.t * f.rateX * 2) * f.eight;
+    if (b.form === 'dart') tx += Math.sin(b.t * 5.3) * 18;
+    var tz = lerp(Math.max(BOSS_Z_MIN, f.zMin), f.zMax, (Math.sin(b.t * f.rateZ) + 1) / 2);
+    var m = 1 - Math.exp(-2.5 * dt);
+    b.x += (tx - b.x) * m;
+    b.y += (ty - b.y) * m;
+    b.z += (tz - b.z) * m;
+    // A hard floor, whatever a form's own range says: it must never reach
+    // the ship's plane, and its shots need distance to be dodgeable.
+    b.z = Math.max(BOSS_Z_MIN, b.z);
+    if (f.spin) b.rot += f.spin * dt;
+    else b.rot += wrapAngle(0 - b.rot) * (1 - Math.exp(-4 * dt)); // the bird and the dart fly upright
+
+    if (b.mode === 'reforming') {
+      if (b.modeAge >= BOSS_REFORM_TIME) { b.mode = 'fight'; b.modeAge = 0; b.volleyTimer = Math.max(b.volleyTimer, 0.9); }
+      return;
+    }
+
+    // Queued shots (the sequences and streams), then the next volley.
+    for (var i = b.queue.length - 1; i >= 0; i--) {
+      b.queue[i].at -= dt;
+      if (b.queue[i].at <= 0) { this.bossFireFrom(b.queue[i].piece, b.queue[i].tx, b.queue[i].ty, b.queue[i].aim); b.queue.splice(i, 1); }
+    }
+    b.volleyTimer -= dt;
+    if (b.volleyTimer <= 0) {
+      b.volleyTimer = f.volley * TUNING.BOSS_VOLLEY_SCALE * rand(0.85, 1.15);
+      this.bossVolley(b);
+    }
+  };
+
+  // 0..1 through the glow before a volley.
+  function bossCharge(b) {
+    if (!b || b.mode !== 'fight' || b.volleyTimer > BOSS_CHARGE) return 0;
+    return 1 - b.volleyTimer / BOSS_CHARGE;
+  }
+
+  MainScene.prototype.bossShooters = function () {
+    var b = this.state.boss;
+    var tris = b.pieces.filter(function (p) { return p.kind === 'tri' && p.alive; });
+    return tris.length ? tris : b.pieces.filter(function (p) { return p.alive; });
+  };
+
+  // One shot from a piece's firing point. Its speed is set so it takes
+  // BOSS_SHOT_TIME to arrive however near or far the guardian is. If
+  // `aim`, it is aimed at the ship as it is when the shot leaves.
+  MainScene.prototype.bossFireFrom = function (p, tx, ty, aim) {
+    var s = this.state, b = s.boss;
+    if (!b || !p.alive) return;
+    if (aim) { tx = s.shipX; ty = s.shipY; }
+    var poly = this.bossPiecePoly(p);
+    s.enemyShots.push({
+      kind: 'shot', x0: poly.tipX, y0: poly.tipY, z0: b.z, tx: tx, ty: ty,
+      x: poly.tipX, y: poly.tipY, z: b.z, prevZ: b.z,
+      speed: Math.max(0.3, b.z - Z_SHIP) / TUNING.BOSS_SHOT_TIME, color: p.color
+    });
+    s.bossShots++;
+    Sound.zap();
+  };
+
+  MainScene.prototype.bossVolley = function (b) {
+    var s = this.state, self = this;
+    var shooters = this.bossShooters();
+    var sx = s.shipX, sy = s.shipY;
+    var pattern = BOSS_FORMS[b.form].pattern;
+    if (pattern === 'converge') {
+      // Every tip at once, all at you: move.
+      shooters.forEach(function (p) { self.bossFireFrom(p, 0, 0, true); });
+    } else if (pattern === 'sequence') {
+      // Round the wheel, one tip after another, each aimed as it fires.
+      shooters.forEach(function (p, i) { b.queue.push({ piece: p, at: i * 0.18, aim: true }); });
+    } else if (pattern === 'fan') {
+      // A fan: one at you, one either side. Left-most tip takes the left.
+      var order = shooters.slice().sort(function (p, q) { return self.bossPiecePoly(p).tipX - self.bossPiecePoly(q).tipX; });
+      var offs = [-80, 0, 80];
+      order.forEach(function (p, i) { self.bossFireFrom(p, sx + offs[Math.min(i, 2)], sy, false); });
+    } else if (pattern === 'stream') {
+      // Three in a row from the body, each aimed fresh: keep moving.
+      var body = b.pieces[0].alive ? b.pieces[0] : shooters[0];
+      for (var i = 0; i < 3; i++) b.queue.push({ piece: body, at: i * 0.22, aim: true });
+    } else if (pattern === 'lead') {
+      // One where you are and one where you are heading.
+      var p0 = shooters[0];
+      this.bossFireFrom(p0, 0, 0, true);
+      b.queue.push({ piece: p0, at: 0.12, tx: sx + s.vx * 0.7, ty: sy + s.vy * 0.7, aim: false });
+    } else if (pattern === 'ring') {
+      // The cube alternates: a ring of six around you (stay put and they
+      // all miss), then a pair straight at you.
+      var core = b.pieces[0];
+      if (b.ringNext) {
+        for (var k = 0; k < 6; k++) {
+          var ang = k * Math.PI / 3 + rand(0, 0.5);
+          this.bossFireFrom(core, sx + Math.cos(ang) * 85, sy + Math.sin(ang) * 85, false);
+        }
+      } else {
+        this.bossFireFrom(core, 0, 0, true);
+        b.queue.push({ piece: core, at: 0.2, aim: true });
+      }
+      b.ringNext = !b.ringNext;
+    }
+  };
+
+  MainScene.prototype.damageBossPiece = function (p) {
+    var s = this.state, b = s.boss;
+    p.hp--;
+    p.flash = 0.08;
+    if (p.hp > 0) { Sound.tick(); return; }
+    // Destroyed: it shatters in its own colour, leaves a glow, and the
+    // rest regroup.
+    var poly = this.bossPiecePoly(p);
+    p.alive = false;
+    b.queue = b.queue.filter(function (q) { return q.piece !== p; });
+    s.bursts.push({ kind: 'burst', x: poly.cx, y: poly.cy, z: b.z, r: 60 * TUNING.BOSS_SIZE, age: 0, life: 0.7, spin: rand(0, Math.PI), color: p.color, holdsStation: true });
+    this.shatter(poly, b.z, p.color);
+    this.addObstacle({ kind: 'glow', x: poly.cx, y: poly.cy, z: b.z });
+    s.shake = Math.max(s.shake, 0.6);
+    Sound.boom();
+    if (!b.pieces.some(function (q) { return q.alive; })) return this.bossDefeated();
+    this.layoutBoss(false);
+    b.mode = 'reforming';
+    b.modeAge = 0;
+    s.banner = { text: BOSS_FORMS[b.form].name, age: 0 };
+  };
+
+  // A destroyed piece breaks into a few flat shards of its own colour,
+  // thrown out and tumbling: the tower-top chunks, recoloured.
+  MainScene.prototype.shatter = function (poly, z, color) {
+    var s = this.state, pts = poly.pts;
+    for (var i = 0; i < pts.length; i++) {
+      var a = pts[i], c = pts[(i + 1) % pts.length];
+      var mx = (a[0] + c[0] + poly.cx) / 3, my = (a[1] + c[1] + poly.cy) / 3;
+      s.chunks.push({
+        kind: 'chunk', color: color, x: mx, y: my, z: z,
+        pts: [[a[0] - mx, a[1] - my], [c[0] - mx, c[1] - my], [poly.cx - mx, poly.cy - my]],
+        vx: (mx - poly.cx) * 4 + rand(-40, 40), vy: (my - poly.cy) * 4 - rand(40, 120),
+        rot: 0, spin: rand(-5, 5), age: 0, holdsStation: true
+      });
+    }
+  };
+
+  MainScene.prototype.bossDefeated = function () {
+    var s = this.state, b = s.boss;
+    s.bursts.push({ kind: 'burst', x: b.x, y: b.y, z: b.z, r: 160 * TUNING.BOSS_SIZE, age: 0, life: 1.1, spin: 0, color: 0xffffff, holdsStation: true });
+    s.enemyShots.length = 0; // nothing it fired outlives it
+    s.boss = null;
+    s.bossStage = 'won';
+    s.mode = 'won';
+    s.shake = 1.2;
+    s.banner = { text: 'GUARDIAN DOWN', age: 0 };
+    var dist = Math.floor(s.distance);
+    if (dist > this.best) {
+      this.best = dist;
+      try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
+    }
+    document.getElementById('overlayTitle').textContent = 'Guardian down';
+    document.getElementById('crashLine').textContent = dist.toLocaleString() + ' m flown · ' + s.enemiesDowned + ' aliens downed · best ' + this.best.toLocaleString() + ' m';
+    var self = this;
+    setTimeout(function () {
+      if (self.state.mode === 'won') document.getElementById('crashOverlay').classList.add('visible');
+    }, 2600);
+  };
+
+  // Draw list entries: one per live piece, each at its own depth.
+  MainScene.prototype.bossDrawItems = function () {
+    var b = this.state.boss, self = this;
+    if (!b) return [];
+    return b.pieces.filter(function (p) { return p.alive; }).map(function (p) {
+      return { kind: 'bosspiece', piece: p, z: self.bossPieceZ(p) };
+    });
+  };
+
+  // A piece: flat fill in its colour, a lighter edge, white for a frame
+  // when hit, darkening as it is worn down. The firing tips burn while a
+  // volley charges. The core has an eye, like the aliens'.
+  MainScene.prototype.drawBossPiece = function (g, item) {
+    var p = item.piece, b = this.state.boss, z = Math.max(item.z, Z_NEAR), self = this;
+    var a = clamp((Z_SPAWN + 2 - item.z) / 2.5, 0, 1);
+    if (a <= 0) return;
+    var poly = this.bossPiecePoly(p);
+    var pts = poly.pts.map(function (q) { return [self.sx(q[0], z), self.sy(q[1], z)]; });
+    var worn = 1 - p.hp / p.maxHp;
+    var fill = p.flash > 0 ? 0xffffff : mixColor(p.color, 0x0f172a, worn * 0.55);
+    g.fillStyle(fill, a);
+    g.lineStyle(Math.max(1.5, 2.5 / z), mixColor(p.color, 0xffffff, 0.45), a);
+    g.beginPath();
+    g.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+    var charge = bossCharge(b);
+    var tipX = this.sx(poly.tipX, z), tipY = this.sy(poly.tipY, z);
+    if (p.kind === 'square') {
+      var r = BOSS_SQUARE * 0.18 * TUNING.BOSS_SIZE / z;
+      g.fillStyle(COLOR_ENEMY_EYE, a);
+      g.fillCircle(tipX, tipY, r * 1.4);
+      g.fillStyle(charge > 0 ? mixColor(0xfde68a, COLOR_ENEMY_SHOT, charge) : 0xe2e8f0, a);
+      g.fillCircle(tipX, tipY, r * (charge > 0 ? 0.6 + 0.5 * charge : 0.6));
+    } else if (charge > 0) {
+      g.fillStyle(0xfde68a, a * charge);
+      g.fillCircle(tipX, tipY, (3 + 6 * charge) / Math.max(1, z * 0.5));
+    }
+  };
+
   // True when an alien sits on the ship's line of fire.
   MainScene.prototype.enemyInSights = function () {
     var s = this.state;
+    if (s.boss && s.boss.mode !== 'assembling' &&
+        this.bossPieceAt(s.shipX, s.shipY, TUNING.BULLET_RADIUS * 0.6)) return true;
     return s.enemies.some(function (e) {
       return e.mode !== 'leaving' && Math.hypot(s.shipX - e.x, s.shipY - e.y) < ENEMY_RADIUS + TUNING.BULLET_RADIUS;
     });
@@ -1721,7 +2173,7 @@
 
     this.drawStreaks();
 
-    var obs = s.obstacles.concat(s.bullets, s.bursts, s.enemies, s.enemyShots, s.chunks).sort(function (a, b) { return b.z - a.z; });
+    var obs = s.obstacles.concat(s.bullets, s.bursts, s.enemies, s.enemyShots, s.chunks, this.bossDrawItems()).sort(function (a, b) { return b.z - a.z; });
     this.nextWall = this.findNextWall();
     for (var i = 0; i < obs.length; i++) {
       this.drawObstacle(obs[i].z >= Z_SHIP ? this.gFar : this.gNear, obs[i]);
@@ -1944,6 +2396,7 @@
     if (o.kind === 'shot') return this.drawEnemyShot(g, o);
     if (o.kind === 'glow') return this.drawGlow(g, o);
     if (o.kind === 'chunk') return this.drawChunk(g, o);
+    if (o.kind === 'bosspiece') return this.drawBossPiece(g, o);
     if (o.dead) return; // shot this frame; its burst is drawn instead
     var a = depthAlpha(o.z);
     if (a <= 0) return;
@@ -2159,15 +2612,15 @@
       return [self.sx(wx, z), self.sy(wy, z)];
     }
     var pts = c.pts.map(P);
-    g.fillStyle(COLOR_SPIRE, a);
-    g.lineStyle(Math.max(1, 1.5 / z), COLOR_SPIRE_EDGE, a);
+    g.fillStyle(c.color || COLOR_SPIRE, a);
+    g.lineStyle(Math.max(1, 1.5 / z), c.color ? mixColor(c.color, 0xffffff, 0.45) : COLOR_SPIRE_EDGE, a);
     g.beginPath();
     g.moveTo(pts[0][0], pts[0][1]);
     for (var i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
     g.closePath();
     g.fillPath();
     g.strokePath();
-    var heat = clamp(1 - c.age / 0.8, 0, 1);
+    var heat = c.color ? 0 : clamp(1 - c.age / 0.8, 0, 1); // only broken towers have a hot edge
     if (heat > 0) {
       var last = pts[pts.length - 1];
       g.lineStyle(Math.max(1.5, 3 / z), COLOR_FLAME_INNER, a * heat);
@@ -2197,9 +2650,10 @@
     var z = Math.max(p.z, Z_NEAR), x = this.sx(p.x, z), y = this.sy(p.y, z);
     var r = Math.max(4, ENEMY_SHOT_RADIUS * 1.3 / z);
     var a = p.z < Z_SHIP ? clamp((p.z - Z_NEAR) / (Z_SHIP - Z_NEAR), 0, 1) : 1;
-    g.fillStyle(COLOR_ENEMY_SHOT, a * 0.3);
+    var sc = p.color || COLOR_ENEMY_SHOT; // the guardian's shots wear the colour of the piece that fired them
+    g.fillStyle(sc, a * 0.3);
     g.fillCircle(x, y, r * 1.8);
-    g.fillStyle(COLOR_ENEMY_SHOT, a);
+    g.fillStyle(sc, a);
     g.fillCircle(x, y, r);
     g.fillStyle(COLOR_FLAME_INNER, a);
     g.fillCircle(x, y, r * 0.45);
@@ -2271,9 +2725,29 @@
     g.fillRect(bx, by, bw * frac, bh);
     g.lineStyle(1, s.healFlash > 0 ? COLOR_GLOW : COLOR_SHIP, s.healFlash > 0 ? 0.6 + 0.4 * s.healFlash : 0.5);
     g.strokeRect(bx - 1, by - 1, bw + 2, bh + 2);
-    var a = s.mode === 'flying' ? clamp(1 - (s.phaseAge - 2) / 0.8, 0, 1) : 0;
-    this.phaseText.setText(PHASE_NAMES[s.phase] || '');
-    this.phaseText.setAlpha(a);
+    // A banner (the guardian's arrival, each new form, its fall) takes
+    // the phase title's place for a couple of seconds.
+    if (s.banner && s.banner.age < 2.6) {
+      this.phaseText.setText(s.banner.text);
+      this.phaseText.setAlpha(clamp(Math.min(s.banner.age / 0.2, (2.6 - s.banner.age) / 0.6), 0, 1));
+    } else {
+      var a = s.mode === 'flying' ? clamp(1 - (s.phaseAge - 2) / 0.8, 0, 1) : 0;
+      this.phaseText.setText(PHASE_NAMES[s.phase] || '');
+      this.phaseText.setAlpha(a);
+    }
+    // The guardian's health: one bar per piece, in its colour, under
+    // the shield. A piece that is gone leaves an empty outline.
+    if (s.boss) {
+      var pcs = s.boss.pieces, segW = 19, gap = 4, total = pcs.length * segW + (pcs.length - 1) * gap;
+      for (var i = 0; i < pcs.length; i++) {
+        var x0 = CX - total / 2 + i * (segW + gap), y0 = 25;
+        g.fillStyle(0x0f172a, 0.6);
+        g.fillRect(x0, y0, segW, 4);
+        if (pcs[i].alive) { g.fillStyle(pcs[i].color, 1); g.fillRect(x0, y0, segW * pcs[i].hp / pcs[i].maxHp, 4); }
+        g.lineStyle(1, pcs[i].color, pcs[i].alive ? 0.6 : 0.25);
+        g.strokeRect(x0 - 0.5, y0 - 0.5, segW + 1, 5);
+      }
+    }
   };
 
   // ==================================================================
@@ -2349,6 +2823,14 @@
       ['SUNSET_TIME', 'Sunset to night', 5, 180, 1, ' s'],
       ['SUN_RADIUS', 'Sun size (radius)', 10, 90, 1, ' px'],
       ['SUN_OFFSET_X', 'Sun left / right', -170, 170, 5, ' px']
+    ] },
+    { title: 'Guardian (boss)', rows: [
+      ['CALM_TIME', 'Calm before it', 0, 20, 0.5, ' s'],
+      ['BOSS_TRI_HP', 'Hits per triangle', 1, 30, 1, ''],
+      ['BOSS_CORE_HP', 'Hits for the square', 1, 40, 1, ''],
+      ['BOSS_SHOT_TIME', 'Its shots take', 0.4, 2, 0.05, ' s'],
+      ['BOSS_VOLLEY_SCALE', 'Time between volleys', 0.4, 2.5, 0.05, '\u00d7'],
+      ['BOSS_SIZE', 'Size', 0.6, 1.6, 0.05, '\u00d7']
     ] },
     { title: 'Guns', rows: [
       ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
@@ -2454,9 +2936,10 @@
       scene.state.t = where === 'clouds' ? CLOUDS_START
         : where === 'surface' ? SURFACE_START
         : where === 'dusk' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME * 0.5
-        : where === 'night' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME
+        : where === 'night' || where === 'boss' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME
         : 0;
       scene.state.invincible = document.getElementById('labNoDamage').checked;
+      if (where === 'boss') scene.beginCalm(0.3); // straight past the stars to the fight
       setLabOpen(false);
     });
   });
@@ -2506,7 +2989,10 @@
         ENEMY_HP: TUNING.ENEMY_HP, ENEMY_Z: ENEMY_Z, ENEMY_FIRST: TUNING.ENEMY_FIRST, ENEMY_RADIUS: ENEMY_RADIUS,
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: TUNING.BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: TUNING.ENEMY_SHOT_SPEED,
-        ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
+        ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL,
+        CALM_TIME: TUNING.CALM_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
+        BOSS_SHOT_TIME: TUNING.BOSS_SHOT_TIME, BOSS_Z_MIN: BOSS_Z_MIN, BOSS_ARRIVE_STAGGER: BOSS_ARRIVE_STAGGER,
+        BOSS_DOCK_TIME: BOSS_DOCK_TIME, BOSS_REFORM_TIME: BOSS_REFORM_TIME, BOSS_CHARGE: BOSS_CHARGE, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
         WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,
         GLOW_HANG: TUNING.GLOW_HANG, GLOW_SPEED: TUNING.GLOW_SPEED,
         GLOW_RADIUS: GLOW_RADIUS, GLOW_CATCH_SLOP: TUNING.GLOW_CATCH_SLOP,
@@ -2572,7 +3058,28 @@
       }
       return out;
     },
-    spawnWave: function (n) { scene.spawnEnemyWave(n); return true; }
+    spawnWave: function (n) { scene.spawnEnemyWave(n); return true; },
+    boss: function () {
+      var s = scene.state, b = s.boss;
+      return {
+        stage: s.bossStage, timer: s.bossTimer, shots: s.bossShots, banner: s.banner && s.banner.text,
+        mode: b ? b.mode : null, form: b ? b.form : null, x: b ? b.x : null, y: b ? b.y : null, z: b ? b.z : null,
+        rot: b ? b.rot : null, charge: bossCharge(b),
+        pieces: b ? b.pieces.map(function (p) {
+          var poly = scene.bossPiecePoly(p);
+          return { id: p.id, kind: p.kind, color: p.color, hp: p.hp, maxHp: p.maxHp, alive: p.alive, docked: p.docked,
+            a: p.a, cx: poly.cx, cy: poly.cy, tipX: poly.tipX, tipY: poly.tipY };
+        }) : []
+      };
+    },
+    startBoss: function (calm) { scene.beginCalm(calm == null ? 0 : calm); return true; },
+    // Knock a piece down to `hp` (0 destroys it), as if shot.
+    hitBoss: function (id, times) {
+      var b = scene.state.boss, p = b && b.pieces.filter(function (q) { return q.id === id; })[0];
+      for (var i = 0; p && p.alive && i < times; i++) scene.damageBossPiece(p);
+      return true;
+    },
+    setBossVolley: function (t) { if (scene.state.boss) scene.state.boss.volleyTimer = t; return true; }
   };
 
   new Phaser.Game({
