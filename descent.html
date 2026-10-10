@@ -552,8 +552,8 @@
   var COLOR_SUN_TOP = 0xfde68a;
   var COLOR_SUN_MID = 0xfb923c;
   var COLOR_SUN_LOW = 0xdb2777;
-  var SUN_RADIUS = 46;         // px on screen: it is at infinity, so it never grows
-  var SUN_OFFSET_X = 70;       // px right of the vanishing point
+  var SUN_RADIUS = 32;         // px on screen: it is at infinity, so it never grows
+  var SUN_OFFSET_X = 70;       // px right of the vanishing point (negative: left)
   var COLOR_HIT = 0xef4444;
   var COLOR_BULLET = 0x22c55e;         // head-on.html's bullets
   var COLOR_SIGHT = 0xbbf7d0;
@@ -619,7 +619,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -635,7 +635,8 @@
       ENEMY_PAIR_CHANCE: ENEMY_PAIR_CHANCE, ENEMY_FIRE_INTERVAL: ENEMY_FIRE_INTERVAL, ENEMY_CHARGE: ENEMY_CHARGE,
       ENEMY_SHOT_SPEED: ENEMY_SHOT_SPEED, ENEMY_WEAVE_X: ENEMY_WEAVE_X, ENEMY_WEAVE_Y: ENEMY_WEAVE_Y,
       FIRE_INTERVAL: FIRE_INTERVAL, BULLET_RADIUS: BULLET_RADIUS,
-      SUNSET_DELAY: SUNSET_DELAY, SUNSET_TIME: SUNSET_TIME
+      SUNSET_DELAY: SUNSET_DELAY, SUNSET_TIME: SUNSET_TIME,
+      SUN_RADIUS: SUN_RADIUS, SUN_OFFSET_X: SUN_OFFSET_X
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -1829,8 +1830,8 @@
   // horizon. It sinks behind the ground, which is drawn over it.
   MainScene.prototype.drawSun = function (g, horizon, sky) {
     if (sky.sunDrop >= 1) return;
-    var r = SUN_RADIUS;
-    var cx = CX + SUN_OFFSET_X - this.camX() * 0.03;
+    var r = TUNING.SUN_RADIUS;
+    var cx = CX + TUNING.SUN_OFFSET_X - this.camX() * 0.03;
     var cy = lerp(horizon - r * 1.25, horizon + r * 1.05, sky.sunDrop);
     // Halo, strongest while it touches the horizon.
     g.fillStyle(COLOR_SUN_MID, 0.10 + 0.12 * sky.glow);
@@ -2345,7 +2346,9 @@
     ] },
     { title: 'Sunset', rows: [
       ['SUNSET_DELAY', 'Starts after landing', 0, 30, 0.5, ' s'],
-      ['SUNSET_TIME', 'Sunset to night', 5, 180, 1, ' s']
+      ['SUNSET_TIME', 'Sunset to night', 5, 180, 1, ' s'],
+      ['SUN_RADIUS', 'Sun size (radius)', 10, 90, 1, ' px'],
+      ['SUN_OFFSET_X', 'Sun left / right', -170, 170, 5, ' px']
     ] },
     { title: 'Guns', rows: [
       ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
