@@ -633,6 +633,17 @@
   var BOSS_SHOT_TIME = 0.95;    // seconds its shots take to reach you, from wherever it is
   var BOSS_VOLLEY_SCALE = 1;    // x on every form's time between volleys
   var BOSS_SIZE = 1;            // x on every piece's size
+  // It turns edge-on. Flat as it is, side-on it is a hairline nothing
+  // can hit: every few seconds the whole formation turns away like a
+  // card on a vertical axis, holds edge-on - shots glance off, and it
+  // keeps firing - then turns back to face you. Dodge while it is away,
+  // hit it while it faces you. Each form has its own timing
+  // (BOSS_FORMS face/edge), later forms facing you for less.
+  var BOSS_FLIP = 1;            // 1 = on
+  var BOSS_FACE_SCALE = 1;      // x on how long it faces you
+  var BOSS_EDGE_SCALE = 1;      // x on how long it stays edge-on
+  var BOSS_TURN_TIME = 0.45;    // seconds to turn away, and to turn back
+  var BOSS_EDGE_IMMUNE = 0.3;   // narrower than this (cos of the turn), shots glance off
   var BOSS_GLOWS = 0;           // 1: a destroyed piece leaves a green glow. Off by default - the fight is a test of what you came in with
   var BOSS_SQUARE = 76;         // side of the core, world px at its plane
   var BOSS_TRI_BASE = 76;
@@ -666,7 +677,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -686,6 +697,7 @@
       SUN_RADIUS: SUN_RADIUS, SUN_OFFSET_X: SUN_OFFSET_X,
       CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
       BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
+      BOSS_FLIP: BOSS_FLIP, BOSS_FACE_SCALE: BOSS_FACE_SCALE, BOSS_EDGE_SCALE: BOSS_EDGE_SCALE,
       STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
@@ -1560,7 +1572,11 @@
       }
       if (!spent && s.boss && s.boss.mode === 'fight' && crossed(b, s.boss)) {
         var hitPiece = this.bossPieceAt(b.x, b.y, TUNING.BULLET_RADIUS * 0.6);
-        if (hitPiece) { spent = true; this.damageBossPiece(hitPiece); }
+        if (hitPiece) {
+          spent = true;
+          if (bossFacing(s.boss)) this.damageBossPiece(hitPiece);
+          else { s.boss.glances++; this.spark(b.x, b.y, s.boss.z); } // edge-on: it glances off
+        }
       }
       for (var k = 0; k < s.enemies.length && !spent; k++) {
         var e = s.enemies[k];
@@ -1770,12 +1786,13 @@
   // reach and rate, an optional figure-of-eight, depth range and rate,
   // spin) and how it attacks (pattern, seconds between volleys).
   var BOSS_FORMS = {
-    star:     { name: 'THE STAR',  spin: 0.35, reachX: 70,  rateX: 0.45, eight: 0,  zMin: 1.9, zMax: 2.9, rateZ: 0.45, volley: 2.3, pattern: 'converge' },
-    pinwheel: { name: 'PINWHEEL',  spin: 2.4,  reachX: 60,  rateX: 0.6,  eight: 0,  zMin: 2.0, zMax: 2.8, rateZ: 0.6,  volley: 2.4, pattern: 'sequence' },
-    triad:    { name: 'TRIAD',     spin: 0.9,  reachX: 115, rateX: 0.8,  eight: 0,  zMin: 1.9, zMax: 2.8, rateZ: 0.5,  volley: 2.0, pattern: 'fan' },
-    bird:     { name: 'THE BIRD',  spin: 0,    reachX: 115, rateX: 0.9,  eight: 32, zMin: 1.8, zMax: 3.0, rateZ: 0.9,  volley: 2.1, pattern: 'stream' },
-    dart:     { name: 'DART',      spin: 0,    reachX: 125, rateX: 1.5,  eight: 20, zMin: 1.8, zMax: 2.6, rateZ: 1.2,  volley: 1.5, pattern: 'lead' },
-    cube:     { name: 'THE CUBE',  spin: 2.6,  reachX: 70,  rateX: 0.7,  eight: 0,  zMin: 2.0, zMax: 2.8, rateZ: 0.7,  volley: 1.9, pattern: 'ring' }
+    // face / edge: seconds it faces you, then holds edge-on, per turn.
+    star:     { name: 'THE STAR',  spin: 0.35, reachX: 70,  rateX: 0.45, eight: 0,  zMin: 1.9, zMax: 2.9, rateZ: 0.45, volley: 2.3, pattern: 'converge', face: 3.0, edge: 1.3 },
+    pinwheel: { name: 'PINWHEEL',  spin: 2.4,  reachX: 60,  rateX: 0.6,  eight: 0,  zMin: 2.0, zMax: 2.8, rateZ: 0.6,  volley: 2.4, pattern: 'sequence', face: 2.4, edge: 1.5 },
+    triad:    { name: 'TRIAD',     spin: 0.9,  reachX: 115, rateX: 0.8,  eight: 0,  zMin: 1.9, zMax: 2.8, rateZ: 0.5,  volley: 2.0, pattern: 'fan', face: 2.4, edge: 1.5 },
+    bird:     { name: 'THE BIRD',  spin: 0,    reachX: 115, rateX: 0.9,  eight: 32, zMin: 1.8, zMax: 3.0, rateZ: 0.9,  volley: 2.1, pattern: 'stream', face: 2.0, edge: 1.6 },
+    dart:     { name: 'DART',      spin: 0,    reachX: 125, rateX: 1.5,  eight: 20, zMin: 1.8, zMax: 2.6, rateZ: 1.2,  volley: 1.5, pattern: 'lead', face: 1.7, edge: 1.6 },
+    cube:     { name: 'THE CUBE',  spin: 2.6,  reachX: 70,  rateX: 0.7,  eight: 0,  zMin: 2.0, zMax: 2.8, rateZ: 0.7,  volley: 1.9, pattern: 'ring', face: 1.8, edge: 1.5 }
   };
   function bossFormOf(nTri, core) {
     if (nTri === 4) return core ? 'star' : 'pinwheel';
@@ -1813,6 +1830,7 @@
       kind: 'boss', mode: 'assembling', modeAge: 0, t: 0,
       x: 0, y: BOSS_Y, z: 2.6, prevZ: 2.6, rot: 0,
       form: 'star', volleyTimer: 1.6, queue: [], ringNext: true,
+      flip: 'face', flipAge: 0, flipA: 0, flipCos: 1, glances: 0,
       pieces: pieces
     };
     this.layoutBoss(true);
@@ -1854,7 +1872,19 @@
 
   // A piece's outline in world space (at the guardian's plane), and the
   // point it fires from.
+  // The turn: about a vertical axis through the guardian's centre, so
+  // every x squeezes toward it by cos of the turn.
   MainScene.prototype.bossPiecePoly = function (p) {
+    var b = this.state.boss, poly = this.flatPiecePoly(p), c = b.flipCos;
+    if (c === 1) return poly;
+    function fx(x) { return b.x + (x - b.x) * c; }
+    return {
+      pts: poly.pts.map(function (q) { return [fx(q[0]), q[1]]; }),
+      cx: fx(poly.cx), cy: poly.cy, tipX: fx(poly.tipX), tipY: poly.tipY
+    };
+  };
+
+  MainScene.prototype.flatPiecePoly = function (p) {
     var b = this.state.boss, k = TUNING.BOSS_SIZE;
     var cx = b.x, cy = b.y;
     if (b.mode === 'assembling' && !p.docked) {
@@ -1971,6 +2001,8 @@
     if (f.spin) b.rot += f.spin * dt;
     else b.rot += wrapAngle(0 - b.rot) * (1 - Math.exp(-4 * dt)); // the bird and the dart fly upright
 
+    this.stepBossFlip(b, dt);
+
     if (b.mode === 'reforming') {
       if (b.modeAge >= BOSS_REFORM_TIME) { b.mode = 'fight'; b.modeAge = 0; b.volleyTimer = Math.max(b.volleyTimer, 0.9); }
       return;
@@ -1987,6 +2019,38 @@
       this.bossVolley(b);
     }
   };
+
+  // Face -> turn away -> edge-on -> turn back -> face. Regrouping always
+  // faces you, and starts the new form with a full face-on spell.
+  MainScene.prototype.stepBossFlip = function (b, dt) {
+    var f = BOSS_FORMS[b.form];
+    if (!TUNING.BOSS_FLIP || b.mode === 'reforming') {
+      b.flipA += (0 - b.flipA) * (1 - Math.exp(-8 * dt));
+      if (b.mode === 'reforming') { b.flip = 'face'; b.flipAge = 0; }
+    } else {
+      b.flipAge += dt;
+      var face = f.face * TUNING.BOSS_FACE_SCALE, edge = f.edge * TUNING.BOSS_EDGE_SCALE;
+      if (b.flip === 'face') {
+        b.flipA = 0;
+        if (b.flipAge >= face && edge > 0) { b.flip = 'away'; b.flipAge = 0; }
+      } else if (b.flip === 'away') {
+        b.flipA = (Math.PI / 2) * smooth(b.flipAge / BOSS_TURN_TIME);
+        if (b.flipAge >= BOSS_TURN_TIME) { b.flip = 'edge'; b.flipAge = 0; }
+      } else if (b.flip === 'edge') {
+        // Edge-on, with a slight shimmer as it catches the light.
+        b.flipA = Math.PI / 2 + 0.06 * Math.sin(b.t * 9);
+        if (b.flipAge >= edge) { b.flip = 'back'; b.flipAge = 0; }
+      } else {
+        b.flipA = (Math.PI / 2) * (1 - smooth(b.flipAge / BOSS_TURN_TIME));
+        if (b.flipAge >= BOSS_TURN_TIME) { b.flip = 'face'; b.flipAge = 0; }
+      }
+    }
+    b.flipCos = Math.cos(b.flipA);
+    if (Math.abs(b.flipCos) < 1e-4) b.flipCos = 1e-4;
+  };
+
+  // Whether shots can hurt it right now.
+  function bossFacing(b) { return !!b && Math.abs(b.flipCos) >= BOSS_EDGE_IMMUNE; }
 
   // 0..1 through the glow before a volley.
   function bossCharge(b) {
@@ -2138,9 +2202,12 @@
     var poly = this.bossPiecePoly(p);
     var pts = poly.pts.map(function (q) { return [self.sx(q[0], z), self.sy(q[1], z)]; });
     var worn = 1 - p.hp / p.maxHp;
-    var fill = p.flash > 0 ? 0xffffff : mixColor(p.color, 0x0f172a, worn * 0.55);
+    var side = 1 - Math.abs(b.flipCos); // 0 face-on, 1 edge-on
+    var fill = p.flash > 0 ? 0xffffff : mixColor(mixColor(p.color, 0x0f172a, worn * 0.55), 0x0f172a, side * 0.45);
     g.fillStyle(fill, a);
-    g.lineStyle(Math.max(1.5, 2.5 / z), mixColor(p.color, 0xffffff, 0.45), a);
+    // Turned away, the outline is all that is left: it brightens to a
+    // hairline of light along the edge.
+    g.lineStyle(Math.max(1.5, 2.5 / z) * (1 - side * 0.4), mixColor(p.color, 0xffffff, 0.45 + 0.45 * side), a);
     g.beginPath();
     g.moveTo(pts[0][0], pts[0][1]);
     for (var i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
@@ -2150,11 +2217,12 @@
     var charge = bossCharge(b);
     var tipX = this.sx(poly.tipX, z), tipY = this.sy(poly.tipY, z);
     if (p.kind === 'square') {
-      var r = BOSS_SQUARE * 0.18 * TUNING.BOSS_SIZE / z;
+      var r = BOSS_SQUARE * 0.18 * TUNING.BOSS_SIZE / z, ec = Math.abs(b.flipCos);
       g.fillStyle(COLOR_ENEMY_EYE, a);
-      g.fillCircle(tipX, tipY, r * 1.4);
+      g.fillEllipse(tipX, tipY, r * 2.8 * ec, r * 2.8);
       g.fillStyle(charge > 0 ? mixColor(0xfde68a, COLOR_ENEMY_SHOT, charge) : 0xe2e8f0, a);
-      g.fillCircle(tipX, tipY, r * (charge > 0 ? 0.6 + 0.5 * charge : 0.6));
+      var er = r * (charge > 0 ? 0.6 + 0.5 * charge : 0.6);
+      g.fillEllipse(tipX, tipY, er * 2 * ec, er * 2);
     } else if (charge > 0) {
       g.fillStyle(0xfde68a, a * charge);
       g.fillCircle(tipX, tipY, (3 + 6 * charge) / Math.max(1, z * 0.5));
@@ -2164,7 +2232,7 @@
   // True when an alien sits on the ship's line of fire.
   MainScene.prototype.enemyInSights = function () {
     var s = this.state;
-    if (s.boss && s.boss.mode !== 'assembling' &&
+    if (s.boss && s.boss.mode !== 'assembling' && bossFacing(s.boss) &&
         this.bossPieceAt(s.shipX, s.shipY, TUNING.BULLET_RADIUS * 0.6)) return true;
     return s.enemies.some(function (e) {
       return e.mode !== 'leaving' && Math.hypot(s.shipX - e.x, s.shipY - e.y) < ENEMY_RADIUS + TUNING.BULLET_RADIUS;
@@ -2947,7 +3015,10 @@
       ['BOSS_SHOT_TIME', 'Its shots take', 0.4, 2, 0.05, ' s'],
       ['BOSS_VOLLEY_SCALE', 'Time between volleys', 0.4, 2.5, 0.05, '\u00d7'],
       ['BOSS_SIZE', 'Size', 0.6, 1.6, 0.05, '\u00d7'],
-      ['BOSS_GLOWS', 'Pieces drop glows', 'toggle']
+      ['BOSS_GLOWS', 'Pieces drop glows', 'toggle'],
+      ['BOSS_FLIP', 'Turns edge-on', 'toggle'],
+      ['BOSS_FACE_SCALE', 'Faces you for', 0.3, 3, 0.05, '\u00d7'],
+      ['BOSS_EDGE_SCALE', 'Edge-on for', 0, 3, 0.05, '\u00d7']
     ] },
     { title: 'Night sky', rows: [
       ['STAR_BRIGHTNESS', 'Star brightness', 0.3, 2, 0.05, '\u00d7'],
@@ -3126,7 +3197,7 @@
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: TUNING.BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: TUNING.ENEMY_SHOT_SPEED,
         ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL,
-        CALM_TIME: TUNING.CALM_TIME, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
+        CALM_TIME: TUNING.CALM_TIME, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TURN_TIME: BOSS_TURN_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
         BOSS_SHOT_TIME: TUNING.BOSS_SHOT_TIME, BOSS_Z_MIN: BOSS_Z_MIN, BOSS_ARRIVE_STAGGER: BOSS_ARRIVE_STAGGER,
         BOSS_DOCK_TIME: BOSS_DOCK_TIME, BOSS_REFORM_TIME: BOSS_REFORM_TIME, BOSS_CHARGE: BOSS_CHARGE, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
         WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,
@@ -3207,6 +3278,7 @@
         stage: s.bossStage, timer: s.bossTimer, shots: s.bossShots, banner: s.banner && s.banner.text,
         mode: b ? b.mode : null, form: b ? b.form : null, x: b ? b.x : null, y: b ? b.y : null, z: b ? b.z : null,
         rot: b ? b.rot : null, charge: bossCharge(b),
+        flip: b ? b.flip : null, flipCos: b ? b.flipCos : null, facing: b ? bossFacing(b) : null, glances: b ? b.glances : 0,
         pieces: b ? b.pieces.map(function (p) {
           var poly = scene.bossPiecePoly(p);
           return { id: p.id, kind: p.kind, color: p.color, hp: p.hp, maxHp: p.maxHp, alive: p.alive, docked: p.docked,
@@ -3221,7 +3293,14 @@
       for (var i = 0; p && p.alive && i < times; i++) scene.damageBossPiece(p);
       return true;
     },
-    setBossVolley: function (t) { if (scene.state.boss) scene.state.boss.volleyTimer = t; return true; }
+    setBossVolley: function (t) { if (scene.state.boss) scene.state.boss.volleyTimer = t; return true; },
+    // Put it at a point in its turn: 'face', 'away', 'edge' or 'back'.
+    setBossFlip: function (phase) {
+      var b = scene.state.boss; if (!b) return false;
+      b.flip = phase; b.flipAge = 0;
+      b.flipA = phase === 'edge' ? Math.PI / 2 : 0; b.flipCos = Math.max(1e-4, Math.cos(b.flipA));
+      return true;
+    }
   };
 
   new Phaser.Game({

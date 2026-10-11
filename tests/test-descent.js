@@ -901,11 +901,49 @@ harness.run(async (page, check, ctx) => {
   const before = totalHp(bs);
   for (let i = 0; i < 6; i++) {
     const b = await boss();
+    await D(page, () => window.__descentDebug.setBossFlip('face')); // facing you: see the edge-on tests below
     await D(page, ([x, y]) => window.__descentDebug.setShip(x, y), [b.x, Math.min(b.y, 100)]);
     await hold(page, 'Space', 120);
   }
   await page.waitForTimeout(300);
   check('shots on it wear it down', totalHp(await boss()) < before, { before, now: totalHp(await boss()) });
+
+  // It turns edge-on: in time it narrows to a line and comes back.
+  // Fast-forwarded so a whole face-turn-edge-turn cycle goes by.
+  await D(page, () => { window.__descentDebug.setBossFlip('face'); window.__descentDebug.setBossVolley(99); window.__descentDebug.timeScale = 4; });
+  let minCos = 1, sawFaceAgain = false, wentEdge = false;
+  for (let i = 0; i < 50; i++) {
+    const b = await boss();
+    minCos = Math.min(minCos, Math.abs(b.flipCos));
+    if (Math.abs(b.flipCos) < 0.1) wentEdge = true;
+    if (wentEdge && b.flip === 'face') { sawFaceAgain = true; break; }
+    await page.waitForTimeout(100);
+  }
+  await D(page, () => { window.__descentDebug.timeScale = 1; });
+  check('it turns edge-on now and then', wentEdge, minCos);
+  check('...and turns back to face you', sawFaceAgain);
+
+  // Edge-on, shots glance off; face-on, they land.
+  const fireAtBoss = async (phase) => {
+    await D(page, (ph) => window.__descentDebug.setBossFlip(ph), phase);
+    const b0 = await boss();
+    await D(page, ([x, y]) => window.__descentDebug.setShip(x, y), [b0.x, Math.min(b0.y, 100)]);
+    const lit = (await state(page)).inSights;
+    const hp0 = totalHp(b0), gl0 = b0.glances;
+    await D(page, (ph) => window.__descentDebug.setBossFlip(ph), phase);
+    await hold(page, 'Space', 150);
+    await D(page, (ph) => window.__descentDebug.setBossFlip(ph), phase);
+    await page.waitForTimeout(250);
+    const b1 = await boss();
+    return { lit, lost: hp0 - totalHp(b1), glanced: b1.glances - gl0 };
+  };
+  let r = await fireAtBoss('edge');
+  check('edge-on, shots glance off it', r.lost === 0 && r.glanced > 0, r);
+  check('...and the sight does not light', r.lit === false, r);
+  r = await fireAtBoss('face');
+  check('face-on, shots land', r.lost > 0, r);
+  check('...and the sight lights', r.lit === true, r);
+  await D(page, () => window.__descentDebug.setBossVolley(1.5));
 
   // Losing pieces: each time, the rest regroup into a new form.
   await D(page, () => window.__descentDebug.hitBoss('top', 99));
@@ -917,6 +955,7 @@ harness.run(async (page, check, ctx) => {
   check('...the rest regroup', bs.mode === 'reforming' && bs.form === 'triad' && bs.banner === 'TRIAD', bs);
   await page.waitForTimeout((C.BOSS_REFORM_TIME + 0.3) * 1000);
   check('...and fight on in the new form', (await boss()).mode === 'fight');
+  check('...starting face-on', (await boss()).flip === 'face');
 
   // Switched on in the lab, the next piece down does leave one.
   await D(page, () => window.__descentDebug.lab.setOpen(true));
@@ -957,6 +996,22 @@ harness.run(async (page, check, ctx) => {
   bs = await boss();
   s = await state(page);
   check('Fly again starts a fresh run, no guardian', s.mode === 'flying' && bs.stage === null && s.t < 1, { s, bs });
+
+  // With the lab switch off it never turns.
+  await quiet(page);
+  await D(page, () => window.__descentDebug.lab.setOpen(true));
+  await page.uncheck('#lab input[data-key="BOSS_FLIP"]');
+  await D(page, () => window.__descentDebug.lab.setOpen(false));
+  await D(page, (t) => { const d = window.__descentDebug; d.setInvincible(true); d.skipTo(t); d.startBoss(0); }, nightT);
+  await page.waitForFunction(() => window.__descentDebug.boss().mode === 'fight', null, { timeout: 30000 });
+  await D(page, () => { window.__descentDebug.timeScale = 4; });
+  let offMin = 1;
+  for (let i = 0; i < 30; i++) { offMin = Math.min(offMin, Math.abs((await boss()).flipCos)); await page.waitForTimeout(100); }
+  await D(page, () => { window.__descentDebug.timeScale = 1; });
+  check('with "Turns edge-on" off, it always faces you', offMin === 1, offMin);
+  await D(page, () => window.__descentDebug.lab.setOpen(true));
+  await page.check('#lab input[data-key="BOSS_FLIP"]');
+  await D(page, () => window.__descentDebug.lab.setOpen(false));
 
   // Other forms: losing the core first makes a pinwheel; the core alone is a cube.
   await quiet(page);

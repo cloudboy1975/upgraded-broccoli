@@ -251,11 +251,22 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   | 1 triangle | **Dart** | Fast and jittery. Fires one shot where you are and one where you're heading. |
   | the core alone | **The Cube** | Spins hard. Alternates a ring of six shots around you (holding still is safe) with a pair straight at you. |
 
+  **It turns edge-on.** Every few seconds the whole formation turns
+  away like a card on a vertical axis. It narrows, darkens as if lit
+  from the side, and holds as a thin shimmering hairline. Edge-on,
+  shots glance off with a spark and the gun sight won't light, but it
+  keeps firing at you. Then it turns back. So the fight has a rhythm:
+  dodge while it's away, hit it while it faces you. Each form has its
+  own timing. The Star faces you for 3s at a time; the later forms
+  turn more often and stay away longer, so the fight gets harder as it
+  goes on. A new form always starts facing you.
+
   When the last piece goes it's **Guardian down**, followed by the
   victory screen. The calm, the hits each piece takes, its shot speed,
   how often it fires and its size are all in the settings lab. So is
   **Pieces drop glows**, which is off by default: the fight is a test
-  of the shield you bring into it. The
+  of the shield you bring into it. **Turns edge-on** (on by default)
+  has its own **Faces you for** and **Edge-on for** dials. The
   **Boss** jump button takes you straight to it.
 - **Settings lab.** Press backquote (`` ` ``), or triple-tap the
   "Descent" tag at the top right on a phone. It has the same look as
