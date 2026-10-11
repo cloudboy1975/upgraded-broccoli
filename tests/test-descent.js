@@ -24,6 +24,22 @@ async function quiet(page) {
   });
 }
 
+// Holds a key until the ship has moved the way `pred` wants, or a
+// generous limit passes. Not a fixed hold: the game caps each frame's
+// step, so on a slow frame (just after load, say) game time runs behind
+// the wall clock and a fixed 350ms hold can come up short.
+async function holdUntil(page, key, pred, maxMs) {
+  await page.keyboard.down(key);
+  const end = Date.now() + (maxMs || 1500);
+  let st;
+  do {
+    await page.waitForTimeout(40);
+    st = await page.evaluate(() => window.__descentDebug.state());
+  } while (!pred(st) && Date.now() < end);
+  await page.keyboard.up(key);
+  return st;
+}
+
 async function hold(page, key, ms) {
   await page.keyboard.down(key);
   await page.waitForTimeout(ms);
@@ -44,13 +60,11 @@ harness.run(async (page, check, ctx) => {
 
   // ---- Steering ------------------------------------------------------
   await quiet(page);
-  await hold(page, 'ArrowRight', 350);
-  s = await state(page);
+  s = await holdUntil(page, 'ArrowRight', st => st.shipX > 20);
   check('right on the keys moves the ship right', s.shipX > 20, s.shipX);
 
   await quiet(page);
-  await hold(page, 'ArrowUp', 350);
-  s = await state(page);
+  s = await holdUntil(page, 'ArrowUp', st => st.shipY < -20);
   check('up moves the ship UP the screen (no inversion)', s.shipY < -20, s.shipY);
 
   await quiet(page);
@@ -262,18 +276,15 @@ harness.run(async (page, check, ctx) => {
     await page.evaluate(() => document.activeElement !== document.getElementById('axisBtn')));
 
   await quiet(page);
-  await hold(page, 'ArrowUp', 350);
-  s = await state(page);
+  s = await holdUntil(page, 'ArrowUp', st => st.shipY > 20);
   check('flight sim: up dives', s.shipY > 20, s.shipY);
 
   await quiet(page);
-  await hold(page, 'ArrowDown', 350);
-  s = await state(page);
+  s = await holdUntil(page, 'ArrowDown', st => st.shipY < -20);
   check('flight sim: down climbs', s.shipY < -20, s.shipY);
 
   await quiet(page);
-  await hold(page, 'ArrowRight', 350);
-  s = await state(page);
+  s = await holdUntil(page, 'ArrowRight', st => st.shipX > 20);
   check('flight sim: left/right are unchanged', s.shipX > 20, s.shipX);
 
   await quiet(page);
@@ -294,8 +305,7 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('Y on the keyboard toggles it back to arcade', s.invertY === false, s.invertY);
   await quiet(page);
-  await hold(page, 'ArrowUp', 350);
-  s = await state(page);
+  s = await holdUntil(page, 'ArrowUp', st => st.shipY < -20);
   check('arcade again: up climbs', s.shipY < -20, s.shipY);
 
   // ---- Collisions ----------------------------------------------------
@@ -794,6 +804,32 @@ harness.run(async (page, check, ctx) => {
   await D(page, (t) => window.__descentDebug.skipTo(t), sunStart);
   await page.waitForTimeout(1500);
   check('flying on brings the dusk', (await D(page, () => window.__descentDebug.sky())).p > 0);
+
+  // ---- The night sky -----------------------------------------------------
+  const stars = () => D(page, () => window.__descentDebug.stars());
+  const st0 = await stars();
+  check('a full night sky: plenty of stars, in several colours, some that sparkle',
+    st0.count >= 120 && st0.colors >= 4 && st0.sparkling > 10 && st0.sparkling < st0.count / 3, st0);
+
+  // Shooting stars: only in full dark, and only with the switch on.
+  // Fast-forwarded, so several would-be chances go by.
+  const shootingIn = async (t) => {
+    await quiet(page);
+    await D(page, (t) => { const d = window.__descentDebug; d.setInvincible(true); d.skipTo(t); d.timeScale = 4; }, t);
+    await page.waitForTimeout(4500);
+    await D(page, () => { window.__descentDebug.timeScale = 1; });
+    return (await stars()).shootingSeen;
+  };
+  const nightSky = C.SURFACE_START + C.SUNSET_DELAY + C.SUNSET_TIME + 0.1;
+  check('shooting stars cross the night sky', (await shootingIn(nightSky)) > 0);
+  check('...but never in daylight', (await shootingIn(C.SURFACE_START)) === 0);
+  await D(page, () => window.__descentDebug.lab.setOpen(true));
+  await page.uncheck('#lab input[data-key="SHOOTING_STARS"]');
+  await D(page, () => window.__descentDebug.lab.setOpen(false));
+  check('...and not at all with the lab switch off', (await shootingIn(nightSky)) === 0);
+  await D(page, () => window.__descentDebug.lab.setOpen(true));
+  await page.check('#lab input[data-key="SHOOTING_STARS"]');
+  await D(page, () => window.__descentDebug.lab.setOpen(false));
 
   // ---- Nightfall and the guardian ---------------------------------------
   const boss = () => D(page, () => window.__descentDebug.boss());

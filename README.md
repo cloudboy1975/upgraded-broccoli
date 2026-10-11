@@ -199,7 +199,15 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   across its lower half, sinks behind the horizon off to the right
   while the sky runs from red afternoon through a burning dusk to
   night. The stars come out, the ground darkens, and the grid lines
-  pick up a faint violet glow. After that it stays night. The sun
+  pick up a faint violet glow. After that it stays night. The night sky
+  is meant to feel like a dream: 140 stars in soft pale colours (blue,
+  lavender, rose, warm white) with slow, deep twinkles and halos on the
+  bright ones. About one in six now and then flares into a four-point
+  glint. A faint violet-to-rose haze runs diagonally across the sky,
+  and every few seconds a shooting star streaks across the top. The
+  speed streaks are quieter at night so they don't cut across all
+  this. Star brightness, sparkle, haze and shooting stars are dials in
+  the lab's **Night sky** section. The sun
   starts 3s after you land and takes 45s to reach full night. Those
   timings, plus the sun's size and its left/right position, are dials
   in the settings lab, which also has **Dusk** and **Night** jump

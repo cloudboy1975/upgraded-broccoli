@@ -475,6 +475,18 @@
   var SUNSET_DELAY = 3;        // seconds on the surface before it starts to go down
   var SUNSET_TIME = 45;        // seconds from the start of the sunset to full night
 
+  // ---- The night sky --------------------------------------------------
+  // Meant to feel like a dream more than an observatory: plenty of
+  // stars in soft pale colours, the bright ones haloed, a few that now
+  // and then flare into a four-point glint, a faint violet-and-rose band
+  // of haze across the sky, and every so often a shooting star.
+  var STAR_COUNT = 140;
+  var STAR_BRIGHTNESS = 1;     // x on every star's strength
+  var STAR_SPARKLE = 1;        // x on the glints (0 = none)
+  var STAR_NEBULA = 1;         // x on the haze band (0 = none)
+  var SHOOTING_STARS = 1;      // 1 = on
+  var STAR_COLORS = [0xf8fafc, 0xdbeafe, 0xe9d5ff, 0xfce7f3, 0xfef3c7];
+
   // Spawning. Intervals are in seconds at SPEED_START and shrink as the
   // pace rises, so the spacing in DEPTH stays about the same while the
   // time you have to react to each thing goes down.
@@ -653,7 +665,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'STAR_BRIGHTNESS', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -672,7 +684,8 @@
       SUNSET_DELAY: SUNSET_DELAY, SUNSET_TIME: SUNSET_TIME,
       SUN_RADIUS: SUN_RADIUS, SUN_OFFSET_X: SUN_OFFSET_X,
       CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
-      BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS
+      BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
+      STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -1117,9 +1130,19 @@
     // The night sky: fixed points at infinity, placed as a fraction of the
     // way from the horizon up, and a twinkle phase each.
     this.state.stars = [];
-    for (var j = 0; j < 80; j++) {
-      this.state.stars.push({ x: rand(-30, GAME_WIDTH + 30), h: Math.pow(Math.random(), 0.7), size: Math.random() < 0.15 ? 2 : 1, tw: rand(0, Math.PI * 2) });
+    for (var j = 0; j < STAR_COUNT; j++) {
+      var big = Math.random();
+      this.state.stars.push({
+        x: rand(-30, GAME_WIDTH + 30), h: Math.pow(Math.random(), 0.7),
+        size: big < 0.06 ? 2.2 : big < 0.25 ? 1.5 : 1,
+        color: STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)],
+        tw: rand(0, Math.PI * 2), rate: rand(0.5, 1.6),
+        // About one in six sparkles: a slow cycle with a short bright peak.
+        sparkle: Math.random() < 0.17, sp: rand(0, Math.PI * 2), spRate: rand(0.35, 0.8)
+      });
     }
+    this.state.shooting = [];
+    this.state.nextShooting = rand(3, 7);
     document.getElementById('crashOverlay').classList.remove('visible');
   };
 
@@ -1172,6 +1195,7 @@
     this.stepStreaks(dt, flying ? speedAt(s.t) : speedAt(s.t) * Math.max(0, 1 - s.crashAge / 0.8));
     this.stepShards(dt);
     this.stepBursts(dt, flying ? speedAt(s.t) : 0);
+    this.stepShootingStars(dt);
     this.stepChunks(dt, flying ? speedAt(s.t) : 0);
 
     var phase = phaseAt(s.t);
@@ -2269,13 +2293,91 @@
     if (sky.stars <= 0) return;
     var st = this.state.stars, t = this.state.t;
     var dx = -this.camX() * 0.02, top = -10;
-    for (var i = 0; i < st.length; i++) {
-      var y = horizon - 6 - st[i].h * (horizon - 6 - top);
-      // Thinner near the horizon, where the last of the light still is.
-      var a = sky.stars * (0.35 + 0.65 * st[i].h) * (0.75 + 0.25 * Math.sin(t * 2.3 + st[i].tw));
-      g.fillStyle(0xf8fafc, a);
-      g.fillRect(st[i].x + dx, y, st[i].size, st[i].size);
+    var bright = sky.stars * TUNING.STAR_BRIGHTNESS;
+
+    // The haze: soft overlapping ovals stepping diagonally across the sky,
+    // violet blending into rose. The ground covers anything below the
+    // horizon, so it can spill freely.
+    var neb = sky.stars * TUNING.STAR_NEBULA;
+    if (neb > 0) {
+      for (var k = 0; k < 9; k++) {
+        var f = k / 8;
+        var nx = lerp(-60, GAME_WIDTH + 40, f) + dx * 0.5;
+        var ny = lerp(horizon - 20, 10, f) + Math.sin(f * 7) * 12;
+        g.fillStyle(mixColor(0x7c3aed, 0xdb2777, f), 0.055 * neb);
+        g.fillEllipse(nx, ny, 190, 70);
+        g.fillStyle(mixColor(0xa78bfa, 0xf9a8d4, f), 0.035 * neb);
+        g.fillEllipse(nx + 10, ny - 4, 110, 34);
+      }
     }
+
+    for (var i = 0; i < st.length; i++) {
+      var p = st[i];
+      var x = p.x + dx, y = horizon - 6 - p.h * (horizon - 6 - top);
+      // Fainter low down, where the last of the light still is; a slow,
+      // deep twinkle each at its own pace.
+      var a = clamp(bright * (0.4 + 0.6 * p.h) * (0.55 + 0.45 * Math.sin(t * p.rate + p.tw)), 0, 1);
+      if (a <= 0.01) continue;
+      if (p.size > 1) {
+        g.fillStyle(p.color, a * 0.16);
+        g.fillCircle(x, y, p.size * 3);
+      }
+      g.fillStyle(p.color, a);
+      g.fillCircle(x, y, p.size * 0.8);
+      // The glint: rises to a sharp peak and falls away, a four-point
+      // cross with a shorter diagonal pair.
+      if (p.sparkle && TUNING.STAR_SPARKLE > 0) {
+        var gl = Math.pow(Math.max(0, Math.sin(t * p.spRate + p.sp)), 8) * TUNING.STAR_SPARKLE * sky.stars;
+        if (gl > 0.02) {
+          var len = 3 + 11 * gl, len2 = len * 0.45;
+          g.lineStyle(1, p.color, clamp(gl, 0, 1));
+          g.lineBetween(x - len, y, x + len, y);
+          g.lineBetween(x, y - len, x, y + len);
+          g.lineStyle(1, p.color, clamp(gl * 0.5, 0, 1));
+          g.lineBetween(x - len2, y - len2, x + len2, y + len2);
+          g.lineBetween(x - len2, y + len2, x + len2, y - len2);
+          g.fillStyle(0xffffff, clamp(gl, 0, 1));
+          g.fillCircle(x, y, 1.2 + gl);
+          g.fillStyle(p.color, clamp(gl * 0.25, 0, 1));
+          g.fillCircle(x, y, 4 + 5 * gl);
+        }
+      }
+    }
+
+    // Shooting stars: a bright head and a fading tail, high in the sky.
+    var sh = this.state.shooting;
+    for (var j = 0; j < sh.length; j++) {
+      var m = sh[j], u = m.age / m.life;
+      var hx = m.x + m.vx * m.age, hy = m.y + m.vy * m.age;
+      var fade = Math.sin(Math.PI * clamp(u, 0, 1)) * sky.stars;
+      for (var seg = 0; seg < 8; seg++) {
+        var s0 = seg / 8, s1 = (seg + 1) / 8;
+        g.lineStyle(seg < 2 ? 2 : 1, 0xf8fafc, fade * (1 - s0) * 0.9);
+        g.lineBetween(hx - m.vx * 0.12 * s0, hy - m.vy * 0.12 * s0, hx - m.vx * 0.12 * s1, hy - m.vy * 0.12 * s1);
+      }
+      g.fillStyle(0xffffff, fade);
+      g.fillCircle(hx, hy, 1.5);
+    }
+  };
+
+  // Every few seconds of full dark, one streaks across the top of the sky.
+  MainScene.prototype.stepShootingStars = function (dt) {
+    var s = this.state, sh = s.shooting;
+    for (var i = sh.length - 1; i >= 0; i--) {
+      sh[i].age += dt;
+      if (sh[i].age > sh[i].life) sh.splice(i, 1);
+    }
+    s.nextShooting -= dt;
+    if (s.nextShooting > 0) return;
+    s.nextShooting = rand(4, 9);
+    if (!TUNING.SHOOTING_STARS || skyAt(sunsetAt(s.t)).stars < 0.8) return;
+    var dir = Math.random() < 0.5 ? -1 : 1;
+    var speed = rand(260, 380);
+    s.shooting.push({
+      x: rand(40, GAME_WIDTH - 40), y: rand(18, 90),
+      vx: dir * speed * 0.88, vy: speed * 0.47, age: 0, life: rand(0.55, 0.85)
+    });
+    s.shootingSeen = (s.shootingSeen || 0) + 1;
   };
 
   // The sun: a flat disc in horizontal bands, yellow at the top to pink at
@@ -2327,7 +2429,8 @@
     } else if (phase === 'clouds') {
       color = 0xf1d6cf; alpha = 0.25;
     } else {
-      color = mixColor(0xfca5a5, 0xc7d2fe, sunsetAt(s.t)); alpha = 0.2;
+      // Quieter at night, so they do not rain across the stars.
+      color = mixColor(0xfca5a5, 0xc7d2fe, sunsetAt(s.t)); alpha = lerp(0.2, 0.1, sunsetAt(s.t));
     }
     var stretch = 0.25 + 0.1 * speedAt(s.t);
     for (var i = 0; i < s.streaks.length; i++) {
@@ -2834,6 +2937,12 @@
       ['BOSS_SIZE', 'Size', 0.6, 1.6, 0.05, '\u00d7'],
       ['BOSS_GLOWS', 'Pieces drop glows', 'toggle']
     ] },
+    { title: 'Night sky', rows: [
+      ['STAR_BRIGHTNESS', 'Star brightness', 0.3, 2, 0.05, '\u00d7'],
+      ['STAR_SPARKLE', 'Sparkle', 0, 2, 0.05, '\u00d7'],
+      ['STAR_NEBULA', 'Haze band', 0, 2, 0.05, '\u00d7'],
+      ['SHOOTING_STARS', 'Shooting stars', 'toggle']
+    ] },
     { title: 'Guns', rows: [
       ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
       ['BULLET_RADIUS', 'Shot reach', 2, 30, 1, ' px']
@@ -3015,6 +3124,12 @@
     },
     skipTo: function (t) { scene.state.t = t; },
     sky: function (t) { return skyAt(sunsetAt(t == null ? scene.state.t : t)); },
+    stars: function () {
+      var s = scene.state;
+      return { count: s.stars.length, sparkling: s.stars.filter(function (p) { return p.sparkle; }).length,
+        colors: s.stars.reduce(function (set, p) { if (set.indexOf(p.color) < 0) set.push(p.color); return set; }, []).length,
+        shootingNow: s.shooting.length, shootingSeen: s.shootingSeen || 0 };
+    },
     // The marker on the next wall, with that wall's gap in screen space.
     nextWallMarker: function () {
       var o = scene.findNextWall();
