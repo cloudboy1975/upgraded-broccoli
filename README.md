@@ -230,7 +230,7 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   tips glow first, and its shots come in the colour of the piece that
   fired them. A row of coloured bars under the shield shows each
   piece's health. Shoot a piece to nothing and it shatters into flat
-  shards of its own colour, leaves a green glow, and the survivors
+  shards of its own colour, and the survivors
   regroup into a new form with its own movement and attack. A title
   card names each form:
 
@@ -245,7 +245,9 @@ It isn't connected to the boss fight yet. The plan is to hand off from
 
   When the last piece goes it's **Guardian down**, followed by the
   victory screen. The calm, the hits each piece takes, its shot speed,
-  how often it fires and its size are all in the settings lab, and the
+  how often it fires and its size are all in the settings lab. So is
+  **Pieces drop glows**, which is off by default: the fight is a test
+  of the shield you bring into it. The
   **Boss** jump button takes you straight to it.
 - **Settings lab.** Press backquote (`` ` ``), or triple-tap the
   "Descent" tag at the top right on a phone. It has the same look as

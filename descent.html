@@ -620,6 +620,7 @@
   var BOSS_SHOT_TIME = 0.95;    // seconds its shots take to reach you, from wherever it is
   var BOSS_VOLLEY_SCALE = 1;    // x on every form's time between volleys
   var BOSS_SIZE = 1;            // x on every piece's size
+  var BOSS_GLOWS = 0;           // 1: a destroyed piece leaves a green glow. Off by default - the fight is a test of what you came in with
   var BOSS_SQUARE = 76;         // side of the core, world px at its plane
   var BOSS_TRI_BASE = 76;
   var BOSS_TRI_H = 70;
@@ -652,7 +653,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -671,7 +672,7 @@
       SUNSET_DELAY: SUNSET_DELAY, SUNSET_TIME: SUNSET_TIME,
       SUN_RADIUS: SUN_RADIUS, SUN_OFFSET_X: SUN_OFFSET_X,
       CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
-      BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE
+      BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -2038,14 +2039,14 @@
     p.hp--;
     p.flash = 0.08;
     if (p.hp > 0) { Sound.tick(); return; }
-    // Destroyed: it shatters in its own colour, leaves a glow, and the
-    // rest regroup.
+    // Destroyed: it shatters in its own colour, leaves a glow if the lab
+    // says so, and the rest regroup.
     var poly = this.bossPiecePoly(p);
     p.alive = false;
     b.queue = b.queue.filter(function (q) { return q.piece !== p; });
     s.bursts.push({ kind: 'burst', x: poly.cx, y: poly.cy, z: b.z, r: 60 * TUNING.BOSS_SIZE, age: 0, life: 0.7, spin: rand(0, Math.PI), color: p.color, holdsStation: true });
     this.shatter(poly, b.z, p.color);
-    this.addObstacle({ kind: 'glow', x: poly.cx, y: poly.cy, z: b.z });
+    if (TUNING.BOSS_GLOWS) this.addObstacle({ kind: 'glow', x: poly.cx, y: poly.cy, z: b.z });
     s.shake = Math.max(s.shake, 0.6);
     Sound.boom();
     if (!b.pieces.some(function (q) { return q.alive; })) return this.bossDefeated();
@@ -2830,7 +2831,8 @@
       ['BOSS_CORE_HP', 'Hits for the square', 1, 40, 1, ''],
       ['BOSS_SHOT_TIME', 'Its shots take', 0.4, 2, 0.05, ' s'],
       ['BOSS_VOLLEY_SCALE', 'Time between volleys', 0.4, 2.5, 0.05, '\u00d7'],
-      ['BOSS_SIZE', 'Size', 0.6, 1.6, 0.05, '\u00d7']
+      ['BOSS_SIZE', 'Size', 0.6, 1.6, 0.05, '\u00d7'],
+      ['BOSS_GLOWS', 'Pieces drop glows', 'toggle']
     ] },
     { title: 'Guns', rows: [
       ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
@@ -2874,6 +2876,18 @@
         row.className = 'lab-row';
         var label = document.createElement('label');
         label.textContent = r[1];
+        if (r[2] === 'toggle') {
+          // An on/off knob: a checkbox, stored as 1 or 0 like any other number.
+          var box2 = document.createElement('input');
+          box2.type = 'checkbox';
+          box2.dataset.key = key;
+          var showT = function () { row.classList.toggle('changed', !!labGet(key) !== !!labDefault(key)); };
+          box2.addEventListener('change', function () { labSet(key, box2.checked ? 1 : 0); showT(); saveTuning(); });
+          row.appendChild(label); row.appendChild(box2);
+          box.appendChild(row);
+          labSyncers.push(function () { box2.checked = !!labGet(key); showT(); });
+          return;
+        }
         var input = document.createElement('input');
         input.type = 'range';
         input.min = r[2]; input.max = r[3]; input.step = step;
@@ -2990,7 +3004,7 @@
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: TUNING.BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: TUNING.ENEMY_SHOT_SPEED,
         ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL,
-        CALM_TIME: TUNING.CALM_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
+        CALM_TIME: TUNING.CALM_TIME, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
         BOSS_SHOT_TIME: TUNING.BOSS_SHOT_TIME, BOSS_Z_MIN: BOSS_Z_MIN, BOSS_ARRIVE_STAGGER: BOSS_ARRIVE_STAGGER,
         BOSS_DOCK_TIME: BOSS_DOCK_TIME, BOSS_REFORM_TIME: BOSS_REFORM_TIME, BOSS_CHARGE: BOSS_CHARGE, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
         WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,

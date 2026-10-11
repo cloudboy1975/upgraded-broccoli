@@ -875,13 +875,22 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__descentDebug.hitBoss('top', 99));
   bs = await boss();
   s = await state(page);
-  check('a piece shot to nothing is gone, and leaves a glow',
-    !bs.pieces.find(p => p.id === 'top').alive && s.obstacles.some(o => o.kind === 'glow'), bs.pieces);
+  check('glows from the guardian are off by default', C.BOSS_GLOWS === 0, C.BOSS_GLOWS);
+  check('a piece shot to nothing is gone - and leaves no glow',
+    !bs.pieces.find(p => p.id === 'top').alive && !s.obstacles.some(o => o.kind === 'glow'), bs.pieces);
   check('...the rest regroup', bs.mode === 'reforming' && bs.form === 'triad' && bs.banner === 'TRIAD', bs);
   await page.waitForTimeout((C.BOSS_REFORM_TIME + 0.3) * 1000);
   check('...and fight on in the new form', (await boss()).mode === 'fight');
 
+  // Switched on in the lab, the next piece down does leave one.
+  await D(page, () => window.__descentDebug.lab.setOpen(true));
+  await page.check('#lab input[data-key="BOSS_GLOWS"]');
+  await D(page, () => window.__descentDebug.lab.setOpen(false));
   await D(page, () => window.__descentDebug.hitBoss('left', 99));
+  check('...with the lab\'s switch on, a piece down leaves a glow', (await state(page)).obstacles.some(o => o.kind === 'glow'));
+  await D(page, () => window.__descentDebug.lab.setOpen(true));
+  await page.uncheck('#lab input[data-key="BOSS_GLOWS"]');
+  await D(page, () => window.__descentDebug.lab.setOpen(false));
   await page.waitForTimeout((C.BOSS_REFORM_TIME + 0.3) * 1000);
   bs = await boss();
   check('two triangles left make a bird', bs.form === 'bird', bs.form);
@@ -947,8 +956,8 @@ harness.run(async (page, check, ctx) => {
     if (typeof tuned[k] === 'number') wanted.push(k);
     else Object.keys(tuned[k]).forEach(f => wanted.push(k + '.' + f));
   });
-  const have = await lab(() => Array.from(document.querySelectorAll('#lab input[type=range]')).map(i => i.dataset.key));
-  check('every tunable has a slider', wanted.every(k => have.includes(k)) && have.length === wanted.length,
+  const have = await lab(() => Array.from(document.querySelectorAll('#lab input[data-key]')).map(i => i.dataset.key));
+  check('every tunable has a slider (or a switch)', wanted.every(k => have.includes(k)) && have.length === wanted.length,
     { missing: wanted.filter(k => !have.includes(k)), extra: have.filter(k => !wanted.includes(k)) });
 
   await page.keyboard.press('Backquote');
