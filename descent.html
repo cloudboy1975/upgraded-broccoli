@@ -1134,7 +1134,7 @@
       var big = Math.random();
       this.state.stars.push({
         x: rand(-30, GAME_WIDTH + 30), h: Math.pow(Math.random(), 0.7),
-        size: big < 0.06 ? 2.2 : big < 0.25 ? 1.5 : 1,
+        size: big < 0.06 ? 1.7 : big < 0.25 ? 1.4 : 1,
         color: STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)],
         tw: rand(0, Math.PI * 2), rate: rand(0.5, 1.6),
         // About one in six sparkles: a slow cycle with a short bright peak.
@@ -2320,7 +2320,7 @@
       if (a <= 0.01) continue;
       if (p.size > 1) {
         g.fillStyle(p.color, a * 0.16);
-        g.fillCircle(x, y, p.size * 3);
+        g.fillCircle(x, y, p.size * 2.5);
       }
       g.fillStyle(p.color, a);
       g.fillCircle(x, y, p.size * 0.8);
