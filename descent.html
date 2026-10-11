@@ -482,6 +482,7 @@
   // of haze across the sky, and every so often a shooting star.
   var STAR_COUNT = 140;
   var STAR_BRIGHTNESS = 1;     // x on every star's strength
+  var STAR_SIZE = 1;           // x on every star's size, halos and glints included
   var STAR_SPARKLE = 1;        // x on the glints (0 = none)
   var STAR_NEBULA = 1;         // x on the haze band (0 = none)
   var SHOOTING_STARS = 1;      // 1 = on
@@ -665,7 +666,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'STAR_BRIGHTNESS', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -685,7 +686,7 @@
       SUN_RADIUS: SUN_RADIUS, SUN_OFFSET_X: SUN_OFFSET_X,
       CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
       BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
-      STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
+      STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -1134,7 +1135,7 @@
       var big = Math.random();
       this.state.stars.push({
         x: rand(-30, GAME_WIDTH + 30), h: Math.pow(Math.random(), 0.7),
-        size: big < 0.06 ? 1.7 : big < 0.25 ? 1.4 : 1,
+        size: big < 0.06 ? 1.5 : big < 0.25 ? 1.25 : 1,
         color: STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)],
         tw: rand(0, Math.PI * 2), rate: rand(0.5, 1.6),
         // About one in six sparkles: a slow cycle with a short bright peak.
@@ -2318,28 +2319,39 @@
       // deep twinkle each at its own pace.
       var a = clamp(bright * (0.4 + 0.6 * p.h) * (0.55 + 0.45 * Math.sin(t * p.rate + p.tw)), 0, 1);
       if (a <= 0.01) continue;
+      var k = TUNING.STAR_SIZE;
       if (p.size > 1) {
-        g.fillStyle(p.color, a * 0.16);
-        g.fillCircle(x, y, p.size * 2.5);
+        g.fillStyle(p.color, a * 0.1);
+        g.fillCircle(x, y, p.size * 2 * k);
       }
       g.fillStyle(p.color, a);
-      g.fillCircle(x, y, p.size * 0.8);
-      // The glint: rises to a sharp peak and falls away, a four-point
-      // cross with a shorter diagonal pair.
+      g.fillCircle(x, y, p.size * 0.7 * k);
+      // The glint: a fine, faint four-point flare that swells and fades
+      // - a catch of light, not a cartoon twinkle. Rays are hairlines
+      // that thin out toward their ends; the diagonals only show near
+      // the peak.
       if (p.sparkle && TUNING.STAR_SPARKLE > 0) {
-        var gl = Math.pow(Math.max(0, Math.sin(t * p.spRate + p.sp)), 8) * TUNING.STAR_SPARKLE * sky.stars;
+        var gl = clamp(Math.pow(Math.max(0, Math.sin(t * p.spRate + p.sp)), 6) * TUNING.STAR_SPARKLE * sky.stars, 0, 1.5);
         if (gl > 0.02) {
-          var len = 3 + 11 * gl, len2 = len * 0.45;
-          g.lineStyle(1, p.color, clamp(gl, 0, 1));
-          g.lineBetween(x - len, y, x + len, y);
-          g.lineBetween(x, y - len, x, y + len);
-          g.lineStyle(1, p.color, clamp(gl * 0.5, 0, 1));
-          g.lineBetween(x - len2, y - len2, x + len2, y + len2);
-          g.lineBetween(x - len2, y + len2, x + len2, y - len2);
+          var len = (1.5 + 5 * gl) * k, mid = len * 0.45;
+          g.lineStyle(0.75, p.color, clamp(gl * 0.8, 0, 1));
+          g.lineBetween(x - mid, y, x + mid, y);
+          g.lineBetween(x, y - mid, x, y + mid);
+          g.lineStyle(0.75, p.color, clamp(gl * 0.3, 0, 1));
+          g.lineBetween(x - len, y, x - mid, y);
+          g.lineBetween(x + mid, y, x + len, y);
+          g.lineBetween(x, y - len, x, y - mid);
+          g.lineBetween(x, y + mid, x, y + len);
+          if (gl > 0.5) {
+            var d2 = len * 0.3;
+            g.lineStyle(0.75, p.color, clamp((gl - 0.5) * 0.5, 0, 1));
+            g.lineBetween(x - d2, y - d2, x + d2, y + d2);
+            g.lineBetween(x - d2, y + d2, x + d2, y - d2);
+          }
+          g.fillStyle(p.color, clamp(gl * 0.12, 0, 1));
+          g.fillCircle(x, y, (1.5 + 2 * gl) * k);
           g.fillStyle(0xffffff, clamp(gl, 0, 1));
-          g.fillCircle(x, y, 1.2 + gl);
-          g.fillStyle(p.color, clamp(gl * 0.25, 0, 1));
-          g.fillCircle(x, y, 4 + 5 * gl);
+          g.fillCircle(x, y, (0.8 + 0.4 * gl) * k);
         }
       }
     }
@@ -2939,6 +2951,7 @@
     ] },
     { title: 'Night sky', rows: [
       ['STAR_BRIGHTNESS', 'Star brightness', 0.3, 2, 0.05, '\u00d7'],
+      ['STAR_SIZE', 'Star size', 0.4, 2, 0.05, '\u00d7'],
       ['STAR_SPARKLE', 'Sparkle', 0, 2, 0.05, '\u00d7'],
       ['STAR_NEBULA', 'Haze band', 0, 2, 0.05, '\u00d7'],
       ['SHOOTING_STARS', 'Shooting stars', 'toggle']
