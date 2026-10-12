@@ -1017,12 +1017,18 @@ harness.run(async (page, check, ctx) => {
   const advance = async () => { await D(page, () => window.__descentDebug.setCityT(9999)); await page.waitForTimeout(250); return city(); };
   ct = await advance();
   check('then into the city', ct.stage === 'city' && ct.banner === 'THE CITY', ct);
+  check('...the streets start at density 1.5', Math.abs(ct.density - 1.5) < 0.03, ct.density);
   await page.waitForTimeout(4000);
   s = await state(page);
   check('the city brings towers and something in the way, by itself',
     s.obstacles.filter(o => o.kind === 'building').length >= 4 &&
     s.obstacles.some(o => o.kind === 'bridge' || o.style === 'gate' || o.kind === 'building'), s.obstacles.map(o => o.kind));
   check('...and still nothing shoots', s.enemies.length === 0 && s.enemyShots === 0);
+  // Density builds from 1.5 to 1.75, peaking two-thirds of the way in.
+  const densAt = async (f) => { await D(page, (t) => window.__descentDebug.setCityT(t), C.CITY_TIME * f); return (await city()).density; };
+  const dHalf = await densAt(0.335), dPeak = await densAt(0.67), dLate = await densAt(0.95);
+  check('the streets get busier: halfway up the ramp a third of the way in', Math.abs(dHalf - 1.625) < 0.02, dHalf);
+  check('...at the peak, 1.75, two-thirds in, and holding there', Math.abs(dPeak - 1.75) < 0.01 && Math.abs(dLate - 1.75) < 0.001, { dPeak, dLate });
   ct = await advance();
   check('the city centre: an open plaza', ct.stage === 'plaza' && ct.banner === 'CITY CENTER', ct);
   ct = await advance();

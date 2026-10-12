@@ -672,7 +672,11 @@
   var CITY_TIME = 36;           // seconds among the buildings
   var PLAZA_TIME = 3;           // the open plaza before the pad
   var LAND_TIME = 4.5;          // seconds from the pad coming up to touchdown
-  var CITY_DENSITY = 1;         // x on how often city obstacles come
+  // How often city obstacles come (x): it builds from the first to the
+  // second over the city, reaching it this far (%) of the way through.
+  var CITY_DENSITY_MIN = 1.5;
+  var CITY_DENSITY_MAX = 1.75;
+  var CITY_DENSITY_PEAK = 67;
   var TOUCH_TIME = 3.2;         // seconds of the vertical let-down onto the pad
   var HOVER_Y = 20;             // the height the ship comes to a hover at, over the pad
   var CITY_STAGES = ['lake', 'city', 'plaza', 'landing', 'touchdown', 'landed'];
@@ -712,7 +716,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'LAKE_TIME', 'CITY_TIME', 'CITY_DENSITY', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'LAKE_TIME', 'CITY_TIME', 'CITY_DENSITY_MIN', 'CITY_DENSITY_MAX', 'CITY_DENSITY_PEAK', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -733,7 +737,7 @@
       CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
       BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
       BOSS_FLIP: BOSS_FLIP, BOSS_FACE_SCALE: BOSS_FACE_SCALE, BOSS_EDGE_SCALE: BOSS_EDGE_SCALE,
-      CITY_SPEED: CITY_SPEED, LAKE_TIME: LAKE_TIME, CITY_TIME: CITY_TIME, CITY_DENSITY: CITY_DENSITY,
+      CITY_SPEED: CITY_SPEED, LAKE_TIME: LAKE_TIME, CITY_TIME: CITY_TIME, CITY_DENSITY_MIN: CITY_DENSITY_MIN, CITY_DENSITY_MAX: CITY_DENSITY_MAX, CITY_DENSITY_PEAK: CITY_DENSITY_PEAK,
       STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
@@ -2296,6 +2300,15 @@
     return cityV;
   };
 
+  // How busy the streets are: building from the start density to the
+  // peak over the city. The lake and the plaza keep their own pace.
+  MainScene.prototype.cityDensity = function () {
+    var c = this.state.city;
+    if (!c || c.stage !== 'city') return 1;
+    var peakAt = Math.max(0.01, TUNING.CITY_TIME * TUNING.CITY_DENSITY_PEAK / 100);
+    return Math.max(0.1, lerp(TUNING.CITY_DENSITY_MIN, TUNING.CITY_DENSITY_MAX, clamp(c.t / peakAt, 0, 1)));
+  };
+
   MainScene.prototype.stepCity = function (dt) {
     var s = this.state, c = s.city;
     if (!c) return;
@@ -2310,7 +2323,7 @@
     // The lake gets its own title once the guardian's has gone.
     if (c.stage === 'lake' && !c.lakeTitled && c.t > 2.4) { c.lakeTitled = true; s.banner = { text: 'THE LAKE', age: 0 }; }
     if (!s.spawning) return;
-    var dens = Math.max(0.1, TUNING.CITY_DENSITY), tm = c.timers;
+    var dens = this.cityDensity(), tm = c.timers;
     // After a moment of open water the far shore comes in toward you.
     var LT = TUNING.LAKE_TIME;
     if (c.stage === 'lake' && c.t >= LT * LAKE_OPEN) {
@@ -3672,7 +3685,9 @@
       ['CITY_SPEED', 'Speed', 2, 9, 0.1, ''],
       ['LAKE_TIME', 'Lake lasts', 4, 30, 1, ' s'],
       ['CITY_TIME', 'City lasts', 6, 90, 1, ' s'],
-      ['CITY_DENSITY', 'Density', 0.3, 2.5, 0.05, '\u00d7']
+      ['CITY_DENSITY_MIN', 'Density at start', 0.3, 3, 0.05, '\u00d7'],
+      ['CITY_DENSITY_MAX', 'Density at peak', 0.3, 3, 0.05, '\u00d7'],
+      ['CITY_DENSITY_PEAK', 'Peaks this far in', 5, 100, 1, '%']
     ] },
     { title: 'Night sky', rows: [
       ['STAR_BRIGHTNESS', 'Star brightness', 0.3, 2, 0.05, '\u00d7'],
@@ -3948,7 +3963,7 @@
       var s = scene.state, c = s.city;
       return { stage: c ? c.stage : null, t: c ? c.t : 0, reacts: s.cityReacts, speed: scene.worldSpeed(),
         terrain: scene.terrain(), banner: s.banner && s.banner.text, mode: s.mode,
-        hover: scene.hoverAmount(), lift: scene.liftThrottle() };
+        hover: scene.hoverAmount(), lift: scene.liftThrottle(), density: scene.cityDensity() };
     },
     startCity: function (stage) { scene.beginCity(stage || 'lake'); return true; },
     setCityT: function (t) { if (scene.state.city) scene.state.city.t = t; return true; },

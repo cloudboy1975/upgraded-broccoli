@@ -303,8 +303,11 @@ It isn't connected to the boss fight yet. The plan is to hand off from
     and it feathers off at the end. Then **LANDED**, the jets cut to
     a flicker, and an end screen.
 
+  The streets get busier as you go: density builds from 1.5x at the
+  start of the city to 1.75x two-thirds of the way in, then holds.
   The lab's **City** section sets the speed, how long the lake and
-  the city last, and how dense they are. The **Lake**, **City** and
+  the city last, and the density ramp (**Density at start**,
+  **Density at peak**, and **Peaks this far in** as a % of the city). The **Lake**, **City** and
   **Landing** buttons jump straight there.
 - **Settings lab.** Press backquote (`` ` ``), or triple-tap the
   "Descent" tag at the top right on a phone. It has the same look as
