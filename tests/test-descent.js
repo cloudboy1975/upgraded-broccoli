@@ -953,7 +953,8 @@ harness.run(async (page, check, ctx) => {
   check('a piece shot to nothing is gone - and leaves no glow',
     !bs.pieces.find(p => p.id === 'top').alive && !s.obstacles.some(o => o.kind === 'glow'), bs.pieces);
   check('...the rest regroup', bs.mode === 'reforming' && bs.form === 'triad' && bs.banner === 'TRIAD', bs);
-  await page.waitForTimeout((C.BOSS_REFORM_TIME + 0.3) * 1000);
+  // Wait on the game's clock, not the wall's: headless runs slow.
+  await page.waitForFunction(() => window.__descentDebug.boss().mode === 'fight', null, { timeout: 20000 }).catch(() => {});
   check('...and fight on in the new form', (await boss()).mode === 'fight');
   check('...starting face-on', (await boss()).flip === 'face');
 
@@ -1226,6 +1227,23 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__descentDebug.spawn('rock', { x: window.__descentDebug.state().shipX, y: window.__descentDebug.state().shipY, r: 25, z: 1.6 }));
   await page.waitForTimeout(600);
   check('No damage means no damage', (await state(page)).shield === C.SHIELD_MAX);
+
+  // The city's dials only touch the city: cranked right up, the run
+  // before it goes exactly as fast as ever, and nothing city-ish starts.
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  for (const [k, v] of [['CITY_SPEED', 9], ['CITY_DENSITY_MIN', 3], ['CITY_DENSITY_MAX', 3], ['LAKE_TIME', 30], ['CITY_TIME', 90]]) await setSlider(k, v);
+  await lab(() => window.__descentDebug.lab.setOpen(false));
+  const early = [];
+  for (const t of [3, 30, 60, 90]) {
+    await D(page, (t) => { window.__descentDebug.restart(); window.__descentDebug.skipTo(t); }, t);
+    await page.waitForTimeout(150);
+    early.push(await D(page, () => {
+      const T = window.__descentDebug.lab.tuning(), s = window.__descentDebug.state(), c = window.__descentDebug.city();
+      return { t: s.t, speed: c.speed, want: Math.min(T.SPEED_MAX, T.SPEED_START + T.SPEED_RAMP * s.t), stage: c.stage, density: c.density };
+    }));
+  }
+  check('the city dials leave the run before the city alone: same speed, no city',
+    early.every(e => Math.abs(e.speed - e.want) < 1e-9 && e.stage === null && e.density === 1), early);
 
   await lab(() => window.__descentDebug.lab.setOpen(true));
   await page.click('#labResetBtn');
