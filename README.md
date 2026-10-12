@@ -318,6 +318,14 @@ descent by itself, for practice.
   the city last, and the density ramp (**Density at start**,
   **Density at peak**, and **Peaks this far in** as a % of the city). The **Lake**, **City** and
   **Landing** buttons jump straight there.
+- **Performance monitor.** A line in the top-left corner, updated once
+  a second: frames per second, the worst frame, JS memory (Chrome and
+  Android report it, Safari doesn't), how many draw commands the frame
+  took, and how many things are live. It turns red under 40 fps or past
+  a 100 ms frame. The last minute is kept in localStorage, so a page
+  the browser kills still leaves its log behind. The lab's
+  **Diagnostics** section turns it off, and its **Monitor log** button
+  shows the last samples.
 - **Crash recorder.** If the game hits a code error, or the browser
   reloads the page in the middle of a run (a phone running short of
   memory does this), a red note says so and where in the run it

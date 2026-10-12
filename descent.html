@@ -91,6 +91,14 @@
     font: 12px/1.4 system-ui, sans-serif; white-space: pre-wrap; word-break: break-word;
   }
   .diag-note.visible { display: block; }
+  /* The performance monitor: one line in the corner, out of the way. */
+  .perf-mon {
+    position: fixed; left: 8px; top: 44px; z-index: 40; pointer-events: none;
+    padding: 2px 6px; border-radius: 4px; background: rgba(0, 0, 0, 0.5);
+    color: #a5b4fc; font: 10px/1.3 ui-monospace, Menlo, monospace; display: none;
+  }
+  .perf-mon.visible { display: block; }
+  .perf-mon.warn { color: #fda4af; }
   .overlay {
     position: absolute;
     inset: 0;
@@ -330,6 +338,7 @@
 
   <div class="diag-note" id="diagNote" role="status" title="Tap to dismiss"></div>
   <div class="arrival-fade" id="arrivalFade" aria-hidden="true"></div>
+  <div class="perf-mon" id="perfMon" aria-hidden="true"></div>
   <script>
     // Before anything paints: a run coming down from head-on.html opens on
     // black, the colour that page faded out to.
@@ -377,6 +386,7 @@
       </div>
       <div id="labSections"></div>
       <div class="lab-actions">
+        <button type="button" class="lab-btn wide" id="labMonLogBtn">Monitor log</button>
         <button type="button" class="lab-btn wide" id="labResetBtn">Reset to defaults</button>
         <button type="button" class="lab-btn wide primary" id="labCloseBtn">Close</button>
       </div>
@@ -516,6 +526,7 @@
   var STAR_SPARKLE = 1;        // x on the glints (0 = none)
   var STAR_NEBULA = 1;         // x on the haze band (0 = none)
   var SHOOTING_STARS = 1;      // 1 = on
+  var PERF_MONITOR = 1;        // 1 = the frame-rate / memory readout in the corner
   var STAR_COLORS = [0xf8fafc, 0xdbeafe, 0xe9d5ff, 0xfce7f3, 0xfef3c7];
 
   // Spawning. Intervals are in seconds at SPEED_START and shrink as the
@@ -741,7 +752,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'LAKE_TIME', 'CITY_TIME', 'CITY_DENSITY_MIN', 'CITY_DENSITY_MAX', 'CITY_DENSITY_PEAK', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'LAKE_TIME', 'CITY_TIME', 'CITY_DENSITY_MIN', 'CITY_DENSITY_MAX', 'CITY_DENSITY_PEAK', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS', 'PERF_MONITOR'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -763,7 +774,7 @@
       BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
       BOSS_FLIP: BOSS_FLIP, BOSS_FACE_SCALE: BOSS_FACE_SCALE, BOSS_EDGE_SCALE: BOSS_EDGE_SCALE,
       CITY_SPEED: CITY_SPEED, LAKE_TIME: LAKE_TIME, CITY_TIME: CITY_TIME, CITY_DENSITY_MIN: CITY_DENSITY_MIN, CITY_DENSITY_MAX: CITY_DENSITY_MAX, CITY_DENSITY_PEAK: CITY_DENSITY_PEAK,
-      STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
+      STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS, PERF_MONITOR: PERF_MONITOR
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -1261,6 +1272,7 @@
 
   // ---- Update --------------------------------------------------------
   MainScene.prototype.update = function (time, deltaMs) {
+    Perf.frame();
     if (labOpen) return; // paused under the settings lab
     try {
       var dt = Math.min(deltaMs / 1000, 0.05) * debug.timeScale;
@@ -1290,6 +1302,79 @@
   function runLine() {
     return CARRIED_SCORE != null ? ' \u00b7 Head-On score ' + CARRIED_SCORE.toLocaleString() : '';
   }
+
+  // ---- Performance monitor --------------------------------------------
+  // Frame rate, the worst frame, JS memory (where the browser reports it -
+  // Chrome does, Safari doesn't), how much is drawn and how many things
+  // are live, once a second. Shown in the corner, and the last minute is
+  // kept in localStorage so it survives the page being killed.
+  var Perf = (function () {
+    var LOG = 'descent-monitor-log', KEEP = 60;
+    var frames = 0, worst = 0, lastFrame = 0, log = [];
+    try { log = JSON.parse(localStorage.getItem(LOG) || '[]') || []; } catch (e) { log = []; }
+    var prevLog = log.slice(); // the last run's, for the reload note
+    log = [];
+    function heapMb() {
+      var m = window.performance && performance.memory;
+      return m && m.usedJSHeapSize ? Math.round(m.usedJSHeapSize / 1048576) : null;
+    }
+    function drawCount(sc) {
+      var n = 0;
+      ['gBack', 'gFar', 'gShip', 'gNear', 'gFx'].forEach(function (k) { if (sc[k] && sc[k].commandBuffer) n += sc[k].commandBuffer.length; });
+      return n;
+    }
+    function describe(x) {
+      if (!x) return 'no data';
+      return x.fps + ' fps, worst frame ' + x.worst + ' ms, heap ' + (x.heap == null ? 'n/a' : x.heap + ' MB') +
+        ', draw ' + (x.draw / 1000).toFixed(1) + 'k, things ' + x.obs + (x.where ? ' @ ' + x.where : '');
+    }
+    function peakOf(list) {
+      if (!list.length) return null;
+      var p = { fps: Infinity, worst: 0, heap: null, draw: 0, obs: 0 };
+      list.forEach(function (x) {
+        p.fps = Math.min(p.fps, x.fps); p.worst = Math.max(p.worst, x.worst);
+        if (x.heap != null) p.heap = Math.max(p.heap || 0, x.heap);
+        p.draw = Math.max(p.draw, x.draw); p.obs = Math.max(p.obs, x.obs);
+      });
+      return p;
+    }
+    return {
+      // Real time between frames: Phaser's own delta is smoothed and
+      // capped, so it never shows a stall.
+      frame: function () {
+        var now = performance.now();
+        if (lastFrame) worst = Math.max(worst, now - lastFrame);
+        lastFrame = now;
+        frames++;
+      },
+      second: function (sc) {
+        var s = sc.state;
+        var x = { fps: frames, worst: Math.round(worst), heap: heapMb(), draw: drawCount(sc),
+          obs: s.obstacles.length + s.bullets.length + s.bursts.length + s.enemies.length + s.enemyShots.length + s.chunks.length,
+          where: CrashLog.where(sc).replace(/ \(.*$/, ''), t: Math.round(s.t) };
+        frames = 0; worst = 0;
+        log.push(x);
+        if (log.length > KEEP) log.shift();
+        try { localStorage.setItem(LOG, JSON.stringify(log)); } catch (e) {}
+        var el = document.getElementById('perfMon');
+        if (el) {
+          el.classList.toggle('visible', !!TUNING.PERF_MONITOR);
+          el.classList.toggle('warn', x.fps < 40 || x.worst > 100);
+          el.textContent = x.fps + 'fps  max ' + x.worst + 'ms  ' + (x.heap == null ? '' : x.heap + 'MB  ') + 'draw ' + (x.draw / 1000).toFixed(1) + 'k  obj ' + x.obs;
+        }
+        return x;
+      },
+      describe: describe,
+      peak: function () { return peakOf(prevLog); },
+      // This run's log, or - if there is none yet - the last run's.
+      dump: function () {
+        var list = log.length > 3 ? log : prevLog;
+        return list.slice(-12).map(function (x) { return 't' + x.t + ': ' + describe(x); }).join('\n') || 'No log yet.';
+      },
+      log: function () { return log.slice(); },
+      prevLog: function () { return prevLog.slice(); }
+    };
+  })();
 
   var CrashLog = (function () {
     var HEART = 'descent-heartbeat', LAST = 'descent-last-problem', shown = false;
@@ -1321,21 +1406,26 @@
       },
       // Once a second: where the run is. A clean leave (closing the tab,
       // a reload you asked for) wipes it; a crash-reload doesn't get the chance.
-      beat: function (scene) {
+      // Kept in localStorage, not sessionStorage: a browser that kills the
+      // page for memory may not keep the tab's session store either.
+      beat: function (scene, sample) {
         try {
-          sessionStorage.setItem(HEART, JSON.stringify({ mode: scene.state.mode, where: where(scene), at: Date.now() }));
+          localStorage.setItem(HEART, JSON.stringify({ mode: scene.state.mode, where: where(scene), at: Date.now(), sample: sample }));
         } catch (e) {}
       },
-      clean: function () { try { sessionStorage.removeItem(HEART); } catch (e) {} },
+      clean: function () { try { localStorage.removeItem(HEART); } catch (e) {} },
       // On load: did the last page die mid-run?
       check: function () {
         try {
-          var hb = JSON.parse(sessionStorage.getItem(HEART) || 'null');
-          sessionStorage.removeItem(HEART);
-          if (hb && hb.mode === 'flying' && Date.now() - hb.at < 60000) {
-            var rec = { kind: 'reload', where: hb.where, at: new Date().toISOString() };
+          var hb = JSON.parse(localStorage.getItem(HEART) || 'null');
+          localStorage.removeItem(HEART);
+          try { sessionStorage.removeItem(HEART); } catch (e) {} // an older build's
+          if (hb && hb.mode === 'flying' && Date.now() - hb.at < 30 * 60000) {
+            var rec = { kind: 'reload', where: hb.where, at: new Date().toISOString(), sample: hb.sample, peak: Perf.peak() };
             keep(rec);
-            show('The page reloaded itself mid-run, at ' + rec.where + '. The browser most likely ran short of memory.');
+            show('The page reloaded itself mid-run, at ' + rec.where + '. The browser most likely ran short of memory.\n' +
+              'Last second: ' + Perf.describe(hb.sample) + '\nWorst of the run: ' + Perf.describe(rec.peak) +
+              '\n(The lab\'s Monitor log button has the last minute.)');
           }
         } catch (e) {}
       },
@@ -1345,12 +1435,22 @@
     };
   })();
   window.addEventListener('pagehide', function () { CrashLog.clean(); });
+  window.__showDiag = function (text) {
+    var el = document.getElementById('diagNote');
+    if (!el) return;
+    el.textContent = text + '\n(tap to dismiss)';
+    el.classList.add('visible');
+  };
   window.addEventListener('error', function (ev) { CrashLog.error(ev.error || ev.message, scene); });
   (function () {
     var el = document.getElementById('diagNote');
     if (el) el.addEventListener('click', function () { el.classList.remove('visible'); });
     CrashLog.check();
-    setInterval(function () { if (scene && scene.state) CrashLog.beat(scene); }, 1000);
+    setInterval(function () {
+      if (!scene || !scene.state) return;
+      var sample = Perf.second(scene);
+      CrashLog.beat(scene, sample);
+    }, 1000);
   })();
 
   MainScene.prototype.step = function (dt) {
@@ -3809,6 +3909,9 @@
       ['STAR_NEBULA', 'Haze band', 0, 2, 0.05, '\u00d7'],
       ['SHOOTING_STARS', 'Shooting stars', 'toggle']
     ] },
+    { title: 'Diagnostics', rows: [
+      ['PERF_MONITOR', 'Performance monitor', 'toggle']
+    ] },
     { title: 'Guns', rows: [
       ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
       ['BULLET_RADIUS', 'Shot reach', 2, 30, 1, ' px']
@@ -3908,6 +4011,9 @@
   }
 
   document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
+  document.getElementById('labMonLogBtn').addEventListener('click', function () {
+    window.__showDiag('Monitor log (fps, worst frame, JS memory, draw commands, live things):\n' + Perf.dump());
+  });
   document.getElementById('labResetBtn').addEventListener('click', function () {
     resetTuning();
     saveTuning();
@@ -3951,6 +4057,7 @@
   var debug = window.__descentDebug = {
     runtimeErrors: { count: 0, last: null },
     lastProblem: function () { return CrashLog.last(); },
+    perf: function () { return { log: Perf.log(), prev: Perf.prevLog() }; },
     run: function () { return { fromHeadOn: FROM_HEAD_ON, score: CARRIED_SCORE }; },
     timeScale: 1,              // slow motion, for looking at effects frame by frame
     state: function () {

@@ -1257,6 +1257,27 @@ harness.run(async (page, check, ctx) => {
   const re = await D(page, () => window.__descentDebug.runtimeErrors);
   check('the descent never crashed (the code, not the ship)', re.count === 0, re);
 
+  // ---- Performance monitor ----------------------------------------------
+  const mon = await D(page, () => ({ on: document.getElementById('perfMon').classList.contains('visible'),
+    text: document.getElementById('perfMon').textContent, log: window.__descentDebug.perf().log }));
+  check('a performance monitor shows in the corner by default', mon.on && /\d+fps/.test(mon.text) && /draw/.test(mon.text), mon.text);
+  check('...and logs a sample a second, kept for after a crash',
+    mon.log.length >= 3 && mon.log.every(x => typeof x.fps === 'number' && typeof x.draw === 'number' && typeof x.worst === 'number'), mon.log.slice(-3));
+  check('...in localStorage, where a page reload cannot wipe it',
+    await D(page, () => JSON.parse(localStorage.getItem('descent-monitor-log') || '[]').length >= 3));
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await page.uncheck('#lab input[data-key="PERF_MONITOR"]');
+  await lab(() => window.__descentDebug.lab.setOpen(false));
+  await page.waitForTimeout(1500);
+  check('...and the lab can hide it', await D(page, () => !document.getElementById('perfMon').classList.contains('visible')));
+  await lab(() => window.__descentDebug.lab.setOpen(true));
+  await page.check('#lab input[data-key="PERF_MONITOR"]');
+  await page.click('#labMonLogBtn');
+  const logNote = await D(page, () => document.getElementById('diagNote').textContent);
+  check('the lab\'s Monitor log button shows the last samples', /Monitor log/.test(logNote) && /fps, worst frame/.test(logNote), logNote);
+  await page.click('#diagNote');
+  await lab(() => window.__descentDebug.lab.setOpen(false));
+
   // ---- Crash recorder ----------------------------------------------------
   check('no problem note when nothing went wrong', await D(page, () => !document.getElementById('diagNote').classList.contains('visible')));
   // A reload you ask for is a clean leave: no note.
@@ -1267,13 +1288,15 @@ harness.run(async (page, check, ctx) => {
   // that by putting the heartbeat back after the clean-up wipes it.
   await D(page, () => {
     window.__descentDebug.startCity('lake');
-    window.addEventListener('pagehide', () => sessionStorage.setItem('descent-heartbeat',
-      JSON.stringify({ mode: 'flying', where: 'surface, city lake +3.0s (t 99.0s, flying)', at: Date.now() })));
+    window.addEventListener('pagehide', () => localStorage.setItem('descent-heartbeat',
+      JSON.stringify({ mode: 'flying', where: 'surface, city lake +3.0s (t 99.0s, flying)', at: Date.now(),
+        sample: { fps: 12, worst: 450, heap: 300, draw: 17000, obs: 20, where: 'surface, city lake', t: 99 } })));
   });
   await page.reload();
   await page.waitForTimeout(800);
   let note = await D(page, () => ({ on: document.getElementById('diagNote').classList.contains('visible'), text: document.getElementById('diagNote').textContent, last: window.__descentDebug.lastProblem() }));
   check('a page that died mid-run says so on the next load, and where', note.on && /reloaded/i.test(note.text) && /city lake/.test(note.text), note);
+  check('...with what the monitor saw in its last second', /12 fps/.test(note.text) && /worst frame 450 ms/.test(note.text) && /heap 300 MB/.test(note.text), note.text);
   check('...and keeps a record of it', note.last && note.last.kind === 'reload' && /city lake/.test(note.last.where), note.last);
   await page.click('#diagNote');
   check('...tap the note away', await D(page, () => !document.getElementById('diagNote').classList.contains('visible')));
