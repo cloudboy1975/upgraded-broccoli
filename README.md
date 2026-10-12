@@ -305,7 +305,7 @@ It isn't connected to the boss fight yet. The plan is to hand off from
 
   The streets get busier as you go: density builds from 1.5x at the
   start of the city to 1.75x two-thirds of the way in, then holds.
-  The lab's **City** section sets the speed, how long the lake and
+  The lab's **City** section sets the city speed (a cap: it only ever slows you to city pace, and does nothing before the city), how long the lake and
   the city last, and the density ramp (**Density at start**,
   **Density at peak**, and **Peaks this far in** as a % of the city). The **Lake**, **City** and
   **Landing** buttons jump straight there.

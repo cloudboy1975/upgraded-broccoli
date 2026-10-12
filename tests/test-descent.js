@@ -1213,7 +1213,7 @@ harness.run(async (page, check, ctx) => {
 
   await lab(() => window.__descentDebug.lab.setOpen(true));
   await page.click('[data-jump="boss"]');
-  await page.waitForTimeout(800);
+  await page.waitForFunction(() => window.__descentDebug.boss().stage === 'boss', null, { timeout: 15000 }).catch(() => {});
   check('the Boss button goes straight to the guardian', (await D(page, () => window.__descentDebug.boss())).stage === 'boss');
 
   await lab(() => window.__descentDebug.lab.setOpen(true));
