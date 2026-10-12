@@ -1027,6 +1027,23 @@ harness.run(async (page, check, ctx) => {
   check('the city centre: an open plaza', ct.stage === 'plaza' && ct.banner === 'CITY CENTER', ct);
   ct = await advance();
   check('...then the landing', ct.stage === 'landing', ct.stage);
+  s = await state(page);
+  check('...with the city closed in round the pad: towers either side and beyond',
+    s.obstacles.filter(o => o.kind === 'building' && o.x < -150).length >= 4 &&
+    s.obstacles.filter(o => o.kind === 'building' && o.x > 150).length >= 4 &&
+    s.obstacles.filter(o => o.kind === 'building' && Math.abs(o.x) < 150).length >= 2 &&
+    !s.obstacles.some(o => o.pattern), s.obstacles.filter(o => o.kind === 'building').map(o => Math.round(o.x)));
+
+  // A classic vertical landing: it comes to a hover over the pad, then
+  // lets down straight onto it on fire pointing at the ground.
+  await page.waitForFunction(() => window.__descentDebug.city().stage === 'touchdown', null, { timeout: 30000 });
+  s = await state(page);
+  ct = await city();
+  check('the world stops and the ship hovers high over the pad', ct.speed === 0 && s.shipY < C.CITY_TOUCHDOWN_Y - 80 && Math.abs(s.shipX) < 5, { y: s.shipY, ct });
+  check('...on its lift jets, main engine wound down', ct.hover === 1 && ct.lift > 0.5, ct);
+  await page.waitForFunction((y0) => window.__descentDebug.state().shipY > y0 + 40, s.shipY, { timeout: 20000 });
+  ct = await city();
+  check('...then lets down straight onto it, still on the jets', ct.stage === 'touchdown' && Math.abs((await state(page)).shipX) < 5 && ct.lift > 0.5, ct);
 
   // The ship lands itself: steering is ignored, it lines up and sets down.
   await page.keyboard.down('ArrowLeft');

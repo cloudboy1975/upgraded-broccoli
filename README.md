@@ -291,9 +291,17 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   - **Shooting buildings:** they react but nothing breaks. A tower
     flashes, every window comes on and it shivers. Houses hop.
     Flying into one still hurts.
-  - **The city centre:** the buildings open into a plaza, and a
-    glowing landing pad comes up. The ship takes over, lines up,
-    slows and sets down on it. Then **LANDED**, and an end screen.
+  - **The city centre:** the buildings open into a plaza, with
+    towers still standing back on both sides, and a glowing landing
+    pad comes up. The city closes in round it: towers down both sides
+    and a tall wall of them beyond. The ship takes over and lines up
+    over the pad. As the world slows to a stop it levels out into a
+    hover, and the main engine winds down as three lift jets take
+    over. Then it makes a classic vertical landing, letting down
+    straight onto the pad with fire pointing at the ground. The fire
+    splashes light across the pad and blows rings of dust outward,
+    and it feathers off at the end. Then **LANDED**, the jets cut to
+    a flicker, and an end screen.
 
   The lab's **City** section sets the speed, how long the lake and
   the city last, and how dense they are. The **Lake**, **City** and

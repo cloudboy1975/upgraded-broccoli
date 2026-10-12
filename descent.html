@@ -673,7 +673,9 @@
   var PLAZA_TIME = 3;           // the open plaza before the pad
   var LAND_TIME = 4.5;          // seconds from the pad coming up to touchdown
   var CITY_DENSITY = 1;         // x on how often city obstacles come
-  var CITY_STAGES = ['lake', 'city', 'plaza', 'landing', 'landed'];
+  var TOUCH_TIME = 3.2;         // seconds of the vertical let-down onto the pad
+  var HOVER_Y = 20;             // the height the ship comes to a hover at, over the pad
+  var CITY_STAGES = ['lake', 'city', 'plaza', 'landing', 'touchdown', 'landed'];
   var CITY_BANNERS = { city: 'THE CITY', plaza: 'CITY CENTER', landed: 'LANDED' };
   var COLOR_HOUSES = [0x38bdf8, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x34d399, 0xfb923c];
   var COLOR_TOWER_EDGES = [0x67e8f9, 0xf0abfc, 0xa78bfa, 0xfde68a];
@@ -1292,16 +1294,25 @@
 
   MainScene.prototype.shipYLimit = function () {
     var c = this.state.city;
-    if (c && (c.stage === 'landing' || c.stage === 'landed')) return CITY_TOUCHDOWN_Y;
+    if (c && (c.stage === 'landing' || c.stage === 'touchdown' || c.stage === 'landed')) return CITY_TOUCHDOWN_Y;
     return Math.min(Y_BOTTOM, groundYAt(this.state.t) - GROUND_CLEARANCE);
   };
 
   MainScene.prototype.stepShip = function (dt) {
     var s = this.state;
-    // Landing: the ship takes over, lines up on the pad and settles.
-    if (s.city && (s.city.stage === 'landing' || s.city.stage === 'landed')) {
-      var kk = 1 - Math.exp(-2.2 * dt);
-      var nx0 = s.shipX + (0 - s.shipX) * kk, ny0 = s.shipY + (CITY_TOUCHDOWN_Y - s.shipY) * kk;
+    // Landing: the ship takes over. It lines up over the pad and comes
+    // to a hover as the world slows to a stop, then lets down straight
+    // onto it on its engines.
+    var lc = s.city && s.city.stage;
+    if (lc === 'landing' || lc === 'touchdown' || lc === 'landed') {
+      var kk = 1 - Math.exp(-2.2 * dt), ty = HOVER_Y;
+      if (lc === 'touchdown') {
+        var u = clamp(s.city.t / TOUCH_TIME, 0, 1);
+        ty = lerp(HOVER_Y, CITY_TOUCHDOWN_Y, 1 - Math.pow(1 - u, 2.2)); // fast at first, feathered at the end
+        kk = 1 - Math.exp(-8 * dt);
+      }
+      if (lc === 'landed') { ty = CITY_TOUCHDOWN_Y; kk = 1; }
+      var nx0 = s.shipX + (0 - s.shipX) * kk, ny0 = s.shipY + (ty - s.shipY) * kk;
       s.vx = (nx0 - s.shipX) / Math.max(dt, 1e-4); s.vy = (ny0 - s.shipY) / Math.max(dt, 1e-4);
       s.shipX = nx0; s.shipY = ny0;
       return;
@@ -2261,7 +2272,8 @@
     return stage === 'lake' ? TUNING.LAKE_TIME
       : stage === 'city' ? TUNING.CITY_TIME
       : stage === 'plaza' ? PLAZA_TIME
-      : stage === 'landing' ? LAND_TIME : Infinity;
+      : stage === 'landing' ? LAND_TIME
+      : stage === 'touchdown' ? TOUCH_TIME : Infinity;
   }
 
   MainScene.prototype.beginCity = function (stage) {
@@ -2280,7 +2292,7 @@
     var cityV = Math.min(v, TUNING.CITY_SPEED);
     if (c.stage === 'lake') return lerp(v, cityV, smooth(c.t / Math.max(1, TUNING.LAKE_TIME * 0.4)));
     if (c.stage === 'landing') return cityV * Math.max(0, 1 - c.t / LAND_TIME);
-    if (c.stage === 'landed') return 0;
+    if (c.stage === 'touchdown' || c.stage === 'landed') return 0;
     return cityV;
   };
 
@@ -2312,6 +2324,15 @@
       if (tm.pond <= 0) { tm.pond = rand(0.6, 1.1) / dens; this.spawnPond(); }
       tm.house -= dt;
       if (tm.house <= 0) { tm.house = rand(0.6, 1.1) / dens; this.spawnHouseCluster(); }
+    }
+    if (c.stage === 'plaza') {
+      // The square: the towers stand back but keep you company.
+      tm.side -= dt;
+      if (tm.side <= 0) {
+        tm.side = rand(0.3, 0.45) / dens;
+        c.sideFlip = -c.sideFlip;
+        this.spawnTower(c.sideFlip * rand(240, 420), rand(70, 130), rand(Y_TOP - 160, Y_TOP), false);
+      }
     }
     if (c.stage === 'city') {
       // The streets: towers either side, all the way in...
@@ -2412,12 +2433,23 @@
   };
 
   // The pad: placed so that, slowing at a steady rate, the ship stops
-  // right over it.
+  // right over it - with the city closing in round it: towers down
+  // both sides and a tall wall of them beyond, everything placed to
+  // come to rest where it should as the world stops.
   MainScene.prototype.startLanding = function () {
     var s = this.state;
-    var v0 = Math.min(speedAt(s.t), TUNING.CITY_SPEED);
-    s.obstacles = s.obstacles.filter(function (o) { return o.kind === 'glow'; });
-    this.addObstacle({ kind: 'pad', x: 0, z: 1.15 + v0 * LAND_TIME / 2 });
+    var v0 = Math.min(speedAt(s.t), TUNING.CITY_SPEED), run = v0 * LAND_TIME / 2;
+    // Nothing left in your path; the towers off to the sides stay.
+    s.obstacles = s.obstacles.filter(function (o) { return o.kind === 'glow' || (o.kind === 'building' && !o.pattern); });
+    this.addObstacle({ kind: 'pad', x: 0, z: 1.15 + run });
+    for (var side = -1; side <= 1; side += 2) {
+      for (var z = 1.5; z < 7; z += rand(0.7, 1.1)) {
+        this.spawnTower(side * rand(200, 300) * (0.8 + z * 0.08), rand(60, 110), rand(Y_TOP - 220, Y_TOP - 40), false, z + run);
+      }
+    }
+    for (var bx = -480; bx <= 480; bx += rand(90, 130)) {
+      this.spawnTower(bx, rand(80, 130), rand(Y_TOP - 320, Y_TOP - 120), false, rand(7, 9) + run);
+    }
   };
 
   MainScene.prototype.landed = function () {
@@ -3129,16 +3161,20 @@
     if (s.invuln > 0 && Math.floor(s.invuln * 12) % 2 === 0) return;
     var x = this.sx(s.shipX, Z_SHIP), y = this.sy(s.shipY, Z_SHIP);
     var bank = clamp(s.vx / TUNING.SHIP_MAX_SPEED, -1.4, 1.4) * 0.5;
-    var pitch = 1 + (s.vy / TUNING.SHIP_MAX_SPEED) * 0.25;
+    var hover = this.hoverAmount();
+    // Hovering it levels out, belly to the ground: seen from behind, flatter.
+    var pitch = (1 + (s.vy / TUNING.SHIP_MAX_SPEED) * 0.25) * (1 - 0.45 * hover);
     var r = SHIP_DRAW_SIZE;
     var c = Math.cos(bank), sn = Math.sin(bank);
     function P(px, py) { py *= pitch; return [x + px * c - py * sn, y + px * sn + py * c]; }
     var nose = P(0, -r * 0.55), rw = P(r * 1.15, r * 0.35), notch = P(0, r * 0.08), lw = P(-r * 1.15, r * 0.35);
 
+    if (hover > 0) this.drawLiftJets(g, x, y, r, hover);
+
     // Engine flame out of the notch.
-    // A flick burns hotter: the flame stretches with the boost.
-    var flick = rand(0.7, 1.15) * (1 + 1.2 * (s.boost || 0));
-    if (s.city && s.city.stage === 'landed') flick *= 0.25; // engine idling on the pad
+    // A flick burns hotter: the flame stretches with the boost. In the
+    // hover the main engine winds down and the lift jets take over.
+    var flick = rand(0.7, 1.15) * (1 + 1.2 * (s.boost || 0)) * (1 - 0.85 * hover);
     var f1 = P(-4, r * 0.12), f2 = P(4, r * 0.12), ft = P(0, r * 0.12 + 11 * flick);
     g.fillStyle(COLOR_FLAME_OUTER, 0.9);
     g.fillTriangle(f1[0], f1[1], f2[0], f2[1], ft[0], ft[1]);
@@ -3162,6 +3198,57 @@
         g.lineStyle(2, COLOR_HEAT, heat * 0.7);
         g.beginPath(); g.moveTo(h1[0], h1[1]); g.lineTo(h2[0], h2[1]); g.lineTo(h3[0], h3[1]); g.strokePath();
       }
+    }
+  };
+
+  // How far into the vertical landing: 0 flying, 1 hovering on the jets.
+  MainScene.prototype.hoverAmount = function () {
+    var c = this.state.city;
+    if (!c) return 0;
+    if (c.stage === 'landing') return smooth(clamp((c.t - LAND_TIME * 0.45) / (LAND_TIME * 0.45), 0, 1));
+    return c.stage === 'touchdown' || c.stage === 'landed' ? 1 : 0;
+  };
+
+  // How hard the lift jets burn: full in the hover and the let-down,
+  // easing as the ship feathers onto the pad, then cut to a flicker.
+  MainScene.prototype.liftThrottle = function () {
+    var c = this.state.city, h = this.hoverAmount();
+    if (!c || h <= 0) return 0;
+    if (c.stage === 'touchdown') return lerp(1, 0.75, c.t / TOUCH_TIME);
+    if (c.stage === 'landed') return 0.75 * Math.max(0.12, 1 - c.t / 1.2);
+    return h;
+  };
+
+  // The classic let-down: fire straight down from under the ship, onto
+  // the pad, splashing light and blowing a ring of dust out across it.
+  MainScene.prototype.drawLiftJets = function (g, x, y, r, hover) {
+    var s = this.state, t = s.t, th = this.liftThrottle();
+    if (th <= 0) return;
+    var groundY = this.sy(GROUND_Y, 1.15), drop = groundY - y; // the pad's surface, where the fire lands
+    var reach = Math.min(drop, 26 + 70 * th);
+    var near = clamp(1 - (drop - reach) / 40, 0, 1); // how much of it reaches the ground
+    // The splash on the ground, under everything else.
+    if (near > 0) {
+      var sw = (40 + 50 * th) * (0.6 + 0.4 * near);
+      g.fillStyle(COLOR_FLAME_OUTER, 0.25 * near * th);
+      g.fillEllipse(x, groundY, sw * 2.2, sw * 0.35);
+      g.fillStyle(COLOR_FLAME_INNER, 0.35 * near * th);
+      g.fillEllipse(x, groundY, sw, sw * 0.16);
+      // Dust rings blowing outward.
+      for (var k = 0; k < 3; k++) {
+        var ph = (t * 1.6 + k / 3) % 1, rr = sw * (0.6 + ph * 1.8);
+        g.lineStyle(1, 0xfde68a, 0.35 * (1 - ph) * near * th);
+        g.strokeEllipse(x, groundY, rr * 2, rr * 0.3);
+      }
+    }
+    // Three jets: a big one under the middle and one under each wing.
+    var jets = [[0, 1, 9], [-r * 0.65, 0.7, 5], [r * 0.65, 0.7, 5]];
+    for (var j = 0; j < jets.length; j++) {
+      var jx = x + jets[j][0], top = y + r * 0.15, len = reach * jets[j][1] * rand(0.85, 1.1), w = jets[j][2] * (0.7 + 0.3 * th);
+      g.fillStyle(COLOR_FLAME_OUTER, 0.85 * hover);
+      g.fillTriangle(jx - w, top, jx + w, top, jx + rand(-1.5, 1.5), top + len);
+      g.fillStyle(COLOR_FLAME_INNER, hover);
+      g.fillTriangle(jx - w * 0.5, top, jx + w * 0.5, top, jx, top + len * 0.6);
     }
   };
 
@@ -3768,7 +3855,7 @@
         ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL,
         CALM_TIME: TUNING.CALM_TIME, CITY_SPEED: TUNING.CITY_SPEED, LAKE_OPEN: LAKE_OPEN,
         LAKE_TIME: TUNING.LAKE_TIME, CITY_TIME: TUNING.CITY_TIME, PLAZA_TIME: PLAZA_TIME,
-        LAND_TIME: LAND_TIME, CITY_TOUCHDOWN_Y: CITY_TOUCHDOWN_Y, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TURN_TIME: BOSS_TURN_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
+        LAND_TIME: LAND_TIME, TOUCH_TIME: TOUCH_TIME, HOVER_Y: HOVER_Y, CITY_TOUCHDOWN_Y: CITY_TOUCHDOWN_Y, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TURN_TIME: BOSS_TURN_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
         BOSS_SHOT_TIME: TUNING.BOSS_SHOT_TIME, BOSS_Z_MIN: BOSS_Z_MIN, BOSS_ARRIVE_STAGGER: BOSS_ARRIVE_STAGGER,
         BOSS_DOCK_TIME: BOSS_DOCK_TIME, BOSS_REFORM_TIME: BOSS_REFORM_TIME, BOSS_CHARGE: BOSS_CHARGE, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
         WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,
@@ -3860,7 +3947,8 @@
     city: function () {
       var s = scene.state, c = s.city;
       return { stage: c ? c.stage : null, t: c ? c.t : 0, reacts: s.cityReacts, speed: scene.worldSpeed(),
-        terrain: scene.terrain(), banner: s.banner && s.banner.text, mode: s.mode };
+        terrain: scene.terrain(), banner: s.banner && s.banner.text, mode: s.mode,
+        hover: scene.hoverAmount(), lift: scene.liftThrottle() };
     },
     startCity: function (stage) { scene.beginCity(stage || 'lake'); return true; },
     setCityT: function (t) { if (scene.state.city) scene.state.city.t = t; return true; },
