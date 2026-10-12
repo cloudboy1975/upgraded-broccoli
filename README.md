@@ -275,13 +275,14 @@ It isn't connected to the boss fight yet. The plan is to hand off from
     smooths into a still lake that holds the night sky, and **THE
     LAKE** comes up. You get a few seconds of open water: a bright
     sheen along the horizon, the stars and haze mirrored across the
-    whole surface, and soft ripples drifting past. Then patches of
-    land come by, most with a few little alien houses on them (boxes,
-    gabled houses, domes, diamonds in soft alien colours, each with a
-    lit door). Most lie off to the sides and some are in your path.
-    Only the houses are in the way; the land is scenery. Meanwhile the
-    skyline rises on the horizon round a tall central spire with a
-    pulsing beacon, and its reflection wavers in the water.
+    whole surface, and soft ripples drifting past. Then the far shore
+    shows and comes in toward you, and you're over land again, dotted
+    with pools of the lake (each holding a few stars and ripples) and
+    little alien houses (boxes, gabled houses, domes, diamonds in soft
+    alien colours, each with a lit door). Most lie off to the sides
+    and some are in your path. Only the houses are in the way; the
+    pools are scenery. Meanwhile the skyline rises on the horizon
+    round a tall central spire with a pulsing beacon.
   - **The city:** you're in among the buildings, threading them.
     Neon-edged towers with lit windows line the streets, and every so
     often something is in the way: a tower to go round, a pair to

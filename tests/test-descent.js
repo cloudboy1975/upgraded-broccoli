@@ -999,15 +999,17 @@ harness.run(async (page, check, ctx) => {
   await page.waitForTimeout(1500);
   ct = await city();
   check('the grid smooths into a lake', ct.terrain.lake > lake0 && ct.terrain.city === 0, { lake0, now: ct.terrain });
-  check('...open water first: no land yet', !(await state(page)).obstacles.some(o => o.kind === 'island' || o.kind === 'house'));
+  check('...open water first: no land yet', !(await state(page)).obstacles.some(o => o.kind === 'pond' || o.kind === 'house'));
   check('the lake is a short intro: the streets by about ten seconds', C.LAKE_TIME <= 12, C.LAKE_TIME);
 
-  // Then patches of land with houses come by themselves, and nothing shoots.
+  // Then the far shore comes in: land again, with pools of the lake and
+  // houses on it, all by themselves - and nothing shoots.
   await D(page, (t) => window.__descentDebug.setCityT(t), C.LAKE_TIME * 0.5);
   await page.waitForFunction(() => window.__descentDebug.state().obstacles.filter(o => o.kind === 'house').length >= 2, null, { timeout: 15000 }).catch(() => {});
   s = await state(page);
   ct = await city();
-  check('then land: patches of it, with houses', s.obstacles.some(o => o.kind === 'island') && s.obstacles.filter(o => o.kind === 'house').length >= 2, s.obstacles.map(o => o.kind));
+  check('then land: pools of the lake on it, and houses', s.obstacles.some(o => o.kind === 'pond') && s.obstacles.filter(o => o.kind === 'house').length >= 2, s.obstacles.map(o => o.kind));
+  check('...beyond a far shore that comes in toward you', ct.terrain.shore === null ? ct.terrain.lake === 0 : ct.terrain.shore < 14, ct.terrain);
   check('...you have slowed to city pace', Math.abs(ct.speed - C.CITY_SPEED) < 0.01, ct);
   check('...and nothing shoots at you', s.enemies.length === 0 && s.enemyShots === 0, s);
 
