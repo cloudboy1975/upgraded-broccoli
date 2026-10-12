@@ -181,6 +181,14 @@
   .lab-actions + .lab-actions, .lab-row + .lab-actions { margin-top: 8px; }
   .chapter-tag { cursor: pointer; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 
+  .overlay-link { margin-top: 10px; color: var(--accent); font-size: 0.85rem; text-decoration: underline; }
+  /* Arriving from head-on.html: start black and lift once there is a
+     frame, so the dive at the planet there runs straight on here. */
+  .arrival-fade {
+    position: fixed; inset: 0; z-index: 55; background: #000;
+    opacity: 0; pointer-events: none; transition: opacity 0.5s ease;
+  }
+  .arrival-fade.visible { opacity: 1; }
   .btn {
     margin-top: 6px;
     font: inherit;
@@ -307,7 +315,7 @@
     <a class="back-link" href="index.html">&larr; All</a>
     <div class="hud-right">
       <button type="button" class="axis-btn" id="axisBtn" aria-label="Toggle Y axis between arcade and flight-sim"></button>
-      <div class="chapter-tag" id="labTap" title="Triple-tap for the settings lab">Descent &middot; prototype</div>
+      <div class="chapter-tag" id="labTap" title="Triple-tap for the settings lab">Descent</div>
     </div>
   </div>
 
@@ -316,10 +324,17 @@
       <div class="overlay-title" id="overlayTitle">Crashed</div>
       <div class="overlay-line" id="crashLine"></div>
       <button type="button" class="btn" id="againBtn">Fly again</button>
+      <a class="overlay-link" id="fromTopLink" href="head-on.html">Start over from Head-On</a>
     </div>
   </div>
 
   <div class="diag-note" id="diagNote" role="status" title="Tap to dismiss"></div>
+  <div class="arrival-fade" id="arrivalFade" aria-hidden="true"></div>
+  <script>
+    // Before anything paints: a run coming down from head-on.html opens on
+    // black, the colour that page faded out to.
+    if (/(?:^|[?&])from=head-on(?:&|$)/.test(location.search)) document.getElementById('arrivalFade').classList.add('visible');
+  </script>
 
   <div class="control-bar">
     <div class="pad stick-pad" id="stickZone" aria-label="Fly: press anywhere on the left half and drag">
@@ -1166,6 +1181,10 @@
     document.getElementById('againBtn').addEventListener('click', function () { self.restart(); });
 
     this.restart();
+    // Arrived from head-on.html: lift the black it faded out to, now
+    // there is a frame - the planet it was diving at, swelling on.
+    var fade = document.getElementById('arrivalFade');
+    if (fade) window.setTimeout(function () { fade.classList.remove('visible'); }, 60);
   };
 
   MainScene.prototype.restart = function () {
@@ -1260,6 +1279,18 @@
   // middle of a run (a phone running short of memory does this), it
   // says so - on screen, and kept for next time - with where in the run
   // it happened, instead of the run just quietly starting over.
+  // ---- The run so far -----------------------------------------------
+  // Played straight on from head-on.html, the descent is the same run:
+  // that page hands over its score, and the end screens carry it.
+  var FROM_HEAD_ON = /(?:^|[?&])from=head-on(?:&|$)/.test(location.search || '');
+  var CARRIED_SCORE = (function () {
+    var m = /(?:^|[?&])score=(\d+)/.exec(location.search || '');
+    return m ? parseInt(m[1], 10) : null;
+  })();
+  function runLine() {
+    return CARRIED_SCORE != null ? ' \u00b7 Head-On score ' + CARRIED_SCORE.toLocaleString() : '';
+  }
+
   var CrashLog = (function () {
     var HEART = 'descent-heartbeat', LAST = 'descent-last-problem', shown = false;
     function where(scene) {
@@ -1672,7 +1703,7 @@
     }
     document.getElementById('overlayTitle').textContent = 'Crashed';
     var line = document.getElementById('crashLine');
-    line.textContent = dist.toLocaleString() + ' m flown · ' + s.enemiesDowned + ' aliens downed · best ' + this.best.toLocaleString() + ' m';
+    line.textContent = dist.toLocaleString() + ' m flown · ' + s.enemiesDowned + ' aliens downed · best ' + this.best.toLocaleString() + ' m' + runLine();
     var self = this;
     setTimeout(function () {
       if (self.state.mode === 'crashed') document.getElementById('crashOverlay').classList.add('visible');
@@ -2556,7 +2587,7 @@
       try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
     }
     document.getElementById('overlayTitle').textContent = 'The city';
-    document.getElementById('crashLine').textContent = 'Landed at the centre \u00b7 ' + dist.toLocaleString() + ' m flown \u00b7 best ' + this.best.toLocaleString() + ' m';
+    document.getElementById('crashLine').textContent = 'Landed at the centre \u00b7 ' + dist.toLocaleString() + ' m flown \u00b7 best ' + this.best.toLocaleString() + ' m' + runLine();
     var self = this;
     setTimeout(function () {
       if (self.state.mode === 'won') document.getElementById('crashOverlay').classList.add('visible');
@@ -3920,6 +3951,7 @@
   var debug = window.__descentDebug = {
     runtimeErrors: { count: 0, last: null },
     lastProblem: function () { return CrashLog.last(); },
+    run: function () { return { fromHeadOn: FROM_HEAD_ON, score: CARRIED_SCORE }; },
     timeScale: 1,              // slow motion, for looking at effects frame by frame
     state: function () {
       var s = scene.state;

@@ -104,14 +104,23 @@ chapter of a longer game about two-dimensional aliens.
   arrives and he rises out of the planet. Three belly cores answer only
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
+- **Then down to their world** — with him dead the board clears, the
+  engine lights, the stars stream past and the planet comes up solid
+  ahead. The screen fades and the run carries on in the descent below,
+  with your score. The lab's **Down to the planet after him** switch
+  (on by default) turns this off and flies on toward the next world
+  instead, as it used to.
 
-#### Descent (prototype)
+#### Descent
 
-[`descent.html`](descent.html) is a prototype of what comes after the
-boss: flying down to the planet.
+[`descent.html`](descent.html) is what comes after the boss: flying down
+to the planet, through its sky to the aliens' city.
 [Try it](https://cloudboy1975.github.io/upgraded-broccoli/descent.html).
-It isn't connected to the boss fight yet. The plan is to hand off from
-`endBoss()` once the descent feels right.
+Killing the boss in Head-On leads straight into it
+(`descent.html?from=head-on&score=N`). It opens out of the black Head-On
+faded to, and its end screens show the Head-On score, with a **Start
+over from Head-On** link. Opened on its own (from the index), it's the
+descent by itself, for practice.
 
 - **A behind-the-ship view with no 3D engine.** Every object is a flat
   shape at some depth, drawn at `centre + (world - camera) / depth`. The

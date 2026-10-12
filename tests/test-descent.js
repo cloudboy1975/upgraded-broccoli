@@ -1282,4 +1282,24 @@ harness.run(async (page, check, ctx) => {
   note = await D(page, () => ({ on: document.getElementById('diagNote').classList.contains('visible'), text: document.getElementById('diagNote').textContent, last: window.__descentDebug.lastProblem() }));
   check('an error is shown on screen with where it happened', note.on && /test boom/.test(note.text) && /t \d/.test(note.text), note);
   check('...and recorded', note.last && note.last.kind === 'error' && note.last.message === 'test boom', note.last);
+
+  // ---- On from head-on.html ----------------------------------------------
+  // Killing the boss there dives at the planet and lands here, mid-run,
+  // with the score; this page picks up out of the black it faded to.
+  const base = page.url().split('?')[0];
+  check('on its own, the descent is not part of a Head-On run',
+    (await D(page, () => window.__descentDebug.run())).fromHeadOn === false);
+  await page.goto(base + '?from=head-on&score=12345');
+  await page.waitForFunction(() => window.__descentDebug && window.__descentDebug.state().t > 0.5, null, { timeout: 15000 });
+  const arrived = await D(page, () => ({ run: window.__descentDebug.run(), phase: window.__descentDebug.state().phase,
+    black: document.getElementById('arrivalFade').classList.contains('visible') }));
+  check('from Head-On: the run carries on, with its score', arrived.run.fromHeadOn && arrived.run.score === 12345, arrived);
+  check('...opening on the planet, out of the black Head-On faded to', arrived.phase === 'entry' && !arrived.black, arrived);
+  await D(page, () => window.__descentDebug.setInvincible(false));
+  await D(page, () => { for (let i = 0; i < 3; i++) window.__descentDebug.spawn('wall', { z: 1.6 + i * 0.1, gx: -150, gy: -110 }); });
+  await page.waitForFunction(() => document.getElementById('crashOverlay').classList.contains('visible'), null, { timeout: 20000 }).catch(() => {});
+  const end = await D(page, () => ({ line: document.getElementById('crashLine').textContent,
+    link: document.getElementById('fromTopLink').getAttribute('href') }));
+  check('...the end screen shows the Head-On score', /Head-On score 12,345/.test(end.line), end);
+  check('...and offers the whole run again from the top', end.link === 'head-on.html', end);
 }, { page: 'descent.html' });
