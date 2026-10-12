@@ -1514,7 +1514,7 @@
       if (o.spin) o.rot += o.spin * dt;
       if (o.cutAge != null) o.cutAge += dt;
       if (o.react) o.react = Math.max(0, o.react - dt * 1.4);
-      if (o.kind === 'pad') { if (o.z < 1.15) o.z = 1.15; o.prevZ = o.z; } // it is where you land: it stops under you
+      if (o.kind === 'pad') { if (o.z < PAD_Z) o.z = PAD_Z; o.prevZ = o.z; } // it is where you land: it stops under you
       if (!noCollide && o.prevZ >= Z_SHIP && o.z < Z_SHIP && this.hitsShip(o)) this.onHit(o);
       if (o.z + (o.d || 0) < Z_NEAR || o.dead) s.obstacles.splice(i, 1);
     }
@@ -2270,7 +2270,11 @@
   // ==================================================================
   // The city
   // ==================================================================
-  var CITY_TOUCHDOWN_Y = GROUND_Y - 16;
+  // The pad stops in the ship's own plane, so the ship sets down dead
+  // centre on it rather than short of it; touchdown is the height that
+  // puts the ship's belly on the pad's middle.
+  var PAD_Z = Z_SHIP;
+  var CITY_TOUCHDOWN_Y = GROUND_Y - 4;
 
   function cityStageTime(stage) {
     return stage === 'lake' ? TUNING.LAKE_TIME
@@ -2454,7 +2458,7 @@
     var v0 = Math.min(speedAt(s.t), TUNING.CITY_SPEED), run = v0 * LAND_TIME / 2;
     // Nothing left in your path; the towers off to the sides stay.
     s.obstacles = s.obstacles.filter(function (o) { return o.kind === 'glow' || (o.kind === 'building' && !o.pattern); });
-    this.addObstacle({ kind: 'pad', x: 0, z: 1.15 + run });
+    this.addObstacle({ kind: 'pad', x: 0, z: PAD_Z + run });
     for (var side = -1; side <= 1; side += 2) {
       for (var z = 1.5; z < 7; z += rand(0.7, 1.1)) {
         this.spawnTower(side * rand(200, 300) * (0.8 + z * 0.08), rand(60, 110), rand(Y_TOP - 220, Y_TOP - 40), false, z + run);
@@ -3237,7 +3241,7 @@
   MainScene.prototype.drawLiftJets = function (g, x, y, r, hover) {
     var s = this.state, t = s.t, th = this.liftThrottle();
     if (th <= 0) return;
-    var groundY = this.sy(GROUND_Y, 1.15), drop = groundY - y; // the pad's surface, where the fire lands
+    var groundY = this.sy(GROUND_Y, PAD_Z), drop = groundY - y; // the pad's surface, where the fire lands
     var reach = Math.min(drop, 26 + 70 * th);
     var near = clamp(1 - (drop - reach) / 40, 0, 1); // how much of it reaches the ground
     // The splash on the ground, under everything else.
