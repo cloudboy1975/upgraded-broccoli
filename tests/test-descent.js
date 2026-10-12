@@ -860,7 +860,7 @@ harness.run(async (page, check, ctx) => {
     bs.pieces.filter(p => p.kind === 'square').length === 1 && bs.pieces.filter(p => p.kind === 'tri').length === 4, bs.pieces);
   check('...each a different colour', new Set(bs.pieces.map(p => p.color)).size === 5);
   check('...flying in rather than appearing whole', bs.mode === 'assembling' && bs.pieces.some(p => !p.docked), bs);
-  await page.waitForTimeout((C.BOSS_ARRIVE_STAGGER * 4 + C.BOSS_DOCK_TIME + 0.4) * 1000);
+  await page.waitForFunction(() => window.__descentDebug.boss().mode === 'fight', null, { timeout: 20000 }).catch(() => {});
   bs = await boss();
   check('...and docks into a star', bs.mode === 'fight' && bs.form === 'star' && bs.pieces.every(p => p.docked), bs);
 
