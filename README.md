@@ -272,8 +272,11 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   You fly on to the aliens' city, and nothing shoots at you on the
   way.
   - **The lake:** the grid smooths into a still lake that holds the
-    night sky, with the stars and haze mirrored and shimmering in it
-    and soft ripples drifting past.
+    night sky. **THE LAKE** comes up as you reach it, and you get
+    about six seconds over open water: a bright sheen along the
+    horizon, the stars, haze and the far skyline mirrored across the
+    whole surface, and soft ripples drifting past. The **Lake** jump
+    button in the lab takes you straight there.
   - **The suburbs:** clusters of small flat buildings (boxes, gabled
     houses, domes, diamonds in soft alien colours) stand on the water,
     each with a lit door and a wavering reflection. Most sit off to
