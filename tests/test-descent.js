@@ -1238,4 +1238,30 @@ harness.run(async (page, check, ctx) => {
   check('no page errors', ctx.errors.length === 0, ctx.errors);
   const re = await D(page, () => window.__descentDebug.runtimeErrors);
   check('the descent never crashed (the code, not the ship)', re.count === 0, re);
+
+  // ---- Crash recorder ----------------------------------------------------
+  check('no problem note when nothing went wrong', await D(page, () => !document.getElementById('diagNote').classList.contains('visible')));
+  // A reload you ask for is a clean leave: no note.
+  await page.reload();
+  await page.waitForFunction(() => window.__descentDebug && window.__descentDebug.state().t > 1.5, null, { timeout: 15000 });
+  check('a reload you asked for leaves no note', await D(page, () => !document.getElementById('diagNote').classList.contains('visible')));
+  // The browser killing the page mid-run gets no clean leave: simulate
+  // that by putting the heartbeat back after the clean-up wipes it.
+  await D(page, () => {
+    window.__descentDebug.startCity('lake');
+    window.addEventListener('pagehide', () => sessionStorage.setItem('descent-heartbeat',
+      JSON.stringify({ mode: 'flying', where: 'surface, city lake +3.0s (t 99.0s, flying)', at: Date.now() })));
+  });
+  await page.reload();
+  await page.waitForTimeout(800);
+  let note = await D(page, () => ({ on: document.getElementById('diagNote').classList.contains('visible'), text: document.getElementById('diagNote').textContent, last: window.__descentDebug.lastProblem() }));
+  check('a page that died mid-run says so on the next load, and where', note.on && /reloaded/i.test(note.text) && /city lake/.test(note.text), note);
+  check('...and keeps a record of it', note.last && note.last.kind === 'reload' && /city lake/.test(note.last.where), note.last);
+  await page.click('#diagNote');
+  check('...tap the note away', await D(page, () => !document.getElementById('diagNote').classList.contains('visible')));
+  // A code error says what it was and where.
+  await D(page, () => window.dispatchEvent(new ErrorEvent('error', { error: new Error('test boom'), message: 'test boom' })));
+  note = await D(page, () => ({ on: document.getElementById('diagNote').classList.contains('visible'), text: document.getElementById('diagNote').textContent, last: window.__descentDebug.lastProblem() }));
+  check('an error is shown on screen with where it happened', note.on && /test boom/.test(note.text) && /t \d/.test(note.text), note);
+  check('...and recorded', note.last && note.last.kind === 'error' && note.last.message === 'test boom', note.last);
 }, { page: 'descent.html' });

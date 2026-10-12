@@ -309,6 +309,12 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   the city last, and the density ramp (**Density at start**,
   **Density at peak**, and **Peaks this far in** as a % of the city). The **Lake**, **City** and
   **Landing** buttons jump straight there.
+- **Crash recorder.** If the game hits a code error, or the browser
+  reloads the page in the middle of a run (a phone running short of
+  memory does this), a red note says so and where in the run it
+  happened: the phase, the boss or city stage, and the time. A reload
+  shows the note on the next load. A reload or close you do yourself
+  doesn't count. Tap the note to dismiss it.
 - **Settings lab.** Press backquote (`` ` ``), or triple-tap the
   "Descent" tag at the top right on a phone. It has the same look as
   Head-On's sortie lab: a slider for each of the 49 settings, grouped

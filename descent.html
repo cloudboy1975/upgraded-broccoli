@@ -83,6 +83,14 @@
   #gameRoot { position: relative; flex: 1; min-height: 0; }
   #gameRoot canvas { display: block; }
 
+  /* A note left by the crash recorder: what went wrong last time. */
+  .diag-note {
+    position: fixed; left: 10px; right: 10px; top: 52px; z-index: 60;
+    display: none; padding: 8px 10px; border-radius: 8px;
+    background: rgba(76, 5, 25, 0.92); color: #ffe4e6; border: 1px solid #fb7185;
+    font: 12px/1.4 system-ui, sans-serif; white-space: pre-wrap; word-break: break-word;
+  }
+  .diag-note.visible { display: block; }
   .overlay {
     position: absolute;
     inset: 0;
@@ -310,6 +318,8 @@
       <button type="button" class="btn" id="againBtn">Fly again</button>
     </div>
   </div>
+
+  <div class="diag-note" id="diagNote" role="status" title="Tap to dismiss"></div>
 
   <div class="control-bar">
     <div class="pad stick-pad" id="stickZone" aria-label="Fly: press anywhere on the left half and drag">
@@ -1240,9 +1250,77 @@
     } catch (e) {
       debug.runtimeErrors.count++;
       debug.runtimeErrors.last = String(e && e.stack || e);
+      CrashLog.error(e, this);
       throw e;
     }
   };
+
+  // ---- Crash recorder ------------------------------------------------
+  // If the game hits an error, or the browser reloads the page in the
+  // middle of a run (a phone running short of memory does this), it
+  // says so - on screen, and kept for next time - with where in the run
+  // it happened, instead of the run just quietly starting over.
+  var CrashLog = (function () {
+    var HEART = 'descent-heartbeat', LAST = 'descent-last-problem', shown = false;
+    function where(scene) {
+      if (!scene || !scene.state) return 'unknown';
+      var s = scene.state, bits = [phaseAt(s.t)];
+      if (s.bossStage) bits.push('boss ' + s.bossStage);
+      if (s.city) bits.push('city ' + s.city.stage + ' +' + s.city.t.toFixed(1) + 's');
+      return bits.join(', ') + ' (t ' + s.t.toFixed(1) + 's, ' + s.mode + ')';
+    }
+    function show(text) {
+      var el = document.getElementById('diagNote');
+      if (!el) return;
+      el.textContent = text + '\n(tap to dismiss)';
+      el.classList.add('visible');
+    }
+    function keep(rec) {
+      try { localStorage.setItem(LAST, JSON.stringify(rec)); } catch (e) {}
+    }
+    return {
+      where: where,
+      error: function (e, scene) {
+        if (shown) return; // the first one is the one that matters
+        shown = true;
+        var rec = { kind: 'error', where: where(scene), message: String(e && e.message || e),
+          stack: String(e && e.stack || '').split('\n').slice(0, 4).join('\n'), at: new Date().toISOString() };
+        keep(rec);
+        show('Something went wrong at ' + rec.where + ':\n' + rec.message + '\n' + rec.stack);
+      },
+      // Once a second: where the run is. A clean leave (closing the tab,
+      // a reload you asked for) wipes it; a crash-reload doesn't get the chance.
+      beat: function (scene) {
+        try {
+          sessionStorage.setItem(HEART, JSON.stringify({ mode: scene.state.mode, where: where(scene), at: Date.now() }));
+        } catch (e) {}
+      },
+      clean: function () { try { sessionStorage.removeItem(HEART); } catch (e) {} },
+      // On load: did the last page die mid-run?
+      check: function () {
+        try {
+          var hb = JSON.parse(sessionStorage.getItem(HEART) || 'null');
+          sessionStorage.removeItem(HEART);
+          if (hb && hb.mode === 'flying' && Date.now() - hb.at < 60000) {
+            var rec = { kind: 'reload', where: hb.where, at: new Date().toISOString() };
+            keep(rec);
+            show('The page reloaded itself mid-run, at ' + rec.where + '. The browser most likely ran short of memory.');
+          }
+        } catch (e) {}
+      },
+      last: function () {
+        try { return JSON.parse(localStorage.getItem(LAST) || 'null'); } catch (e) { return null; }
+      }
+    };
+  })();
+  window.addEventListener('pagehide', function () { CrashLog.clean(); });
+  window.addEventListener('error', function (ev) { CrashLog.error(ev.error || ev.message, scene); });
+  (function () {
+    var el = document.getElementById('diagNote');
+    if (el) el.addEventListener('click', function () { el.classList.remove('visible'); });
+    CrashLog.check();
+    setInterval(function () { if (scene && scene.state) CrashLog.beat(scene); }, 1000);
+  })();
 
   MainScene.prototype.step = function (dt) {
     var s = this.state;
@@ -3841,6 +3919,7 @@
   // ==================================================================
   var debug = window.__descentDebug = {
     runtimeErrors: { count: 0, last: null },
+    lastProblem: function () { return CrashLog.last(); },
     timeScale: 1,              // slow motion, for looking at effects frame by frame
     state: function () {
       var s = scene.state;
