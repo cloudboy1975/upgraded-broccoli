@@ -990,30 +990,29 @@ harness.run(async (page, check, ctx) => {
   check('the last piece down: guardian down', bs.stage === 'won' && bs.mode === null && ct.banner === 'GUARDIAN DOWN', { bs, ct });
   check('...and its shots in flight die with it', s.enemyShots === 0, s.enemyShots);
   check('...and the run flies on, to the city - no end screen yet',
-    s.mode === 'flying' && ct.stage === 'outskirts' && s.overlay === false, { mode: s.mode, ct });
+    s.mode === 'flying' && ct.stage === 'lake' && s.overlay === false, { mode: s.mode, ct });
 
   // ---- The city ----------------------------------------------------------
   const city = () => D(page, () => window.__descentDebug.city());
-  // Outskirts: the grid smooths into the lake and the pace eases to city speed.
+  // The lake: the grid smooths into water and the pace eases to city speed.
   const lake0 = (await city()).terrain.lake;
   await page.waitForTimeout(1500);
   ct = await city();
   check('the grid smooths into a lake', ct.terrain.lake > lake0 && ct.terrain.city === 0, { lake0, now: ct.terrain });
-  await D(page, () => window.__descentDebug.setCityT(99));
-  await page.waitForTimeout(300);
-  ct = await city();
-  check('...and you slow to city pace', ct.stage === 'suburbs' && Math.abs(ct.speed - C.CITY_SPEED) < 0.01 && ct.banner === 'THE SUBURBS', ct);
+  check('...open water first: no land yet', !(await state(page)).obstacles.some(o => o.kind === 'island' || o.kind === 'house'));
+  check('the lake is a short intro: the streets by about ten seconds', C.LAKE_TIME <= 12, C.LAKE_TIME);
 
-  // Suburbs: clusters of houses come by themselves, and nothing shoots.
-  await page.waitForTimeout(3500);
+  // Then patches of land with houses come by themselves, and nothing shoots.
+  await D(page, (t) => window.__descentDebug.setCityT(t), C.LAKE_TIME * 0.5);
+  await page.waitForFunction(() => window.__descentDebug.state().obstacles.filter(o => o.kind === 'house').length >= 2, null, { timeout: 15000 }).catch(() => {});
   s = await state(page);
-  check('the suburbs: houses stand on the lake', s.obstacles.filter(o => o.kind === 'house').length >= 3, s.obstacles.map(o => o.kind));
+  ct = await city();
+  check('then land: patches of it, with houses', s.obstacles.some(o => o.kind === 'island') && s.obstacles.filter(o => o.kind === 'house').length >= 2, s.obstacles.map(o => o.kind));
+  check('...you have slowed to city pace', Math.abs(ct.speed - C.CITY_SPEED) < 0.01, ct);
   check('...and nothing shoots at you', s.enemies.length === 0 && s.enemyShots === 0, s);
 
   // On through the stages, in order.
   const advance = async () => { await D(page, () => window.__descentDebug.setCityT(9999)); await page.waitForTimeout(250); return city(); };
-  ct = await advance();
-  check('then the skyline rises', ct.stage === 'skyline', ct.stage);
   ct = await advance();
   check('then into the city', ct.stage === 'city' && ct.banner === 'THE CITY', ct);
   await page.waitForTimeout(4000);

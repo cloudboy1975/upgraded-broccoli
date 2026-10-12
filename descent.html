@@ -342,7 +342,6 @@
         </div>
         <div class="lab-actions">
           <button type="button" class="lab-btn wide" data-jump="lake">Lake</button>
-          <button type="button" class="lab-btn wide" data-jump="suburbs">Suburbs</button>
           <button type="button" class="lab-btn wide" data-jump="city">City</button>
           <button type="button" class="lab-btn wide" data-jump="landing">Landing</button>
         </div>
@@ -655,23 +654,25 @@
   // ---- The aliens' city ------------------------------------------------
   // With the guardian down the run does not end: you fly on to their
   // city. The grid smooths into a still lake that holds the night sky;
-  // clusters of small flat buildings stand on it here and there (the
-  // suburbs); a skyline of flat towers rises on the horizon round a
-  // tall spire with a beacon; then you are in among the buildings,
+  // after a moment of open water, patches of land come by with little
+  // alien houses on them, and a skyline of flat towers rises on the
+  // horizon round a tall spire with a beacon - all a short intro to
+  // the city itself. Then you are in among the buildings,
   // threading towers, sky-bridges and gates. Nothing shoots. Buildings
   // react to your shots - they flash, light every window, shiver, the
   // houses hop - but nothing breaks. At the centre the buildings open
   // into a plaza, a landing pad comes up, and the ship sets down.
   var CITY_SPEED = 5.5;         // depth units/s through the city: slower, for threading
-  var CITY_OUTSKIRTS = 6;       // seconds for the grid to smooth into the lake, and a moment on it
-  var SUBURB_TIME = 20;         // seconds of suburbs
-  var SKYLINE_TIME = 8;         // seconds with the skyline rising ahead
+  var LAKE_TIME = 10;           // seconds from the guardian going down to the city's streets
+  var LAKE_OPEN = 0.3;          // share of that which is open water, before the land comes
+  var LAKE_SKYLINE = 0.35;      // and where in it the skyline starts to rise
+  var LAKE_SMOOTH = 1.5;        // seconds for the grid to smooth into water
   var CITY_TIME = 36;           // seconds among the buildings
   var PLAZA_TIME = 3;           // the open plaza before the pad
   var LAND_TIME = 4.5;          // seconds from the pad coming up to touchdown
   var CITY_DENSITY = 1;         // x on how often city obstacles come
-  var CITY_STAGES = ['outskirts', 'suburbs', 'skyline', 'city', 'plaza', 'landing', 'landed'];
-  var CITY_BANNERS = { suburbs: 'THE SUBURBS', city: 'THE CITY', plaza: 'CITY CENTER', landed: 'LANDED' };
+  var CITY_STAGES = ['lake', 'city', 'plaza', 'landing', 'landed'];
+  var CITY_BANNERS = { city: 'THE CITY', plaza: 'CITY CENTER', landed: 'LANDED' };
   var COLOR_HOUSES = [0x38bdf8, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x34d399, 0xfb923c];
   var COLOR_TOWER_EDGES = [0x67e8f9, 0xf0abfc, 0xa78bfa, 0xfde68a];
   var COLOR_WINDOWS = [0xfde68a, 0x67e8f9, 0xf9a8d4, 0xfef3c7];           // 1: a destroyed piece leaves a green glow. Off by default - the fight is a test of what you came in with
@@ -707,7 +708,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'SUBURB_TIME', 'CITY_TIME', 'CITY_DENSITY', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'LAKE_TIME', 'CITY_TIME', 'CITY_DENSITY', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -728,7 +729,7 @@
       CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
       BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
       BOSS_FLIP: BOSS_FLIP, BOSS_FACE_SCALE: BOSS_FACE_SCALE, BOSS_EDGE_SCALE: BOSS_EDGE_SCALE,
-      CITY_SPEED: CITY_SPEED, SUBURB_TIME: SUBURB_TIME, CITY_TIME: CITY_TIME, CITY_DENSITY: CITY_DENSITY,
+      CITY_SPEED: CITY_SPEED, LAKE_TIME: LAKE_TIME, CITY_TIME: CITY_TIME, CITY_DENSITY: CITY_DENSITY,
       STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
@@ -1498,7 +1499,7 @@
       if (o.react) o.react = Math.max(0, o.react - dt * 1.4);
       if (o.kind === 'pad') { if (o.z < 1.15) o.z = 1.15; o.prevZ = o.z; } // it is where you land: it stops under you
       if (!noCollide && o.prevZ >= Z_SHIP && o.z < Z_SHIP && this.hitsShip(o)) this.onHit(o);
-      if (o.z < Z_NEAR || o.dead) s.obstacles.splice(i, 1);
+      if (o.z + (o.d || 0) < Z_NEAR || o.dead) s.obstacles.splice(i, 1);
     }
   };
 
@@ -2246,7 +2247,7 @@
     s.shake = 1.2;
     s.banner = { text: 'GUARDIAN DOWN', age: 0 };
     // On to the city.
-    this.beginCity('outskirts');
+    this.beginCity('lake');
   };
 
   // ==================================================================
@@ -2255,9 +2256,7 @@
   var CITY_TOUCHDOWN_Y = GROUND_Y - 16;
 
   function cityStageTime(stage) {
-    return stage === 'outskirts' ? CITY_OUTSKIRTS
-      : stage === 'suburbs' ? TUNING.SUBURB_TIME
-      : stage === 'skyline' ? SKYLINE_TIME
+    return stage === 'lake' ? TUNING.LAKE_TIME
       : stage === 'city' ? TUNING.CITY_TIME
       : stage === 'plaza' ? PLAZA_TIME
       : stage === 'landing' ? LAND_TIME : Infinity;
@@ -2266,7 +2265,7 @@
   MainScene.prototype.beginCity = function (stage) {
     var s = this.state;
     s.bossStage = 'won';
-    s.city = { stage: stage, t: 0, timers: { house: 0.8, side: 0.2, pattern: 1.2 }, sideFlip: 1 };
+    s.city = { stage: stage, t: 0, timers: { island: 0, side: 0.2, pattern: 1.2 }, sideFlip: 1 };
     if (CITY_BANNERS[stage]) s.banner = { text: CITY_BANNERS[stage], age: 0 };
     if (stage === 'landing') this.startLanding();
   };
@@ -2277,7 +2276,7 @@
     var s = this.state, c = s.city, v = speedAt(s.t);
     if (!c) return v;
     var cityV = Math.min(v, TUNING.CITY_SPEED);
-    if (c.stage === 'outskirts') return lerp(v, cityV, smooth(c.t / CITY_OUTSKIRTS));
+    if (c.stage === 'lake') return lerp(v, cityV, smooth(c.t / Math.max(1, TUNING.LAKE_TIME * 0.4)));
     if (c.stage === 'landing') return cityV * Math.max(0, 1 - c.t / LAND_TIME);
     if (c.stage === 'landed') return 0;
     return cityV;
@@ -2295,14 +2294,17 @@
       if (next === 'landed') this.landed();
     }
     // The lake gets its own title once the guardian's has gone.
-    if (c.stage === 'outskirts' && !c.lakeTitled && c.t > 2.4) { c.lakeTitled = true; s.banner = { text: 'THE LAKE', age: 0 }; }
+    if (c.stage === 'lake' && !c.lakeTitled && c.t > 2.4) { c.lakeTitled = true; s.banner = { text: 'THE LAKE', age: 0 }; }
     if (!s.spawning) return;
     var dens = Math.max(0.1, TUNING.CITY_DENSITY), tm = c.timers;
-    if (c.stage === 'suburbs' || c.stage === 'skyline') {
-      tm.house -= dt;
-      if (tm.house <= 0) {
-        tm.house = (c.stage === 'suburbs' ? rand(1.2, 2.0) : rand(2.2, 3.2)) / dens;
-        this.spawnHouseCluster();
+    // After a moment of open water, patches of land, most with a few
+    // houses on them - until just before the streets begin.
+    var LT = TUNING.LAKE_TIME;
+    if (c.stage === 'lake' && c.t > LT * LAKE_OPEN && c.t < LT - 1) {
+      tm.island -= dt;
+      if (tm.island <= 0) {
+        tm.island = rand(0.4, 0.75) / dens;
+        this.spawnIsland();
       }
     }
     if (c.stage === 'city') {
@@ -2326,15 +2328,27 @@
     return !this.state.obstacles.some(function (o) { return o.pattern && o.z > Z_SPAWN - 1.8; });
   };
 
-  // A cluster of little flat buildings standing on the lake. Most stand
-  // off to the sides; some sit across your path.
-  MainScene.prototype.spawnHouseCluster = function () {
-    var cx = Math.random() < 0.6 ? (Math.random() < 0.5 ? -1 : 1) * rand(170, 320) : rand(-140, 140);
-    var n = 3 + Math.floor(Math.random() * 3);
+  // A patch of land on the lake: a low irregular shore lying flat on
+  // the water, usually with a few little houses on it. Most lie off to
+  // the sides; some across your path. The land itself is scenery - only
+  // the houses are in the way.
+  MainScene.prototype.spawnIsland = function () {
+    var side = Math.random() < 0.6;
+    var x = side ? (Math.random() < 0.5 ? -1 : 1) * rand(220, 420) : rand(-130, 130);
+    var hw = side ? rand(140, 280) : rand(90, 170), d = rand(1.8, 4.2), rim = [];
+    for (var i = 0; i < 12; i++) rim.push(rand(0.75, 1.1));
+    var isle = this.addObstacle({ kind: 'island', x: x, hw: hw, d: d, rim: rim });
+    if (Math.random() < 0.75) this.spawnHouseCluster(x, hw * 0.55, isle.z + d * 0.2, d * 0.6);
+    return isle;
+  };
+
+  // A cluster of little flat buildings, standing on a patch of land.
+  MainScene.prototype.spawnHouseCluster = function (cx, spread, z0, depth) {
+    var n = 2 + Math.floor(Math.random() * 3);
     var shapes = ['box', 'gable', 'dome', 'diamond'];
     for (var i = 0; i < n; i++) {
       this.addObstacle({
-        kind: 'house', x: cx + rand(-75, 75), z: Z_SPAWN + rand(0, 0.9),
+        kind: 'house', x: cx + rand(-spread, spread), z: z0 + rand(0, depth),
         w: rand(34, 62), h: rand(30, 78), shape: shapes[Math.floor(Math.random() * shapes.length)],
         color: COLOR_HOUSES[Math.floor(Math.random() * COLOR_HOUSES.length)], react: 0
       });
@@ -2593,6 +2607,7 @@
     }
     // The lake last, over the bands, so nothing stripes its reflections.
     if (ter.lake > 0 && ter.city < 1) this.drawLake(g, horizon, sky, ter.lake * (1 - ter.city), G, zFar);
+    this.drawIslands(g, G);
   };
 
   // How far the ground has turned to lake, and the lake to city floor.
@@ -2600,7 +2615,7 @@
     var c = this.state.city;
     if (!c) return { lake: 0, city: 0 };
     var i = CITY_STAGES.indexOf(c.stage), iCity = CITY_STAGES.indexOf('city');
-    var lake = c.stage === 'outskirts' ? smooth(c.t / 3) : 1; // still water within 3s
+    var lake = c.stage === 'lake' ? smooth(c.t / LAKE_SMOOTH) : 1;
     var city = i < iCity ? 0 : i === iCity ? smooth(c.t / 3) : 1;
     return { lake: lake, city: city };
   };
@@ -2661,6 +2676,38 @@
     }
   };
 
+  // The patches of land, flat on the water, far ones first.
+  MainScene.prototype.drawIslands = function (g, G) {
+    var self = this;
+    var isles = this.state.obstacles.filter(function (o) { return o.kind === 'island'; })
+      .sort(function (a, b) { return b.z - a.z; });
+    isles.forEach(function (o) {
+      var a = clamp((Z_SPAWN - o.z) / Z_FADE_IN, 0, 1);
+      if (a <= 0) return;
+      var n = o.rim.length, zc = o.z + o.d / 2;
+      function ring(f) {
+        var pts = [];
+        for (var i = 0; i < n; i++) {
+          var ang = i / n * Math.PI * 2, r = o.rim[i] * f;
+          var z = Math.max(Z_NEAR * 0.6, zc + Math.sin(ang) * o.d / 2 * r);
+          pts.push({ x: self.sx(o.x + Math.cos(ang) * o.hw * r, z), y: self.sy(G, z) });
+        }
+        return pts;
+      }
+      function path(pts) {
+        g.beginPath();
+        g.moveTo(pts[0].x, pts[0].y);
+        for (var i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+        g.closePath();
+      }
+      // A pale beach, the land on it, and a faint shoreline glow.
+      var outer = ring(1), inner = ring(0.82);
+      g.fillStyle(0x3b2f63, a); path(outer); g.fillPath();
+      g.fillStyle(0x150f2c, a); path(inner); g.fillPath();
+      g.lineStyle(1, 0xc4b5fd, 0.45 * a); path(outer); g.strokePath();
+    });
+  };
+
   // The skyline: flat towers on the horizon round a tall central spire
   // with a beacon. It is far off, so it hardly moves when you steer -
   // but it grows as you come in.
@@ -2668,12 +2715,17 @@
     var c = this.state.city;
     if (!c) return;
     var i = CITY_STAGES.indexOf(c.stage);
-    if (i < CITY_STAGES.indexOf('skyline')) return;
-    var u = c.t / cityStageTime(c.stage);
-    var scale = c.stage === 'skyline' ? lerp(0.35, 0.8, smooth(u))
+    var u = c.t / cityStageTime(c.stage), t0 = 0;
+    if (c.stage === 'lake') {
+      // It rises over the back part of the lake.
+      t0 = TUNING.LAKE_TIME * LAKE_SKYLINE;
+      if (c.t < t0) return;
+      u = (u - LAKE_SKYLINE) / (1 - LAKE_SKYLINE);
+    }
+    var scale = c.stage === 'lake' ? lerp(0.35, 0.8, smooth(u))
       : c.stage === 'city' ? lerp(0.8, 1.6, smooth(u))
       : c.stage === 'plaza' ? lerp(1.6, 1.8, smooth(u)) : 1.8;
-    var a = c.stage === 'skyline' ? clamp(c.t / 1.5, 0, 1) : 1;
+    var a = c.stage === 'lake' ? clamp((c.t - t0) / 1.5, 0, 1) : 1;
     var cx = CX - this.camX() * 0.05, t = this.state.t;
     var sk = this.state.skyline;
     if (mirrored) {
@@ -2942,6 +2994,7 @@
     if (o.kind === 'house') return this.drawHouse(g, o);
     if (o.kind === 'bridge') return this.drawBridge(g, o);
     if (o.kind === 'pad') return this.drawPad(g, o);
+    if (o.kind === 'island') return; // drawn flat with the water, under everything
     if (o.dead) return; // shot this frame; its burst is drawn instead
     var a = depthAlpha(o.z);
     if (a <= 0) return;
@@ -3213,9 +3266,9 @@
         g.fillTriangle(x - hw, yb - dir * h * 0.5, x, yb, x + hw, yb - dir * h * 0.5);
       }
     }
-    // The reflection first, faint and wavering, then the house.
-    var wob = Math.sin(t * 3 + o.x) * 1.5 / z;
-    x += wob; shape(this.sy(G, z), -1, a * 0.22); x -= wob;
+    // Standing on land now, so just a soft shadow at its foot.
+    g.fillStyle(0x000000, a * 0.35);
+    g.fillEllipse(x, this.sy(G, z), hw * 2.6, Math.max(2, 10 / z));
     shape(base, 1, a);
     // A lit door.
     g.fillStyle(0xfde68a, a * 0.9);
@@ -3493,7 +3546,7 @@
     ] },
     { title: 'City', rows: [
       ['CITY_SPEED', 'Speed', 2, 9, 0.1, ''],
-      ['SUBURB_TIME', 'Suburbs last', 4, 60, 1, ' s'],
+      ['LAKE_TIME', 'Lake lasts', 4, 30, 1, ' s'],
       ['CITY_TIME', 'City lasts', 6, 90, 1, ' s'],
       ['CITY_DENSITY', 'Density', 0.3, 2.5, 0.05, '\u00d7']
     ] },
@@ -3620,12 +3673,11 @@
       scene.state.t = where === 'clouds' ? CLOUDS_START
         : where === 'surface' ? SURFACE_START
         : where === 'dusk' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME * 0.5
-        : where === 'night' || where === 'boss' || where === 'lake' || where === 'suburbs' || where === 'city' || where === 'landing' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME
+        : where === 'night' || where === 'boss' || where === 'lake' || where === 'city' || where === 'landing' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME
         : 0;
       scene.state.invincible = document.getElementById('labNoDamage').checked;
       if (where === 'boss') scene.beginCalm(0.3); // straight past the stars to the fight
-      if (where === 'suburbs' || where === 'city' || where === 'landing') scene.beginCity(where);
-      if (where === 'lake') scene.beginCity('outskirts');
+      if (where === 'lake' || where === 'city' || where === 'landing') scene.beginCity(where);
       setLabOpen(false);
     });
   });
@@ -3677,8 +3729,8 @@
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: TUNING.BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: TUNING.ENEMY_SHOT_SPEED,
         ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL,
-        CALM_TIME: TUNING.CALM_TIME, CITY_SPEED: TUNING.CITY_SPEED, CITY_OUTSKIRTS: CITY_OUTSKIRTS,
-        SUBURB_TIME: TUNING.SUBURB_TIME, SKYLINE_TIME: SKYLINE_TIME, CITY_TIME: TUNING.CITY_TIME, PLAZA_TIME: PLAZA_TIME,
+        CALM_TIME: TUNING.CALM_TIME, CITY_SPEED: TUNING.CITY_SPEED, LAKE_OPEN: LAKE_OPEN,
+        LAKE_TIME: TUNING.LAKE_TIME, CITY_TIME: TUNING.CITY_TIME, PLAZA_TIME: PLAZA_TIME,
         LAND_TIME: LAND_TIME, CITY_TOUCHDOWN_Y: CITY_TOUCHDOWN_Y, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TURN_TIME: BOSS_TURN_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
         BOSS_SHOT_TIME: TUNING.BOSS_SHOT_TIME, BOSS_Z_MIN: BOSS_Z_MIN, BOSS_ARRIVE_STAGGER: BOSS_ARRIVE_STAGGER,
         BOSS_DOCK_TIME: BOSS_DOCK_TIME, BOSS_REFORM_TIME: BOSS_REFORM_TIME, BOSS_CHARGE: BOSS_CHARGE, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
@@ -3773,7 +3825,7 @@
       return { stage: c ? c.stage : null, t: c ? c.t : 0, reacts: s.cityReacts, speed: scene.worldSpeed(),
         terrain: scene.terrain(), banner: s.banner && s.banner.text, mode: s.mode };
     },
-    startCity: function (stage) { scene.beginCity(stage || 'outskirts'); return true; },
+    startCity: function (stage) { scene.beginCity(stage || 'lake'); return true; },
     setCityT: function (t) { if (scene.state.city) scene.state.city.t = t; return true; },
     cityPattern: function (kind, z) {
       var before = scene.state.obstacles.length;

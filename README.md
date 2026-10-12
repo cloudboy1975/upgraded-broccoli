@@ -271,18 +271,17 @@ It isn't connected to the boss fight yet. The plan is to hand off from
 - **On to the city.** The guardian going down doesn't end the run.
   You fly on to the aliens' city, and nothing shoots at you on the
   way.
-  - **The lake:** the grid smooths into a still lake that holds the
-    night sky. **THE LAKE** comes up as you reach it, and you get
-    about six seconds over open water: a bright sheen along the
-    horizon, the stars, haze and the far skyline mirrored across the
-    whole surface, and soft ripples drifting past. The **Lake** jump
-    button in the lab takes you straight there.
-  - **The suburbs:** clusters of small flat buildings (boxes, gabled
-    houses, domes, diamonds in soft alien colours) stand on the water,
-    each with a lit door and a wavering reflection. Most sit off to
-    the sides and some are in your path.
-  - **The skyline:** flat towers rise on the horizon round a tall
-    central spire with a pulsing beacon, growing as you come in.
+  - **The lake:** a short intro, about ten seconds. The grid
+    smooths into a still lake that holds the night sky, and **THE
+    LAKE** comes up. You get a few seconds of open water: a bright
+    sheen along the horizon, the stars and haze mirrored across the
+    whole surface, and soft ripples drifting past. Then patches of
+    land come by, most with a few little alien houses on them (boxes,
+    gabled houses, domes, diamonds in soft alien colours, each with a
+    lit door). Most lie off to the sides and some are in your path.
+    Only the houses are in the way; the land is scenery. Meanwhile the
+    skyline rises on the horizon round a tall central spire with a
+    pulsing beacon, and its reflection wavers in the water.
   - **The city:** you're in among the buildings, threading them.
     Neon-edged towers with lit windows line the streets, and every so
     often something is in the way: a tower to go round, a pair to
@@ -295,8 +294,8 @@ It isn't connected to the boss fight yet. The plan is to hand off from
     glowing landing pad comes up. The ship takes over, lines up,
     slows and sets down on it. Then **LANDED**, and an end screen.
 
-  The lab's **City** section sets the speed, how long the suburbs and
-  the city last, and how dense they are. The **Suburbs**, **City** and
+  The lab's **City** section sets the speed, how long the lake and
+  the city last, and how dense they are. The **Lake**, **City** and
   **Landing** buttons jump straight there.
 - **Settings lab.** Press backquote (`` ` ``), or triple-tap the
   "Descent" tag at the top right on a phone. It has the same look as
