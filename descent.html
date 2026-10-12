@@ -340,6 +340,11 @@
           <button type="button" class="lab-btn wide" data-jump="night">Night</button>
           <button type="button" class="lab-btn wide" data-jump="boss">Boss</button>
         </div>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide" data-jump="suburbs">Suburbs</button>
+          <button type="button" class="lab-btn wide" data-jump="city">City</button>
+          <button type="button" class="lab-btn wide" data-jump="landing">Landing</button>
+        </div>
         <div class="lab-row" style="margin-top:8px">
           <label for="labNoDamage">No damage</label>
           <input type="checkbox" id="labNoDamage">
@@ -644,7 +649,31 @@
   var BOSS_EDGE_SCALE = 1;      // x on how long it stays edge-on
   var BOSS_TURN_TIME = 0.45;    // seconds to turn away, and to turn back
   var BOSS_EDGE_IMMUNE = 0.3;   // narrower than this (cos of the turn), shots glance off
-  var BOSS_GLOWS = 0;           // 1: a destroyed piece leaves a green glow. Off by default - the fight is a test of what you came in with
+  var BOSS_GLOWS = 0;
+
+  // ---- The aliens' city ------------------------------------------------
+  // With the guardian down the run does not end: you fly on to their
+  // city. The grid smooths into a still lake that holds the night sky;
+  // clusters of small flat buildings stand on it here and there (the
+  // suburbs); a skyline of flat towers rises on the horizon round a
+  // tall spire with a beacon; then you are in among the buildings,
+  // threading towers, sky-bridges and gates. Nothing shoots. Buildings
+  // react to your shots - they flash, light every window, shiver, the
+  // houses hop - but nothing breaks. At the centre the buildings open
+  // into a plaza, a landing pad comes up, and the ship sets down.
+  var CITY_SPEED = 5.5;         // depth units/s through the city: slower, for threading
+  var CITY_OUTSKIRTS = 3;       // seconds for the grid to smooth into the lake
+  var SUBURB_TIME = 20;         // seconds of suburbs
+  var SKYLINE_TIME = 8;         // seconds with the skyline rising ahead
+  var CITY_TIME = 36;           // seconds among the buildings
+  var PLAZA_TIME = 3;           // the open plaza before the pad
+  var LAND_TIME = 4.5;          // seconds from the pad coming up to touchdown
+  var CITY_DENSITY = 1;         // x on how often city obstacles come
+  var CITY_STAGES = ['outskirts', 'suburbs', 'skyline', 'city', 'plaza', 'landing', 'landed'];
+  var CITY_BANNERS = { suburbs: 'THE SUBURBS', city: 'THE CITY', plaza: 'CITY CENTER', landed: 'LANDED' };
+  var COLOR_HOUSES = [0x38bdf8, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x34d399, 0xfb923c];
+  var COLOR_TOWER_EDGES = [0x67e8f9, 0xf0abfc, 0xa78bfa, 0xfde68a];
+  var COLOR_WINDOWS = [0xfde68a, 0x67e8f9, 0xf9a8d4, 0xfef3c7];           // 1: a destroyed piece leaves a green glow. Off by default - the fight is a test of what you came in with
   var BOSS_SQUARE = 76;         // side of the core, world px at its plane
   var BOSS_TRI_BASE = 76;
   var BOSS_TRI_H = 70;
@@ -677,7 +706,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'SUBURB_TIME', 'CITY_TIME', 'CITY_DENSITY', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -698,6 +727,7 @@
       CALM_TIME: CALM_TIME, BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME,
       BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
       BOSS_FLIP: BOSS_FLIP, BOSS_FACE_SCALE: BOSS_FACE_SCALE, BOSS_EDGE_SCALE: BOSS_EDGE_SCALE,
+      CITY_SPEED: CITY_SPEED, SUBURB_TIME: SUBURB_TIME, CITY_TIME: CITY_TIME, CITY_DENSITY: CITY_DENSITY,
       STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
@@ -855,8 +885,9 @@
     function boom() { blip(220, 30, 0.35, 'sawtooth', 0.12); }
     function tick() { blip(1400, 900, 0.05, 'square', 0.04); }
     function zap() { blip(300, 700, 0.18, 'triangle', 0.07); }
+    function ping() { blip(990, 1480, 0.14, 'sine', 0.05); }
     function heal() { blip(520, 1040, 0.22, 'sine', 0.1); }
-    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump, shot: shot, boom: boom, tick: tick, zap: zap, heal: heal };
+    return { ensureAudio: ensureAudio, setWind: setWind, thump: thump, shot: shot, boom: boom, tick: tick, zap: zap, heal: heal, ping: ping };
   })();
 
   // ==================================================================
@@ -1058,6 +1089,27 @@
     if (e.touches && e.touches.length > 1) e.preventDefault();
   }, { passive: false });
 
+  // The city on the horizon, made once per run: towers in screen px at
+  // scale 1, taller toward the middle, the spire at the centre.
+  function makeSkyline() {
+    var out = [], shapes = ['rect', 'rect', 'stepped', 'needle'];
+    for (var i = 0; i < 26; i++) {
+      var x = rand(-260, 260), mid = 1 - Math.min(1, Math.abs(x) / 260);
+      var w = rand(14, 38), h = rand(26, 60) + 70 * mid * Math.random();
+      var win = [];
+      for (var k = 0; k < Math.round(w * h / 160); k++) {
+        win.push({ fx: rand(0.15, 0.85), fy: rand(0.08, 0.92), c: COLOR_WINDOWS[Math.floor(Math.random() * COLOR_WINDOWS.length)], r: rand(0.3, 1.2), p: rand(0, 6) });
+      }
+      out.push({ x: x, w: w, h: h, shape: shapes[Math.floor(Math.random() * shapes.length)],
+        edge: COLOR_TOWER_EDGES[Math.floor(Math.random() * COLOR_TOWER_EDGES.length)], windows: win });
+    }
+    out.sort(function (a, b) { return b.h - a.h; }); // tallest first, so shorter ones stand in front
+    var spireWin = [];
+    for (var j = 0; j < 14; j++) spireWin.push({ fx: 0.5, fy: j / 14 + 0.03, c: 0xf0abfc, r: 0.8, p: j });
+    out.push({ x: 0, w: 22, h: 150, shape: 'needle', edge: 0xf0abfc, windows: spireWin, beacon: true });
+    return out;
+  }
+
   // ==================================================================
   // The scene
   // ==================================================================
@@ -1130,6 +1182,8 @@
       enemyShots: [],
       enemiesDowned: 0,
       bossStage: null,        // null, then 'calm', 'boss', 'won'
+      city: null,             // after the guardian: { stage, t, ... }
+      cityReacts: 0,
       bossTimer: 0,
       boss: null,
       bossShots: 0,
@@ -1155,6 +1209,7 @@
       });
     }
     this.state.shooting = [];
+    this.state.skyline = makeSkyline();
     this.state.nextShooting = rand(3, 7);
     document.getElementById('crashOverlay').classList.remove('visible');
   };
@@ -1188,7 +1243,7 @@
 
     if (flying) {
       s.t += dt;
-      var speed = speedAt(s.t);
+      var speed = this.worldSpeed();
       s.distance += speed * dt * METRES_PER_Z;
       this.stepShip(dt);
       this.stepSpawning(dt);
@@ -1196,20 +1251,21 @@
       this.stepEnemies(dt);
       this.stepEnemyShots(dt);
       this.stepBoss(dt);
+      this.stepCity(dt);
       this.stepGuns(dt, speed);
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else {
       s.crashAge += dt;
       // The world keeps sliding past for a beat, slowing, so the crash
       // reads as momentum running out rather than a freeze-frame.
-      var drift = speedAt(s.t) * Math.max(0, 1 - s.crashAge / 0.8);
+      var drift = this.worldSpeed() * Math.max(0, 1 - s.crashAge / 0.8);
       this.stepObstacles(dt, drift, true);
     }
-    this.stepStreaks(dt, flying ? speedAt(s.t) : speedAt(s.t) * Math.max(0, 1 - s.crashAge / 0.8));
+    this.stepStreaks(dt, flying ? this.worldSpeed() : this.worldSpeed() * Math.max(0, 1 - s.crashAge / 0.8));
     this.stepShards(dt);
-    this.stepBursts(dt, flying ? speedAt(s.t) : 0);
+    this.stepBursts(dt, flying ? this.worldSpeed() : 0);
     this.stepShootingStars(dt);
-    this.stepChunks(dt, flying ? speedAt(s.t) : 0);
+    this.stepChunks(dt, flying ? this.worldSpeed() : 0);
 
     var phase = phaseAt(s.t);
     if (phase !== s.phase) { s.phase = phase; s.phaseAge = 0; }
@@ -1231,11 +1287,21 @@
   };
 
   MainScene.prototype.shipYLimit = function () {
+    var c = this.state.city;
+    if (c && (c.stage === 'landing' || c.stage === 'landed')) return CITY_TOUCHDOWN_Y;
     return Math.min(Y_BOTTOM, groundYAt(this.state.t) - GROUND_CLEARANCE);
   };
 
   MainScene.prototype.stepShip = function (dt) {
     var s = this.state;
+    // Landing: the ship takes over, lines up on the pad and settles.
+    if (s.city && (s.city.stage === 'landing' || s.city.stage === 'landed')) {
+      var kk = 1 - Math.exp(-2.2 * dt);
+      var nx0 = s.shipX + (0 - s.shipX) * kk, ny0 = s.shipY + (CITY_TOUCHDOWN_Y - s.shipY) * kk;
+      s.vx = (nx0 - s.shipX) / Math.max(dt, 1e-4); s.vy = (ny0 - s.shipY) / Math.max(dt, 1e-4);
+      s.shipX = nx0; s.shipY = ny0;
+      return;
+    }
     thumbFlick *= Math.exp(-dt / TUNING.FLICK_DECAY);
     if (thumbFlick < 0.01) thumbFlick = 0;
     s.boost = thumbFlick;
@@ -1428,6 +1494,8 @@
       o.age += dt;
       if (o.spin) o.rot += o.spin * dt;
       if (o.cutAge != null) o.cutAge += dt;
+      if (o.react) o.react = Math.max(0, o.react - dt * 1.4);
+      if (o.kind === 'pad') { if (o.z < 1.15) o.z = 1.15; o.prevZ = o.z; } // it is where you land: it stops under you
       if (!noCollide && o.prevZ >= Z_SHIP && o.z < Z_SHIP && this.hitsShip(o)) this.onHit(o);
       if (o.z < Z_NEAR || o.dead) s.obstacles.splice(i, 1);
     }
@@ -1439,6 +1507,9 @@
       return Math.hypot(s.shipX - o.x, s.shipY - o.y) < o.r * 0.9 + r;
     }
     if (o.kind === 'wall') return this.wallAlignment(o) !== 'clear';
+    if (o.kind === 'building') return Math.abs(s.shipX - o.x) < o.w / 2 + r * 0.7 && s.shipY + r > o.top;
+    if (o.kind === 'house') return Math.abs(s.shipX - o.x) < o.w / 2 + r * 0.6 && s.shipY + r > GROUND_Y - o.h;
+    if (o.kind === 'bridge') return Math.abs(s.shipY - o.y) < o.th / 2 + r * 0.7;
     if (o.kind === 'glow') return Math.hypot(s.shipX - o.x, s.shipY - o.y) < GLOW_RADIUS + r + TUNING.GLOW_CATCH_SLOP;
     if (o.kind === 'spire') {
       var ground = groundYAt(s.t);
@@ -1532,6 +1603,9 @@
     if (o.dead) return false;
     if (o.kind === 'rock') return Math.hypot(x - o.x, y - o.y) < o.r;
     if (o.kind === 'wall') return !(Math.abs(x - o.gx) < o.gw / 2 && Math.abs(y - o.gy) < o.gh / 2);
+    if (o.kind === 'building') return Math.abs(x - o.x) < o.w / 2 && y > o.top;
+    if (o.kind === 'house') return Math.abs(x - o.x) < o.w / 2 && y > GROUND_Y - o.h;
+    if (o.kind === 'bridge') return Math.abs(y - o.y) < o.th / 2;
     if (o.kind === 'spire') {
       return y > o.top && Math.abs(x - o.x) < spireHalf(o, y, groundYAt(this.state.t));
     }
@@ -1568,6 +1642,7 @@
           spent = true;
           if (o.kind === 'rock') this.spark(b.x, b.y, o.z);
           else if (o.kind === 'spire') this.blastSpire(o, b.y);
+          else if (o.kind === 'building' || o.kind === 'house' || o.kind === 'bridge' || (o.kind === 'wall' && o.style === 'gate')) this.cityReact(o, b.x, b.y);
         }
       }
       if (!spent && s.boss && s.boss.mode === 'fight' && crossed(b, s.boss)) {
@@ -2167,20 +2242,172 @@
     s.enemyShots.length = 0; // nothing it fired outlives it
     s.boss = null;
     s.bossStage = 'won';
-    s.mode = 'won';
     s.shake = 1.2;
     s.banner = { text: 'GUARDIAN DOWN', age: 0 };
+    // On to the city.
+    this.beginCity('outskirts');
+  };
+
+  // ==================================================================
+  // The city
+  // ==================================================================
+  var CITY_TOUCHDOWN_Y = GROUND_Y - 16;
+
+  function cityStageTime(stage) {
+    return stage === 'outskirts' ? CITY_OUTSKIRTS
+      : stage === 'suburbs' ? TUNING.SUBURB_TIME
+      : stage === 'skyline' ? SKYLINE_TIME
+      : stage === 'city' ? TUNING.CITY_TIME
+      : stage === 'plaza' ? PLAZA_TIME
+      : stage === 'landing' ? LAND_TIME : Infinity;
+  }
+
+  MainScene.prototype.beginCity = function (stage) {
+    var s = this.state;
+    s.bossStage = 'won';
+    s.city = { stage: stage, t: 0, timers: { house: 0.8, side: 0.2, pattern: 1.2 }, sideFlip: 1 };
+    if (CITY_BANNERS[stage]) s.banner = { text: CITY_BANNERS[stage], age: 0 };
+    if (stage === 'landing') this.startLanding();
+  };
+
+  // How fast the world comes at you: the run's own pace until the city,
+  // city pace after, easing to a stop for the landing.
+  MainScene.prototype.worldSpeed = function () {
+    var s = this.state, c = s.city, v = speedAt(s.t);
+    if (!c) return v;
+    var cityV = Math.min(v, TUNING.CITY_SPEED);
+    if (c.stage === 'outskirts') return lerp(v, cityV, smooth(c.t / CITY_OUTSKIRTS));
+    if (c.stage === 'landing') return cityV * Math.max(0, 1 - c.t / LAND_TIME);
+    if (c.stage === 'landed') return 0;
+    return cityV;
+  };
+
+  MainScene.prototype.stepCity = function (dt) {
+    var s = this.state, c = s.city;
+    if (!c) return;
+    c.t += dt;
+    if (c.t >= cityStageTime(c.stage)) {
+      var next = CITY_STAGES[CITY_STAGES.indexOf(c.stage) + 1];
+      c.stage = next; c.t = 0;
+      if (CITY_BANNERS[next]) s.banner = { text: CITY_BANNERS[next], age: 0 };
+      if (next === 'landing') this.startLanding();
+      if (next === 'landed') this.landed();
+    }
+    if (!s.spawning) return;
+    var dens = Math.max(0.1, TUNING.CITY_DENSITY), tm = c.timers;
+    if (c.stage === 'suburbs' || c.stage === 'skyline') {
+      tm.house -= dt;
+      if (tm.house <= 0) {
+        tm.house = (c.stage === 'suburbs' ? rand(1.2, 2.0) : rand(2.2, 3.2)) / dens;
+        this.spawnHouseCluster();
+      }
+    }
+    if (c.stage === 'city') {
+      // The streets: towers either side, all the way in...
+      tm.side -= dt;
+      if (tm.side <= 0) {
+        tm.side = rand(0.3, 0.5) / dens;
+        c.sideFlip = -c.sideFlip;
+        this.spawnTower(c.sideFlip * rand(165, 330), rand(50, 110), rand(Y_TOP - 120, 20), false);
+      }
+      // ...and every so often something in the way.
+      tm.pattern -= dt;
+      if (tm.pattern <= 0 && this.clearOfPatterns()) {
+        tm.pattern = rand(1.1, 1.6) / dens;
+        this.spawnCityPattern();
+      }
+    }
+  };
+
+  MainScene.prototype.clearOfPatterns = function () {
+    return !this.state.obstacles.some(function (o) { return o.pattern && o.z > Z_SPAWN - 1.8; });
+  };
+
+  // A cluster of little flat buildings standing on the lake. Most stand
+  // off to the sides; some sit across your path.
+  MainScene.prototype.spawnHouseCluster = function () {
+    var cx = Math.random() < 0.6 ? (Math.random() < 0.5 ? -1 : 1) * rand(170, 320) : rand(-140, 140);
+    var n = 3 + Math.floor(Math.random() * 3);
+    var shapes = ['box', 'gable', 'dome', 'diamond'];
+    for (var i = 0; i < n; i++) {
+      this.addObstacle({
+        kind: 'house', x: cx + rand(-75, 75), z: Z_SPAWN + rand(0, 0.9),
+        w: rand(34, 62), h: rand(30, 78), shape: shapes[Math.floor(Math.random() * shapes.length)],
+        color: COLOR_HOUSES[Math.floor(Math.random() * COLOR_HOUSES.length)], react: 0
+      });
+    }
+  };
+
+  MainScene.prototype.spawnTower = function (x, w, top, pattern, z) {
+    var shapes = ['rect', 'rect', 'stepped', 'needle'];
+    var cols = Math.max(2, Math.round(w / 18)), rows = Math.max(3, Math.round((GROUND_Y - top) / 22));
+    var lit = [];
+    for (var i = 0; i < cols * rows; i++) lit.push(Math.random() < 0.35 ? Math.floor(Math.random() * COLOR_WINDOWS.length) : -1);
+    return this.addObstacle({
+      kind: 'building', x: x, w: w, top: top, z: z == null ? Z_SPAWN : z, pattern: !!pattern,
+      shape: shapes[Math.floor(Math.random() * shapes.length)],
+      edge: COLOR_TOWER_EDGES[Math.floor(Math.random() * COLOR_TOWER_EDGES.length)],
+      cols: cols, rows: rows, lit: lit, react: 0, hitY: 0
+    });
+  };
+
+  // Something in the way: a tower to go round, a pair to thread, a
+  // sky-bridge to go over or under, or a gate to fly through.
+  MainScene.prototype.spawnCityPattern = function (kind) {
+    var r = Math.random();
+    kind = kind || (r < 0.3 ? 'tower' : r < 0.55 ? 'twin' : r < 0.8 ? 'bridge' : 'gate');
+    var tall = function () { return rand(Y_TOP - 110, Y_TOP + 10); };
+    if (kind === 'tower') {
+      this.spawnTower(rand(-110, 110), rand(46, 72), tall(), true);
+    } else if (kind === 'twin') {
+      var gc = rand(-80, 80), gap = 118, w1 = rand(60, 90), w2 = rand(60, 90);
+      this.spawnTower(gc - gap / 2 - w1 / 2, w1, tall(), true);
+      this.spawnTower(gc + gap / 2 + w2 / 2, w2, tall(), true);
+    } else if (kind === 'bridge') {
+      this.addObstacle({ kind: 'bridge', y: rand(-90, 70), th: 30, pattern: true, react: 0,
+        edge: COLOR_TOWER_EDGES[Math.floor(Math.random() * COLOR_TOWER_EDGES.length)] });
+      // Its piers, out at the sides.
+      this.spawnTower(-230, 70, Y_TOP - 120, false);
+      this.spawnTower(230, 70, Y_TOP - 120, false);
+    } else {
+      var w = this.spawnWall({ style: 'gate' });
+      w.pattern = true; w.react = 0;
+    }
+    return kind;
+  };
+
+  // A building taking a shot: it flashes, every window comes on, a
+  // shiver runs through it - and it stays standing.
+  MainScene.prototype.cityReact = function (o, x, y) {
+    o.react = 1;
+    o.hitY = y;
+    this.state.cityReacts++;
+    Sound.ping();
+  };
+
+  // The pad: placed so that, slowing at a steady rate, the ship stops
+  // right over it.
+  MainScene.prototype.startLanding = function () {
+    var s = this.state;
+    var v0 = Math.min(speedAt(s.t), TUNING.CITY_SPEED);
+    s.obstacles = s.obstacles.filter(function (o) { return o.kind === 'glow'; });
+    this.addObstacle({ kind: 'pad', x: 0, z: 1.15 + v0 * LAND_TIME / 2 });
+  };
+
+  MainScene.prototype.landed = function () {
+    var s = this.state;
+    s.mode = 'won';
     var dist = Math.floor(s.distance);
     if (dist > this.best) {
       this.best = dist;
       try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
     }
-    document.getElementById('overlayTitle').textContent = 'Guardian down';
-    document.getElementById('crashLine').textContent = dist.toLocaleString() + ' m flown · ' + s.enemiesDowned + ' aliens downed · best ' + this.best.toLocaleString() + ' m';
+    document.getElementById('overlayTitle').textContent = 'The city';
+    document.getElementById('crashLine').textContent = 'Landed at the centre \u00b7 ' + dist.toLocaleString() + ' m flown \u00b7 best ' + this.best.toLocaleString() + ' m';
     var self = this;
     setTimeout(function () {
       if (self.state.mode === 'won') document.getElementById('crashOverlay').classList.add('visible');
-    }, 2600);
+    }, 1800);
   };
 
   // Draw list entries: one per live piece, each at its own depth.
@@ -2274,6 +2501,7 @@
     }
 
     if (s.mode === 'flying') { this.drawShip(); this.drawSight(); }
+    else if (s.mode === 'won') this.drawShip(); // set down on the pad
     this.drawShards();
     this.drawFx();
     this.drawHud();
@@ -2333,26 +2561,114 @@
     var zFar = 60;
     var horizon = this.sy(G, zFar);
     var sky = skyAt(sunsetAt(s.t));
+    var ter = this.terrain();
     bandedFill(g, -20, horizon, sky.top, mixColor(sky.horizon, 0xffb86b, 0.25 * sky.glow), 10);
     this.drawStars(g, horizon, sky);
     this.drawSun(g, horizon, sky);
-    g.fillStyle(sky.ground, 1);
+    this.drawSkyline(g, horizon);
+    var groundCol = mixColor(mixColor(sky.ground, 0x060a22, ter.lake), 0x0b0716, ter.city);
+    g.fillStyle(groundCol, 1);
     g.fillRect(-20, horizon, GAME_WIDTH + 40, GAME_HEIGHT - horizon + 20);
+    if (ter.lake > 0 && ter.city < 1) this.drawLake(g, horizon, sky, ter.lake * (1 - ter.city), G, zFar);
 
     // Bands at fixed world depths, scrolled by distance flown.
     var spacing = 1.2;
     var offset = (s.distance / METRES_PER_Z) % (spacing * 2);
-    g.fillStyle(sky.band, 1);
+    // On the lake the bands all but vanish (still water); in the city
+    // they come back as blocks between the streets.
+    g.fillStyle(mixColor(mixColor(sky.band, 0x080d2a, ter.lake), 0x150b28, ter.city), 1);
     for (var z = spacing * 2 - offset; z < zFar; z += spacing * 2) {
       var z0 = Math.max(z, Z_NEAR * 0.5), z1 = z + spacing;
       var y0 = this.sy(G, z0), y1 = this.sy(G, z1);
       if (y1 > GAME_HEIGHT + 20) continue;
       g.fillRect(-20, y1, GAME_WIDTH + 40, Math.min(y0, GAME_HEIGHT + 20) - y1);
     }
-    g.lineStyle(1, sky.line, sky.lineA);
+    // The grid lines: gone on the lake, back in the city as glowing streets.
+    g.lineStyle(1, mixColor(sky.line, 0xa78bfa, ter.city), sky.lineA * (1 - ter.lake) + 0.75 * ter.city);
     for (var k = -8; k <= 8; k++) {
       var x = k * 80;
       g.lineBetween(this.sx(x, 0.3), this.sy(G, 0.3), this.sx(x, zFar), this.sy(G, zFar));
+    }
+  };
+
+  // How far the ground has turned to lake, and the lake to city floor.
+  MainScene.prototype.terrain = function () {
+    var c = this.state.city;
+    if (!c) return { lake: 0, city: 0 };
+    var i = CITY_STAGES.indexOf(c.stage), iCity = CITY_STAGES.indexOf('city');
+    var lake = c.stage === 'outskirts' ? smooth(c.t / CITY_OUTSKIRTS) : 1;
+    var city = i < iCity ? 0 : i === iCity ? smooth(c.t / 3) : 1;
+    return { lake: lake, city: city };
+  };
+
+  // The lake: still water holding the night sky. The haze and the
+  // stars come back up out of it, squashed and shimmering, and soft
+  // ripple lines drift toward you.
+  MainScene.prototype.drawLake = function (g, horizon, sky, k, G, zFar) {
+    var s = this.state, t = s.t;
+    // The sky's glow, mirrored in a band just under the horizon.
+    g.fillStyle(mixColor(0x7c3aed, 0xdb2777, 0.4), 0.10 * k);
+    g.fillEllipse(CX - this.camX() * 0.02, horizon + 10, GAME_WIDTH * 1.4, 34);
+    // Stars reflected: the upper sky's stars, mirrored and squashed.
+    var st = s.stars, dx = -this.camX() * 0.02;
+    for (var i = 0; i < st.length; i += 2) {
+      var sy0 = horizon - 6 - st[i].h * (horizon - 16);
+      var ry = horizon + (horizon - sy0) * 0.42 + 3;
+      if (ry > GAME_HEIGHT) continue;
+      var wob = Math.sin(t * 2.2 + i) * 1.6;
+      g.fillStyle(st[i].color, 0.28 * k * sky.stars * (0.6 + 0.4 * Math.sin(t * 1.3 + st[i].tw)));
+      g.fillRect(st[i].x + dx + wob - 1, ry, 2 + st[i].size, 1);
+    }
+    // Ripples: short pale dashes at depths that drift in with the world.
+    var spacing = 0.9, offset = (s.distance / METRES_PER_Z) % spacing;
+    for (var z = spacing - offset, n = 0; z < zFar * 0.5; z += spacing, n++) {
+      var y = this.sy(G, Math.max(z, 0.4));
+      if (y > GAME_HEIGHT + 5) continue;
+      var seed = Math.floor(s.distance / METRES_PER_Z / spacing) + n;
+      for (var j = 0; j < 3; j++) {
+        var wx = ((seed * 73 + j * 151) % 640) - 320;
+        var len = 40 / Math.max(z, 0.4);
+        g.lineStyle(1, 0xc7d2fe, 0.12 * k * clamp(1.4 - z / 12, 0, 1));
+        g.lineBetween(this.sx(wx, z) - len, y, this.sx(wx, z) + len, y);
+      }
+    }
+  };
+
+  // The skyline: flat towers on the horizon round a tall central spire
+  // with a beacon. It is far off, so it hardly moves when you steer -
+  // but it grows as you come in.
+  MainScene.prototype.drawSkyline = function (g, horizon) {
+    var c = this.state.city;
+    if (!c) return;
+    var i = CITY_STAGES.indexOf(c.stage);
+    if (i < CITY_STAGES.indexOf('skyline')) return;
+    var u = c.t / cityStageTime(c.stage);
+    var scale = c.stage === 'skyline' ? lerp(0.35, 0.8, smooth(u))
+      : c.stage === 'city' ? lerp(0.8, 1.6, smooth(u))
+      : c.stage === 'plaza' ? lerp(1.6, 1.8, smooth(u)) : 1.8;
+    var a = c.stage === 'skyline' ? clamp(c.t / 1.5, 0, 1) : 1;
+    var cx = CX - this.camX() * 0.05, t = this.state.t;
+    var sk = this.state.skyline;
+    for (var j = 0; j < sk.length; j++) {
+      var b = sk[j], x = cx + b.x * scale, w = b.w * scale, h = b.h * scale;
+      g.fillStyle(0x140b2a, a);
+      g.fillRect(x - w / 2, horizon - h, w, h + 1);
+      if (b.shape === 'stepped') g.fillRect(x - w * 0.3, horizon - h * 1.18, w * 0.6, h * 0.18 + 1);
+      if (b.shape === 'needle') g.fillTriangle(x - w * 0.12, horizon - h, x + w * 0.12, horizon - h, x, horizon - h - h * 0.35);
+      g.lineStyle(1, b.edge, 0.55 * a);
+      g.strokeRect(x - w / 2, horizon - h, w, h);
+      for (var k = 0; k < b.windows.length; k++) {
+        var wn = b.windows[k];
+        g.fillStyle(wn.c, a * (0.55 + 0.35 * Math.sin(t * wn.r + wn.p)));
+        g.fillRect(x - w / 2 + wn.fx * w, horizon - h + wn.fy * h, Math.max(1, 2 * scale * 0.6), Math.max(1, 2 * scale * 0.6));
+      }
+      if (b.beacon) {
+        var top = horizon - h - h * 0.35, pulse = 0.5 + 0.5 * Math.sin(t * 3);
+        g.fillStyle(0xf0abfc, a * (0.2 + 0.3 * pulse));
+        g.fillCircle(x, top, 5 + 6 * pulse);
+        g.fillStyle(0xffffff, a);
+        g.fillCircle(x, top, 1.6);
+      }
     }
   };
 
@@ -2581,6 +2897,10 @@
     if (o.kind === 'glow') return this.drawGlow(g, o);
     if (o.kind === 'chunk') return this.drawChunk(g, o);
     if (o.kind === 'bosspiece') return this.drawBossPiece(g, o);
+    if (o.kind === 'building') return this.drawTower(g, o);
+    if (o.kind === 'house') return this.drawHouse(g, o);
+    if (o.kind === 'bridge') return this.drawBridge(g, o);
+    if (o.kind === 'pad') return this.drawPad(g, o);
     if (o.dead) return; // shot this frame; its burst is drawn instead
     var a = depthAlpha(o.z);
     if (a <= 0) return;
@@ -2609,12 +2929,13 @@
       var T = this.sy(Y_TOP - 70, z), B = this.sy(Math.min(Y_BOTTOM + 70, G), z);
       var gl = this.sx(o.gx - o.gw / 2, z), gr = this.sx(o.gx + o.gw / 2, z);
       var gt = this.sy(o.gy - o.gh / 2, z), gb = this.sy(o.gy + o.gh / 2, z);
-      g.fillStyle(COLOR_WALL, a * 0.92);
+      var gate = o.style === 'gate', fl = gate ? (o.react || 0) : 0;
+      g.fillStyle(gate ? mixColor(0x140b2a, 0x3b2a6b, fl) : COLOR_WALL, a * 0.92);
       g.fillRect(L, T, R - L, gt - T);
       g.fillRect(L, gb, R - L, B - gb);
       g.fillRect(L, gt, gl - L, gb - gt);
       g.fillRect(gr, gt, R - gr, gb - gt);
-      g.lineStyle(Math.max(1, 2 / z), COLOR_WALL_EDGE, a);
+      g.lineStyle(Math.max(1, 2 / z), gate ? mixColor(0x67e8f9, 0xffffff, fl) : COLOR_WALL_EDGE, a);
       g.strokeRect(L, T, R - L, B - T);
       // Walls still ahead show their alignment; once past, it is moot.
       if (z >= Z_SHIP) {
@@ -2686,6 +3007,7 @@
     // Engine flame out of the notch.
     // A flick burns hotter: the flame stretches with the boost.
     var flick = rand(0.7, 1.15) * (1 + 1.2 * (s.boost || 0));
+    if (s.city && s.city.stage === 'landed') flick *= 0.25; // engine idling on the pad
     var f1 = P(-4, r * 0.12), f2 = P(4, r * 0.12), ft = P(0, r * 0.12 + 11 * flick);
     g.fillStyle(COLOR_FLAME_OUTER, 0.9);
     g.fillTriangle(f1[0], f1[1], f2[0], f2[1], ft[0], ft[1]);
@@ -2782,6 +3104,114 @@
       var nx = x + (i % 2 ? 1 : -1) * r * 0.4, ny = y + (i < 2 ? -1 : 1) * r * 0.5;
       g.fillCircle(nx, ny, r * 0.12);
     }
+  };
+
+  // ---- City drawing ---------------------------------------------------
+  // A tower: dark, flat, with a neon edge and a grid of windows, some
+  // lit. Hit, it flashes, every window comes on and a shiver runs
+  // through it - and it stays put.
+  MainScene.prototype.drawTower = function (g, o) {
+    var a = depthAlpha(o.z);
+    if (a <= 0) return;
+    var z = Math.max(o.z, Z_NEAR), G = groundYAt(this.state.t), rc = o.react || 0;
+    var shiver = rc > 0 ? Math.sin(o.age * 60) * rc * 3 : 0;
+    var x = this.sx(o.x + shiver, z), hw = o.w / 2 / z;
+    var top = this.sy(o.top, z), base = this.sy(G + 10, z);
+    g.fillStyle(mixColor(0x120a24, 0x3b2a6b, rc * 0.6), a);
+    g.fillRect(x - hw, top, hw * 2, base - top);
+    var edge = mixColor(o.edge, 0xffffff, rc);
+    if (o.shape === 'stepped') {
+      g.fillRect(x - hw * 0.6, top - hw * 0.7, hw * 1.2, hw * 0.7 + 1);
+      g.lineStyle(Math.max(1, 1.4 / z), edge, a * 0.8);
+      g.strokeRect(x - hw * 0.6, top - hw * 0.7, hw * 1.2, hw * 0.7);
+    } else if (o.shape === 'needle') {
+      g.lineStyle(Math.max(1, 1.4 / z), edge, a * 0.8);
+      g.lineBetween(x, top, x, top - hw * 1.6);
+      g.fillStyle(edge, a * (0.5 + 0.5 * Math.sin(this.state.t * 4 + o.x)));
+      g.fillCircle(x, top - hw * 1.6, Math.max(1, 1.5 / z));
+    }
+    g.lineStyle(Math.max(1, 1.6 / z), edge, a * (0.75 + 0.25 * rc));
+    g.strokeRect(x - hw, top, hw * 2, base - top);
+    // Windows: a grid; on a hit they all come on.
+    var cw = hw * 2 / o.cols, rh = (base - top) / o.rows, ws = Math.max(1, Math.min(cw, rh) * 0.35);
+    for (var r = 0; r < o.rows; r++) {
+      var wy = top + rh * (r + 0.35);
+      if (wy > GAME_HEIGHT) break;
+      for (var c = 0; c < o.cols; c++) {
+        var li = o.lit[r * o.cols + c];
+        if (li < 0 && rc <= 0) continue;
+        var col = li < 0 ? 0xffffff : COLOR_WINDOWS[li];
+        g.fillStyle(rc > 0 ? mixColor(col, 0xffffff, rc * 0.6) : col, a * (li < 0 ? rc : 0.85));
+        g.fillRect(x - hw + cw * (c + 0.33), wy, ws, ws);
+      }
+    }
+  };
+
+  // A little flat building on the lake, with a lit door and its
+  // reflection wavering below. Hit, it hops.
+  MainScene.prototype.drawHouse = function (g, o) {
+    var a = depthAlpha(o.z);
+    if (a <= 0) return;
+    var z = Math.max(o.z, Z_NEAR), G = GROUND_Y, rc = o.react || 0, t = this.state.t;
+    var hop = rc > 0 ? Math.sin(rc * Math.PI) * 12 : 0;
+    var x = this.sx(o.x, z), base = this.sy(G - hop, z), hw = o.w / 2 / z, h = o.h / z;
+    var col = rc > 0 ? mixColor(o.color, 0xffffff, rc * 0.7) : o.color;
+    var self = this;
+    function shape(yb, dir, alpha) {
+      // dir 1 = upright, -1 = the reflection, hanging under the waterline
+      g.fillStyle(col, alpha);
+      if (o.shape === 'box' || o.shape === 'gable') {
+        var bh = o.shape === 'gable' ? h * 0.6 : h;
+        g.fillRect(x - hw, dir > 0 ? yb - bh : yb, hw * 2, bh);
+        if (o.shape === 'gable') g.fillTriangle(x - hw * 1.1, yb - dir * bh, x + hw * 1.1, yb - dir * bh, x, yb - dir * h);
+      } else if (o.shape === 'dome') {
+        g.fillRect(x - hw, dir > 0 ? yb - h * 0.45 : yb, hw * 2, h * 0.45);
+        g.fillEllipse(x, yb - dir * h * 0.45, hw * 2, h * 1.1);
+      } else {
+        g.fillTriangle(x - hw, yb - dir * h * 0.5, x, yb - dir * h, x + hw, yb - dir * h * 0.5);
+        g.fillTriangle(x - hw, yb - dir * h * 0.5, x, yb, x + hw, yb - dir * h * 0.5);
+      }
+    }
+    // The reflection first, faint and wavering, then the house.
+    var wob = Math.sin(t * 3 + o.x) * 1.5 / z;
+    x += wob; shape(this.sy(G, z), -1, a * 0.22); x -= wob;
+    shape(base, 1, a);
+    // A lit door.
+    g.fillStyle(0xfde68a, a * 0.9);
+    g.fillRect(x - hw * 0.18, base - h * 0.32, hw * 0.36, h * 0.32);
+  };
+
+  // A sky-bridge: a dark span right across, lit along its length.
+  MainScene.prototype.drawBridge = function (g, o) {
+    var a = depthAlpha(o.z);
+    if (a <= 0) return;
+    var z = Math.max(o.z, Z_NEAR), rc = o.react || 0;
+    var L = this.sx(-420, z), R = this.sx(420, z);
+    var T = this.sy(o.y - o.th / 2, z), B = this.sy(o.y + o.th / 2, z);
+    g.fillStyle(mixColor(0x120a24, 0x3b2a6b, rc * 0.6), a);
+    g.fillRect(L, T, R - L, B - T);
+    var edge = mixColor(o.edge, 0xffffff, rc);
+    g.lineStyle(Math.max(1, 1.6 / z), edge, a);
+    g.strokeRect(L, T, R - L, B - T);
+    for (var i = -20; i <= 20; i++) {
+      var lx = this.sx(i * 20, z);
+      g.fillStyle(COLOR_WINDOWS[(i + 40) % COLOR_WINDOWS.length], a * (0.5 + 0.5 * rc));
+      g.fillRect(lx, (T + B) / 2 - 1, Math.max(1, 3 / z), Math.max(1, 2 / z));
+    }
+  };
+
+  // The landing pad: rings of light flat on the plaza, pulsing.
+  MainScene.prototype.drawPad = function (g, o) {
+    var z = Math.max(o.z, Z_NEAR), G = GROUND_Y, t = this.state.t;
+    var cx = this.sx(o.x, z), cy = this.sy(G, z);
+    var w = 150 / z, h = w * 0.16;
+    for (var i = 0; i < 3; i++) {
+      var k = 1 - i * 0.28, pulse = 0.5 + 0.5 * Math.sin(t * 3 - i);
+      g.lineStyle(2, i === 0 ? 0xf0abfc : 0x67e8f9, 0.4 + 0.4 * pulse);
+      g.strokeEllipse(cx, cy, w * k, h * k);
+    }
+    g.fillStyle(0xf0abfc, 0.15);
+    g.fillEllipse(cx, cy, w * 0.5, h * 0.5);
   };
 
   // The blown-off top of a tower, tumbling: the same flat shape that
@@ -3020,6 +3450,12 @@
       ['BOSS_FACE_SCALE', 'Faces you for', 0.3, 3, 0.05, '\u00d7'],
       ['BOSS_EDGE_SCALE', 'Edge-on for', 0, 3, 0.05, '\u00d7']
     ] },
+    { title: 'City', rows: [
+      ['CITY_SPEED', 'Speed', 2, 9, 0.1, ''],
+      ['SUBURB_TIME', 'Suburbs last', 4, 60, 1, ' s'],
+      ['CITY_TIME', 'City lasts', 6, 90, 1, ' s'],
+      ['CITY_DENSITY', 'Density', 0.3, 2.5, 0.05, '\u00d7']
+    ] },
     { title: 'Night sky', rows: [
       ['STAR_BRIGHTNESS', 'Star brightness', 0.3, 2, 0.05, '\u00d7'],
       ['STAR_SIZE', 'Star size', 0.4, 2, 0.05, '\u00d7'],
@@ -3143,10 +3579,11 @@
       scene.state.t = where === 'clouds' ? CLOUDS_START
         : where === 'surface' ? SURFACE_START
         : where === 'dusk' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME * 0.5
-        : where === 'night' || where === 'boss' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME
+        : where === 'night' || where === 'boss' || where === 'suburbs' || where === 'city' || where === 'landing' ? SURFACE_START + TUNING.SUNSET_DELAY + TUNING.SUNSET_TIME
         : 0;
       scene.state.invincible = document.getElementById('labNoDamage').checked;
       if (where === 'boss') scene.beginCalm(0.3); // straight past the stars to the fight
+      if (where === 'suburbs' || where === 'city' || where === 'landing') scene.beginCity(where);
       setLabOpen(false);
     });
   });
@@ -3182,7 +3619,8 @@
         inSights: scene.enemyInSights(), fireHeld: fireHeld(), shipYLimit: scene.shipYLimit(),
         obstacles: s.obstacles.map(function (o) {
           return { kind: o.kind, z: o.z, align: o.kind === 'wall' ? scene.wallAlignment(o) : null,
-            top: o.kind === 'spire' ? o.top : null, top0: o.kind === 'spire' ? o.top0 : null };
+            top: o.kind === 'spire' ? o.top : null, top0: o.kind === 'spire' ? o.top0 : null,
+            x: o.x, y: o.y, react: o.react || 0, w: o.w, h: o.h, th: o.th, style: o.style };
         }),
         input: { x: inputState.x, y: inputState.y },
         invertY: invertY,
@@ -3197,7 +3635,9 @@
         ENEMY_ARRIVE: ENEMY_ARRIVE, ENEMY_LEAVE: ENEMY_LEAVE, BULLET_RADIUS: TUNING.BULLET_RADIUS,
         ENEMY_SHOT_RADIUS: ENEMY_SHOT_RADIUS, ENEMY_SHOT_SPEED: TUNING.ENEMY_SHOT_SPEED,
         ENEMY_FIRE_INTERVAL: TUNING.ENEMY_FIRE_INTERVAL,
-        CALM_TIME: TUNING.CALM_TIME, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TURN_TIME: BOSS_TURN_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
+        CALM_TIME: TUNING.CALM_TIME, CITY_SPEED: TUNING.CITY_SPEED, CITY_OUTSKIRTS: CITY_OUTSKIRTS,
+        SUBURB_TIME: TUNING.SUBURB_TIME, SKYLINE_TIME: SKYLINE_TIME, CITY_TIME: TUNING.CITY_TIME, PLAZA_TIME: PLAZA_TIME,
+        LAND_TIME: LAND_TIME, CITY_TOUCHDOWN_Y: CITY_TOUCHDOWN_Y, BOSS_GLOWS: TUNING.BOSS_GLOWS, BOSS_TURN_TIME: BOSS_TURN_TIME, BOSS_TRI_HP: TUNING.BOSS_TRI_HP, BOSS_CORE_HP: TUNING.BOSS_CORE_HP,
         BOSS_SHOT_TIME: TUNING.BOSS_SHOT_TIME, BOSS_Z_MIN: BOSS_Z_MIN, BOSS_ARRIVE_STAGGER: BOSS_ARRIVE_STAGGER,
         BOSS_DOCK_TIME: BOSS_DOCK_TIME, BOSS_REFORM_TIME: BOSS_REFORM_TIME, BOSS_CHARGE: BOSS_CHARGE, SPIRE_MIN_GAP: TUNING.SPIRE_MIN_GAP, SPIRE_AIM_SPREAD: TUNING.SPIRE_AIM_SPREAD,
         WALL_DOUBLE_REACH_X: WALL_DOUBLE_REACH_X, WALL_DOUBLE_REACH_Y: WALL_DOUBLE_REACH_Y,
@@ -3285,6 +3725,19 @@
             a: p.a, cx: poly.cx, cy: poly.cy, tipX: poly.tipX, tipY: poly.tipY };
         }) : []
       };
+    },
+    city: function () {
+      var s = scene.state, c = s.city;
+      return { stage: c ? c.stage : null, t: c ? c.t : 0, reacts: s.cityReacts, speed: scene.worldSpeed(),
+        terrain: scene.terrain(), banner: s.banner && s.banner.text, mode: s.mode };
+    },
+    startCity: function (stage) { scene.beginCity(stage || 'outskirts'); return true; },
+    setCityT: function (t) { if (scene.state.city) scene.state.city.t = t; return true; },
+    cityPattern: function (kind, z) {
+      var before = scene.state.obstacles.length;
+      scene.spawnCityPattern(kind);
+      scene.state.obstacles.slice(before).forEach(function (o) { if (z != null) { o.z = z; o.prevZ = z; } });
+      return true;
     },
     startBoss: function (calm) { scene.beginCalm(calm == null ? 0 : calm); return true; },
     // Knock a piece down to `hp` (0 destroys it), as if shot.

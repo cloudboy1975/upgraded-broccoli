@@ -986,16 +986,97 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__descentDebug.hitBoss('bottom', 99));
   bs = await boss();
   s = await state(page);
-  check('the last piece down: guardian down', bs.stage === 'won' && s.mode === 'won' && bs.mode === null, bs);
+  let ct = await D(page, () => window.__descentDebug.city());
+  check('the last piece down: guardian down', bs.stage === 'won' && bs.mode === null && ct.banner === 'GUARDIAN DOWN', { bs, ct });
   check('...and its shots in flight die with it', s.enemyShots === 0, s.enemyShots);
-  await page.waitForTimeout(3000);
-  check('...then the victory screen', (await state(page)).overlay === true &&
-    /guardian down/i.test(await page.textContent('#overlayTitle')));
+  check('...and the run flies on, to the city - no end screen yet',
+    s.mode === 'flying' && ct.stage === 'outskirts' && s.overlay === false, { mode: s.mode, ct });
+
+  // ---- The city ----------------------------------------------------------
+  const city = () => D(page, () => window.__descentDebug.city());
+  // Outskirts: the grid smooths into the lake and the pace eases to city speed.
+  const lake0 = (await city()).terrain.lake;
+  await page.waitForTimeout(1500);
+  ct = await city();
+  check('the grid smooths into a lake', ct.terrain.lake > lake0 && ct.terrain.city === 0, { lake0, now: ct.terrain });
+  await D(page, () => window.__descentDebug.setCityT(99));
+  await page.waitForTimeout(300);
+  ct = await city();
+  check('...and you slow to city pace', ct.stage === 'suburbs' && Math.abs(ct.speed - C.CITY_SPEED) < 0.01 && ct.banner === 'THE SUBURBS', ct);
+
+  // Suburbs: clusters of houses come by themselves, and nothing shoots.
+  await page.waitForTimeout(3500);
+  s = await state(page);
+  check('the suburbs: houses stand on the lake', s.obstacles.filter(o => o.kind === 'house').length >= 3, s.obstacles.map(o => o.kind));
+  check('...and nothing shoots at you', s.enemies.length === 0 && s.enemyShots === 0, s);
+
+  // On through the stages, in order.
+  const advance = async () => { await D(page, () => window.__descentDebug.setCityT(9999)); await page.waitForTimeout(250); return city(); };
+  ct = await advance();
+  check('then the skyline rises', ct.stage === 'skyline', ct.stage);
+  ct = await advance();
+  check('then into the city', ct.stage === 'city' && ct.banner === 'THE CITY', ct);
+  await page.waitForTimeout(4000);
+  s = await state(page);
+  check('the city brings towers and something in the way, by itself',
+    s.obstacles.filter(o => o.kind === 'building').length >= 4 &&
+    s.obstacles.some(o => o.kind === 'bridge' || o.style === 'gate' || o.kind === 'building'), s.obstacles.map(o => o.kind));
+  check('...and still nothing shoots', s.enemies.length === 0 && s.enemyShots === 0);
+  ct = await advance();
+  check('the city centre: an open plaza', ct.stage === 'plaza' && ct.banner === 'CITY CENTER', ct);
+  ct = await advance();
+  check('...then the landing', ct.stage === 'landing', ct.stage);
+
+  // The ship lands itself: steering is ignored, it lines up and sets down.
+  await page.keyboard.down('ArrowLeft');
+  await page.waitForFunction(() => window.__descentDebug.city().stage === 'landed', null, { timeout: 30000 });
+  await page.keyboard.up('ArrowLeft');
+  s = await state(page);
+  ct = await city();
+  check('the ship lands itself on the pad, whatever the stick says',
+    Math.abs(s.shipX) < 3 && Math.abs(s.shipY - C.CITY_TOUCHDOWN_Y) < 3 && ct.speed === 0 && ct.banner === 'LANDED', { x: s.shipX, y: s.shipY, ct });
+  check('...the pad is under it', s.obstacles.some(o => o.kind === 'pad'));
+  await page.waitForTimeout(2200);
+  check('...then the end screen: the city', (await state(page)).overlay === true && /city/i.test(await page.textContent('#overlayTitle')));
   await page.click('#againBtn');
   await page.waitForTimeout(150);
   bs = await boss();
   s = await state(page);
-  check('Fly again starts a fresh run, no guardian', s.mode === 'flying' && bs.stage === null && s.t < 1, { s, bs });
+  ct = await city();
+  check('Fly again starts a fresh run: no guardian, no city', s.mode === 'flying' && bs.stage === null && ct.stage === null && s.t < 1, { s, bs, ct });
+
+  // In the city: buildings react to your shots and never break.
+  const cityAt = async (pattern) => {
+    await quiet(page);
+    await D(page, ([t, k]) => {
+      const d = window.__descentDebug;
+      d.skipTo(t); d.startCity('city'); d.setSpawning(false); d.clear(); d.setInvincible(false);
+      d.cityPattern(k, 3.5);
+    }, [nightT, pattern]);
+    return (await state(page)).obstacles.filter(o => ['building', 'bridge', 'wall'].includes(o.kind));
+  };
+  let objs = await cityAt('tower');
+  await D(page, (x) => window.__descentDebug.setShip(x, 60), objs[0].x);
+  const reacts0 = (await city()).reacts;
+  await hold(page, 'Space', 250);
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('a tower you shoot reacts', (await city()).reacts > reacts0 && s.obstacles.some(o => o.kind === 'building' && o.react > 0), s.obstacles);
+  check('...and stays standing', s.obstacles.filter(o => o.kind === 'building').length === objs.length);
+  await page.waitForTimeout(1500);
+  check('...but fly into it and it hurts', (await state(page)).shield < C.SHIELD_MAX);
+
+  objs = await cityAt('bridge');
+  const br = objs.find(o => o.kind === 'bridge');
+  await D(page, (y) => window.__descentDebug.setShip(0, y), br.y);
+  await page.waitForTimeout(1500);
+  check('a sky-bridge across your height hits you', (await state(page)).shield < C.SHIELD_MAX);
+  objs = await cityAt('bridge');
+  const br2 = objs.find(o => o.kind === 'bridge');
+  await D(page, (y) => window.__descentDebug.setShip(0, y < 0 ? y + 70 : y - 70), br2.y);
+  await page.waitForTimeout(1500);
+  check('...go over or under it and it does not', (await state(page)).shield === C.SHIELD_MAX);
+  await D(page, () => window.__descentDebug.restart());
 
   // With the lab switch off it never turns.
   await quiet(page);

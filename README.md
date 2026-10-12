@@ -268,6 +268,33 @@ It isn't connected to the boss fight yet. The plan is to hand off from
   of the shield you bring into it. **Turns edge-on** (on by default)
   has its own **Faces you for** and **Edge-on for** dials. The
   **Boss** jump button takes you straight to it.
+- **On to the city.** The guardian going down doesn't end the run.
+  You fly on to the aliens' city, and nothing shoots at you on the
+  way.
+  - **The lake:** the grid smooths into a still lake that holds the
+    night sky, with the stars and haze mirrored and shimmering in it
+    and soft ripples drifting past.
+  - **The suburbs:** clusters of small flat buildings (boxes, gabled
+    houses, domes, diamonds in soft alien colours) stand on the water,
+    each with a lit door and a wavering reflection. Most sit off to
+    the sides and some are in your path.
+  - **The skyline:** flat towers rise on the horizon round a tall
+    central spire with a pulsing beacon, growing as you come in.
+  - **The city:** you're in among the buildings, threading them.
+    Neon-edged towers with lit windows line the streets, and every so
+    often something is in the way: a tower to go round, a pair to
+    thread between, a sky-bridge to go over or under, or a gate to fly
+    through. The pace drops to city speed for this.
+  - **Shooting buildings:** they react but nothing breaks. A tower
+    flashes, every window comes on and it shivers. Houses hop.
+    Flying into one still hurts.
+  - **The city centre:** the buildings open into a plaza, and a
+    glowing landing pad comes up. The ship takes over, lines up,
+    slows and sets down on it. Then **LANDED**, and an end screen.
+
+  The lab's **City** section sets the speed, how long the suburbs and
+  the city last, and how dense they are. The **Suburbs**, **City** and
+  **Landing** buttons jump straight there.
 - **Settings lab.** Press backquote (`` ` ``), or triple-tap the
   "Descent" tag at the top right on a phone. It has the same look as
   Head-On's sortie lab: a slider for each of the 49 settings, grouped
