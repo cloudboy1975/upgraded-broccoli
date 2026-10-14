@@ -1437,6 +1437,7 @@
       bossFireInterval: BOSS_FIRE_INTERVAL,
       bossFireIntervalMin: BOSS_FIRE_INTERVAL_MIN,
       bossFireBurst: BOSS_FIRE_BURST,
+      descentAfterBoss: true, // with him down, dive at the planet and on into descent.html - see startDescent()
       zigzagFreq: ZIGZAG_FREQ,
       zigzagAmplitude: ZIGZAG_AMPLITUDE,
       zigzagVariation: ZIGZAG_VARIATION,
@@ -4718,6 +4719,10 @@
     var state = this.state;
     this.addScore(BOSS_SCORE);
     this.clearBoss();
+    // The way down is open: the run goes on in descent.html, the flight
+    // down to their world. With the lab switch off it flies on here
+    // instead, toward the next world, as it always did.
+    if (TUNING.descentAfterBoss) { this.startDescent(); return; }
     // The approach starts over: you have knocked this world's guardian
     // down, and the run flies on toward the next one. Without this the
     // very next cleared wave would summon another boss, since the
@@ -4729,6 +4734,67 @@
     this.spawnFormation();
     traceEvent('boss_end', { wave: state.wave, elapsed: state.difficulty.elapsed });
   };
+
+  // ---- Down to their world -----------------------------------------------
+  // With the guardian of the home world dead, the run dives at the planet
+  // and carries on in descent.html: the flight down through its sky to
+  // the aliens' city. Here that is a short set piece - the board cleared,
+  // the engine lit, the stars streaming past and the planet coming up
+  // solid ahead - then a fade, and the next page picks up from that same
+  // picture (its own opening is this planet, at about this size, swelling).
+  var DESCENT_PAGE = 'descent.html';
+  var DESCENT_DIVE_DURATION = 2.6; // seconds of the dive before the page changes
+  var DESCENT_FADE_AT = 0.8;       // share of the dive after which the screen fades to black
+  var DESCENT_PLANET_GROWTH = 0.3; // how much nearer the planet comes in the dive
+
+  MainScene.prototype.startDescent = function () {
+    var state = this.state;
+    // Nothing left in the air: the update loop stops for the dive, so
+    // anything mid-flight would hang there frozen (see endGame()).
+    state.bullets.forEach(function (b) { destroyBulletSprites(b); });
+    state.bullets = [];
+    state.enemyBullets.forEach(function (b) { b.sprite.destroy(); });
+    state.enemyBullets = [];
+    state.powerupBolts.forEach(function (bolt) { bolt.sprite.destroy(); });
+    state.powerupBolts = [];
+    this.clearOrbiters();
+    state.formation.forEach(function (slot) { if (slot.sprite) slot.sprite.destroy(); });
+    state.formation = [];
+    this.setColorBarsVisible(false); // the bars stay with this world
+    state.phase = 'descending';
+    state.descent = { age: 0, fromScale: this.planetSprite.scaleX, navigated: false };
+    traceEvent('descent_start', { score: state.score, wave: state.wave });
+  };
+
+  MainScene.prototype.updateDescent = function (dt) {
+    var state = this.state, d = state.descent;
+    d.age += dt;
+    var u = clamp(d.age / DESCENT_DIVE_DURATION, 0, 1);
+    var e = u * u * u; // slow, then all at once
+    // The planet comes up solid and a little nearer - the size the
+    // descent opens at, so the fade joins the two.
+    this.planetSprite.setScale(d.fromScale * (1 + DESCENT_PLANET_GROWTH * e));
+    this.planetSprite.setAlpha(PLANET_ALPHA + (1 - PLANET_ALPHA) * u);
+    // Full thrust, the stars streaming.
+    state.starSpeedScale = 1 + 7 * u;
+    this.flameOn = true;
+    var flicker = 1 - FLAME_FLICKER_DEPTH + FLAME_FLICKER_DEPTH * (Math.sin(d.age * FLAME_FLICKER_SPEED) * 0.5 + 0.5);
+    this.flameSprite.x = state.ship.x;
+    this.flameSprite.setScale(1, Math.min(1, u * 3) * flicker);
+    this.flameSprite.setAlpha(1);
+    this.flameSprite.setVisible(true);
+    if (u >= DESCENT_FADE_AT) {
+      var el = document.getElementById('blackout');
+      if (el) el.classList.add('visible');
+    }
+    if (u >= 1 && !d.navigated) {
+      d.navigated = true;
+      this.goToDescent(DESCENT_PAGE + '?from=head-on&score=' + state.score);
+    }
+  };
+
+  // One place leaves for the descent, so a test can stand in for it.
+  MainScene.prototype.goToDescent = function (url) { window.location.href = url; };
 
   // ---- The back door -----------------------------------------------------
   // Getting to the boss the honest way is five challenge stages deep into
@@ -7833,6 +7899,8 @@
       this.updateTraceSample();
     }
 
+    if (state.phase === 'descending') this.updateDescent(dt);
+
     this.updateBackground(dt);
     this.renderOrbiterTrails();
     this.syncMissileButton();
@@ -8009,6 +8077,10 @@
     // Separate from "Divers return fire" on purpose: his barrage and the
     // wave's are different problems to tune, and silencing one to look at
     // the other is most of the reason to have either switch.
+    addCheckbox('labBoss', 'Down to the planet after him',
+      function () { return TUNING.descentAfterBoss; },
+      function (v) { TUNING.descentAfterBoss = v; });
+
     addCheckbox('labBoss', 'Boss returns fire',
       function () { return TUNING.bossFireEnabled; },
       function (v) { TUNING.bossFireEnabled = v; });

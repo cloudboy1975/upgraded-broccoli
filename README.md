@@ -104,6 +104,245 @@ chapter of a longer game about two-dimensional aliens.
   arrives and he rises out of the planet. Three belly cores answer only
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
+- **Then down to their world** — with him dead the board clears, the
+  engine lights, the stars stream past and the planet comes up solid
+  ahead. The screen fades and the run carries on in the descent below,
+  with your score. The lab's **Down to the planet after him** switch
+  (on by default) turns this off and flies on toward the next world
+  instead, as it used to.
+
+#### Descent
+
+[`descent.html`](descent.html) is what comes after the boss: flying down
+to the planet, through its sky to the aliens' city.
+[Try it](https://cloudboy1975.github.io/upgraded-broccoli/descent.html).
+Killing the boss in Head-On leads straight into it
+(`descent.html?from=head-on&score=N`). It opens out of the black Head-On
+faded to, and its end screens show the Head-On score, with a **Start
+over from Head-On** link. Opened on its own (from the index), it's the
+descent by itself, for practice.
+
+- **A behind-the-ship view with no 3D engine.** Every object is a flat
+  shape at some depth, drawn at `centre + (world - camera) / depth`. The
+  camera follows the ship only part of the way, so steering moves the
+  ship on screen and swings the world the other way. That parallax is
+  what gives the depth. The world is built from flat cutouts, which
+  fits a game about two-dimensional aliens.
+- **The same stick as the yard.** Left thumb, analog, centred wherever
+  you press. Arrows/WASD on a keyboard.
+- **Big touch areas.** The circles only show where your thumbs go.
+  The whole left half of the control bar steers, the whole right half
+  fires, and the two halves meet in the middle with no gap. Each half
+  also has **hit slop**: an invisible strip about 56px tall above the
+  bar that still counts, because a thumb coming back to the controls
+  tends to land high. Both thumbs work at once.
+- **Flicks.** How fast your thumb moves counts, not just where it
+  ends up. Ordinary steering is unchanged. A quick flick of the stick
+  gives a short burst, up to 80% above the normal top speed and with
+  sharper response, in whatever direction the stick now points. The
+  engine flame stretches while it lasts, and it fades out in about a
+  third of a second. Thumb speed is measured over the last 60 ms, so a
+  shaky thumb doesn't trigger it. Lifting your thumb and the keyboard
+  never do.
+- **Guns, for the aliens only.** Hold the fire button (right thumb),
+  or Space, to keep firing. Shots fly straight ahead along the ship's
+  line, so the gun sight (four ticks on the aliens' plane) is where they
+  go. It turns yellow when an alien is in line. Rocks and walls are for
+  dodging, not shooting: shots spark off them, and they give cover both
+  ways.
+- **Spacing.** Walls come at irregular intervals, and now and then a
+  second wall follows close behind with its gap within reach of the
+  first. Towers stay at least 0.75s apart even late in a run. Only one
+  in five is aimed at you, and those land near your line rather than
+  right on it.
+- **Towers come apart where you hit them.** This is inspired by the
+  original Star Wars arcade game. A shot cuts a tower off at the height
+  it hits. Everything above the cut breaks off as one flat piece and
+  tumbles away, and what's left is a broken stump with a glowing edge
+  that fades. Hit near the tip and you trim it. Hit the foot and the
+  whole tower topples. The stump is solid, but it's shorter, so you can
+  fly over where the top used to be. To cut lower, aim lower: shots at
+  the same height pass over the stump.
+- **Aliens.** One at a time, a flat alien flies in and holds position
+  a fixed distance ahead of you, weaving, so you can aim at it while
+  the rocks keep coming. It takes four hits. Before every shot its eye
+  fills orange and a ring closes in on it, then a slow orange shot
+  comes at where you were, so moving dodges it. Ignore it and after
+  about ten seconds it pulls back and leaves. About one time in three,
+  two come at once: one of each colour, one on each side, with their
+  shots out of step so they never arrive together. While one is around,
+  rocks come about 40% less often, so dodging and aiming at the same
+  time stays fun. This is one fixed balance for the prototype. The
+  real game would build up to it over time.
+- **Flicks.** How fast your thumb moves counts, not just where it
+  ends up. Ordinary steering is unchanged. A quick flick of the stick
+  gives a short burst, up to 80% above the normal top speed and with
+  sharper response, in whatever direction the stick now points. The
+  engine flame stretches while it lasts, and it fades out in about a
+  third of a second. Thumb speed is measured over the last 60 ms, so a
+  shaky thumb doesn't trigger it. Lifting your thumb and the keyboard
+  never do.
+- **Guns.** Hold the fire button (right thumb), or Space, to keep
+  firing. Shots fly straight ahead along the ship's line, so the gun
+  sight (four ticks a little way ahead) is where they go. The sight
+  turns yellow when a rock is in line. One hit blows a rock up. Walls
+  and spires soak up shots, except through a wall's gap.
+- **Arcade or flight-sim Y axis.** The button in the header (or `Y` on a
+  keyboard) switches between them. In arcade mode, the default, up is
+  up. In flight-sim mode the stick works like a yoke: push forward to
+  dive, pull back to climb. Left and right never change, and your choice
+  is saved on the device.
+- **Three stretches, one clock:** *entry* (head-on's red planet swells
+  to fill the view, with heat streaks and meteors), the *cloud layer*
+  (cloud sheets you can't see through, and violet walls with a gap to
+  fly through. The gap's outline is **green** if the ship is lined up
+  with it, **amber** if it's close, and **red** if it isn't. The colour
+  uses the same test as the collision, so green always means you'll get
+  through. The next wall also shows a small copy of your ship, joined
+  to it by a faint line, at the exact point you'd pass through if you
+  held your position. It's the size of the ship's collision area, so if
+  it fits in the gap, you fit), then a white-out as you break through the cloud base
+  onto the *surface*. There the ground rises toward you, rock spires
+  stand up out of it, and the pace keeps increasing until you crash.
+  The sun sets while you're down there. A flat banded disc, sliced
+  across its lower half, sinks behind the horizon off to the right
+  while the sky runs from red afternoon through a burning dusk to
+  night. The stars come out, the ground darkens, and the grid lines
+  pick up a faint violet glow. After that it stays night. The night sky
+  is meant to feel like a dream: 140 stars in soft pale colours (blue,
+  lavender, rose, warm white) with slow, deep twinkles and halos on the
+  bright ones. About one in six now and then catches the light in a
+  fine, faint four-point glint. A faint violet-to-rose haze runs diagonally across the sky,
+  and every few seconds a shooting star streaks across the top. The
+  speed streaks are quieter at night so they don't cut across all
+  this. Star brightness, star size, sparkle, haze and shooting stars are dials in
+  the lab's **Night sky** section. The sun
+  starts 3s after you land and takes 45s to reach full night. Those
+  timings, plus the sun's size and its left/right position, are dials
+  in the settings lab, which also has **Dusk** and **Night** jump
+  buttons.
+  For now there's no landing.
+- **A shield bar, not lives.** Different hits cost different amounts:
+  rocks, spires and alien fire take 20%, and scraping a wall takes 10%.
+  What a hit took shows briefly in white before it drains away, and the
+  bar goes amber below half and red below a quarter. After a hit there's
+  a short grace period. Distance flown is the score, and your best is
+  saved locally.
+- **Green glows.** A downed alien leaves a green glow where it was.
+  It hangs there a moment, then drifts toward you, and flying into it
+  restores 20%, up to full. You're usually lined up with the alien
+  when you shoot it down, so staying put collects it. Swerve
+  well away and it's gone. It also has **catch slop**: you only need
+  to be in its general vicinity, not on it. It counts from about 85px
+  further out than it's drawn, roughly a quarter of the flying area.
+  A catch from out there shows as a quick green streak into the ship.
+- **Nightfall and the guardian.** Once it's fully dark nothing new
+  comes. The last rocks and towers fly past, any aliens leave, and for
+  a few seconds it's just you and the stars. Then the guardian arrives
+  in pieces: a violet square core first, then four triangles (red,
+  yellow, cyan, pink), each flying in from its own side and docking on
+  a face of the square to form a star. It stays in front of you,
+  drifting nearer and further, side to side, and turning, but it never
+  comes close enough to ram you. Every volley is announced: the firing
+  tips glow first, and its shots come in the colour of the piece that
+  fired them. A row of coloured bars under the shield shows each
+  piece's health. Shoot a piece to nothing and it shatters into flat
+  shards of its own colour, and the survivors
+  regroup into a new form with its own movement and attack. A title
+  card names each form:
+
+  | What's left | Form | How it fights |
+  |---|---|---|
+  | core + 4 triangles | **The Star** | Slow spin. All four tips fire at you at once: move. |
+  | 4 triangles, no core | **Pinwheel** | Spins fast. Its tips fire one after another. |
+  | 3 triangles | **Triad** | Strafes wide. Fires a fan: one at you, one either side. |
+  | 2 triangles (with or without the core) | **The Bird** | The triangles become flapping wings. It swoops in a figure-of-eight and fires a stream of three that tracks you. |
+  | 1 triangle | **Dart** | Fast and jittery. Fires one shot where you are and one where you're heading. |
+  | the core alone | **The Cube** | Spins hard. Alternates a ring of six shots around you (holding still is safe) with a pair straight at you. |
+
+  **It turns edge-on.** Every few seconds the whole formation turns
+  away like a card on a vertical axis. It narrows, darkens as if lit
+  from the side, and holds as a thin shimmering hairline. Edge-on,
+  shots glance off with a spark and the gun sight won't light, but it
+  keeps firing at you. Then it turns back. So the fight has a rhythm:
+  dodge while it's away, hit it while it faces you. Each form has its
+  own timing. The Star faces you for 3s at a time; the later forms
+  turn more often and stay away longer, so the fight gets harder as it
+  goes on. A new form always starts facing you.
+
+  When the last piece goes it's **Guardian down**, followed by the
+  victory screen. The calm, the hits each piece takes, its shot speed,
+  how often it fires and its size are all in the settings lab. So is
+  **Pieces drop glows**, which is off by default: the fight is a test
+  of the shield you bring into it. **Turns edge-on** (on by default)
+  has its own **Faces you for** and **Edge-on for** dials. The
+  **Boss** jump button takes you straight to it.
+- **On to the city.** The guardian going down doesn't end the run.
+  You fly on to the aliens' city, and nothing shoots at you on the
+  way.
+  - **The lake:** a short intro, about ten seconds. The grid
+    smooths into a still lake that holds the night sky, and **THE
+    LAKE** comes up. You get a few seconds of open water: a bright
+    sheen along the horizon, the stars and haze mirrored across the
+    whole surface, and soft ripples drifting past. Then the far shore
+    shows and comes in toward you, and you're over land again, dotted
+    with pools of the lake (each holding a few stars and ripples) and
+    little alien houses (boxes, gabled houses, domes, diamonds in soft
+    alien colours, each with a lit door). Most lie off to the sides
+    and some are in your path. Only the houses are in the way; the
+    pools are scenery. Meanwhile the skyline rises on the horizon
+    round a tall central spire with a pulsing beacon.
+  - **The city:** you're in among the buildings, threading them.
+    Neon-edged towers with lit windows line the streets, and every so
+    often something is in the way: a tower to go round, a pair to
+    thread between, a sky-bridge to go over or under, or a gate to fly
+    through. The pace drops to city speed for this.
+  - **Shooting buildings:** they react but nothing breaks. A tower
+    flashes, every window comes on and it shivers. Houses hop.
+    Flying into one still hurts.
+  - **The city centre:** the buildings open into a plaza, with
+    towers still standing back on both sides, and a glowing landing
+    pad comes up. The city closes in round it: towers down both sides
+    and a tall wall of them beyond. The ship takes over and lines up
+    over the pad. As the world slows to a stop it levels out into a
+    hover, and the main engine winds down as three lift jets take
+    over. Then it makes a classic vertical landing, letting down
+    straight onto the pad with fire pointing at the ground. The fire
+    splashes light across the pad and blows rings of dust outward,
+    and it feathers off at the end. Then **LANDED**, the jets cut to
+    a flicker, and an end screen.
+
+  The streets get busier as you go: density builds from 1.5x at the
+  start of the city to 1.75x two-thirds of the way in, then holds.
+  The lab's **City** section sets the city speed (a cap: it only ever slows you to city pace, and does nothing before the city), how long the lake and
+  the city last, and the density ramp (**Density at start**,
+  **Density at peak**, and **Peaks this far in** as a % of the city). The **Lake**, **City** and
+  **Landing** buttons jump straight there.
+- **Performance monitor.** A line in the top-left corner, updated once
+  a second: frames per second, the worst frame, JS memory (Chrome and
+  Android report it, Safari doesn't), how many draw commands the frame
+  took, and how many things are live. It turns red under 40 fps or past
+  a 100 ms frame. The last minute is kept in localStorage, so a page
+  the browser kills still leaves its log behind. The lab's
+  **Diagnostics** section turns it off, and its **Monitor log** button
+  shows the last samples.
+- **Crash recorder.** If the game hits a code error, or the browser
+  reloads the page in the middle of a run (a phone running short of
+  memory does this), a red note says so and where in the run it
+  happened: the phase, the boss or city stage, and the time. A reload
+  shows the note on the next load. A reload or close you do yourself
+  doesn't count. Tap the note to dismiss it.
+- **Settings lab.** Press backquote (`` ` ``), or triple-tap the
+  "Descent" tag at the top right on a phone. It has the same look as
+  Head-On's sortie lab: a slider for each of the 49 settings, grouped
+  as ship & stick, pace, shield & glows, rocks, walls, towers, aliens
+  and guns. Changes take effect immediately and are saved in this
+  browser. A value that differs from its default shows in orange, and
+  **Reset to defaults** puts everything back. The run pauses while the
+  lab is open. **Entry / Clouds / Surface** start a fresh run at that
+  stretch, and **No damage** makes you invulnerable for the current run
+  (it isn't saved).
+- Tests: `tests/test-descent.js`.
 
 #### Left off the lawn, into the trees
 

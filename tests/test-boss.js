@@ -75,6 +75,19 @@ harness.run(async (page, check, ctx) => {
   check('and the boss and his fire are both on by default',
     tune.enabled === true && tune.fireOn === true, tune);
 
+  // Killing him leads on to descent.html by default. Everything below
+  // that tests the fight itself runs with that switched off - the run
+  // flying on here, as it does with the lab switch off - so nothing in
+  // this file navigates away; the way down is tested on its own, with
+  // the navigation stood in for.
+  const descentDefault = await page.evaluate(() => {
+    const on = window.__headOnTuning.tuning.descentAfterBoss;
+    window.__headOnTuning.tuning.descentAfterBoss = false;
+    window.__headOnDebug.scene.goToDescent = function (url) { window.__descentUrl = url; };
+    return on;
+  });
+  check('killing him leads down to the planet by default', descentDefault === true, descentDefault);
+
   // --- he takes a challenge stage's slot, and only at the planet ----------
   const due = await page.evaluate(() => {
     const scene = window.__headOnDebug.scene, state = scene.state;
@@ -788,6 +801,40 @@ harness.run(async (page, check, ctx) => {
   `);
   check('nothing throws when the fight ends with a shot still in flight',
     boundary.threw === null && boundary.boss === false, boundary);
+
+  // --- down to their world -------------------------------------------------
+  // With the switch on (the default), his death leads on to the descent:
+  // the board cleared, a short dive at the planet, a fade, and the next
+  // page - carrying the score.
+  const dive = await page.evaluate(FIGHT(ALL, ALL) + BULLET_AT + `
+    window.__headOnTuning.tuning.descentAfterBoss = true;
+    window.__descentUrl = null;
+    boss.cores.forEach(c => { c.hp = 0; c.alive = false; });
+    boss.bricks.forEach(b => { b.hp = 0; b.alive = false; });
+    boss.hullHp = 1;
+    scene.bulletVsBossHull(bulletAt(boss.x, boss.y, {}), state.bullets.length - 1);
+    bulletAt(180, 300, { red: 2 }); // a shot in the air as he goes
+    for (let i = 0; i < 400 && state.boss; i++) window.__headOnDebug.stepBoss(0.016);
+    const at = { phase: state.phase, boss: !!state.boss, bullets: state.bullets.length, enemyBullets: state.enemyBullets.length,
+                 formation: state.formation.length, bars: state.colorBars[0].segments[0].sprite.visible, score: state.score };
+    const planet0 = scene.planetSprite.scaleX;
+    for (let i = 0; i < 12; i++) scene.updateDescent(0.1);
+    const mid = { url: window.__descentUrl, planet: scene.planetSprite.scaleX, stars: state.starSpeedScale, flame: scene.flameSprite.visible };
+    for (let i = 0; i < 30; i++) scene.updateDescent(0.1);
+    const end = { url: window.__descentUrl, black: document.getElementById('blackout').classList.contains('visible') };
+    window.__headOnTuning.tuning.descentAfterBoss = false;
+    scene.resetGame();
+    document.getElementById('blackout').classList.remove('visible');
+    ({ at, planet0, mid, end });
+  `);
+  check('his death leads into the dive at the planet, not a fresh wave',
+    dive.at.phase === 'descending' && !dive.at.boss && dive.at.formation === 0, dive.at);
+  check('...with the board cleared: no shots left hanging, the bars gone',
+    dive.at.bullets === 0 && dive.at.enemyBullets === 0 && dive.at.bars === false, dive.at);
+  check('...the engine lit, the stars streaming, the planet coming nearer',
+    dive.mid.flame && dive.mid.stars > 1.5 && dive.mid.planet > dive.planet0 && dive.mid.url === null, dive);
+  check('...then a fade, and on to the descent with the score',
+    dive.end.black && dive.end.url === 'descent.html?from=head-on&score=' + dive.at.score && dive.at.score > 0, dive);
 
   // --- dying during the fight ---------------------------------------------
   const playerDeath = await page.evaluate(FIGHT(ALL, ALL) + `
