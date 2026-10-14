@@ -988,9 +988,10 @@
   //
   // The cap is a guard, not a timeout: a pod spawned the instant the
   // last enemy died takes (GAME_HEIGHT + 10 + ORB_RADIUS + ORB_RADIUS) /
-  // ORB_FALL_SPEED to fall off the bottom, which is 3.94s, and a strip
-  // 3.24s. At 4.5 it never truncates a real one - it is only there so
-  // that a drop which somehow stops falling cannot hang the run.
+  // ORB_FALL_SPEED to fall off the bottom, which is 3.94s; a strip
+  // 3.24s; and a shot pod fizzles after ORB_BULLET_LIFETIME, 2.5s. At
+  // 4.5 it never truncates a real one - it is only there so that a drop
+  // which somehow stops moving cannot hang the run.
   var WAVE_SETTLE_MAX = 4.5;
   // Shape of a ship's approach. An ease-out decelerates into place, which
   // is what makes the landing exact and calm - but the flatter the tail,
@@ -3908,11 +3909,12 @@
       state.waveClearTimer = -1;
     }
     // The next slot belongs to a meteor stage or to the boss, and both
-    // of those wipe the screen. Anything still coming down is yours -
-    // you shot it loose and you are flying to catch it - so the wipe
-    // waits for it. See WAVE_SETTLE_MAX for why the cap is where it is,
-    // and updatePowerupSpawns() for why nothing new arrives meanwhile.
-    if (this.wipeDueNextWave() && this.powerupsFalling()) {
+    // of those wipe the screen. Anything still in play that you can
+    // collect is yours - you shot it loose and you are flying to catch
+    // it - so the wipe waits for it. See powerupsInFlight() for what
+    // counts, WAVE_SETTLE_MAX for why the cap is where it is, and
+    // updatePowerupSpawns() for why nothing new arrives meanwhile.
+    if (this.wipeDueNextWave() && this.powerupsInFlight()) {
       state.waveSettleHeld += dt;
       if (state.waveSettleHeld < TUNING.waveSettleMax) return;
     }
@@ -3937,11 +3939,26 @@
     this.spawnFormation();
   };
 
-  // Is there a powerup still on its way down? Only the two the player
-  // can go and get - a strip to fly under, a pod to touch. Bullets and
-  // debris are nobody's and get wiped without a second thought.
-  MainScene.prototype.powerupsFalling = function () {
-    return this.state.strips.length > 0 || this.state.orbs.length > 0;
+  // Is there a powerup still in play that the player can get? Three
+  // lists, and the third is the one this was missing on its first pass:
+  //
+  //   strips     - a colour strip to fly under
+  //   orbs       - a pod to touch
+  //   orbBullets - a pod somebody SHOT, now flying at the ship. Reaching
+  //                it collects it, same payoff as touching the pod, so
+  //                it is every bit as much a pickup on its way to you -
+  //                and shooting a pod is one of the two intended ways to
+  //                take one, not an edge case.
+  //
+  // Everything else a stage clears away stays cleared, because none of
+  // it is yours to collect: your own bullets and spent lightning bolts
+  // are outgoing, enemy fire and the core are hazards (the core costs a
+  // life on contact), brick shards are debris, and the orbiters are
+  // missiles you already fired.
+  MainScene.prototype.powerupsInFlight = function () {
+    var state = this.state;
+    return state.strips.length > 0 || state.orbs.length > 0 ||
+           state.orbBullets.length > 0;
   };
 
   // Every Nth cleared wave, asked of a count of cleared waves rather
@@ -7751,8 +7768,9 @@
       // The powerup-and-wave-clear slice of update(), stepped exactly -
       // for the tests about a cleared wave waiting for something that is
       // still falling (see checkWaveClear()). Deliberately narrow: it
-      // runs the spawner, the two falling pickups, the fill they drive
-      // and the wave check, in update()'s own order, and nothing else.
+      // runs the spawner, the three pickups the player can still take,
+      // the fill they drive and the wave check, in update()'s own order,
+      // and nothing else.
       // Divers and bullets are somebody else's stepper.
       stepWaveClear: function (dt) {
         var state = self.state;
@@ -7761,6 +7779,7 @@
         self.updateStrips(dt);
         self.updateShipFill(dt);
         self.updateOrbs(dt);
+        self.updateOrbBullets(dt);
         if (!state.boss && !state.tutorial) self.checkWaveClear(dt);
       },
       // Advances an ACTIVE challenge stage by an exact dt, meteors and

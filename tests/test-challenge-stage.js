@@ -192,6 +192,67 @@ harness.run(async (page, check, ctx) => {
   check('and the pod got to finish its fall rather than being wiped',
     held.orbsAtStart === 0, held);
 
+  // Shooting a pod is the OTHER intended way to take one: it becomes a
+  // chip flying at the ship, and reaching the ship collects it exactly
+  // as touching the pod would. So it is a pickup on its way to you, and
+  // the first pass of this fix wiped it - which is the case that got
+  // reported from actual play, because shooting the pod is the thing a
+  // player does while still flying away from where it fell.
+  const shotPod = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    clearedWave(3);
+    scene.spawnOrb('red');
+    const orb = state.orbs[0];
+    orb.y = 120; orb.hostSprite.y = 120;
+    scene.releaseOrbBullet(orb);            // ...as a bullet hitting it does
+    orb.hostSprite.destroy(); state.orbs = [];
+    const chipsAtClear = state.orbBullets.length;
+    const inFlight = scene.powerupsInFlight();
+    // Counted AT THE WIPE. Afterwards the list is empty whether the chip
+    // reached the ship or was destroyed mid-air, so reading it then
+    // cannot tell the two apart - which is exactly the distinction this
+    // check exists to make.
+    let chipsAtWipe = null;
+    const origStart = scene.startChallenge.bind(scene);
+    scene.startChallenge = function () {
+      if (chipsAtWipe === null) chipsAtWipe = state.orbBullets.length;
+      return origStart();
+    };
+    const withChip = runUntil(() => state.challenge);
+    scene.startChallenge = origStart;
+    ({ chipsAtClear, inFlight, withChip, chipsAtWipe, pause: T.waveClearPause });
+  `);
+  check('a shot pod leaves a chip flying at the ship', shotPod.chipsAtClear === 1, shotPod);
+  check('and that counts as a pickup still in play', shotPod.inFlight === true, shotPod);
+  check('so the stage waits for it too', shotPod.withChip > shotPod.pause + 0.3, shotPod);
+  check('and nothing is still in the air when the wipe finally fires',
+    shotPod.chipsAtWipe === 0, shotPod);
+
+  // The third kind, and the one the sweep caught as untested: a colour
+  // strip on its way down. Every check above uses a pod, so dropping
+  // strips out of the condition entirely changed nothing that was being
+  // measured - which is how the shot-pod case got missed in the first
+  // place.
+  const strip = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    clearedWave(3);
+    scene.spawnStrip('red');
+    const stripsAtClear = state.strips.length;
+    const inFlight = scene.powerupsInFlight();
+    let stripsAtWipe = null;
+    const origStart = scene.startChallenge.bind(scene);
+    scene.startChallenge = function () {
+      if (stripsAtWipe === null) stripsAtWipe = state.strips.length;
+      return origStart();
+    };
+    const withStrip = runUntil(() => state.challenge);
+    scene.startChallenge = origStart;
+    ({ stripsAtClear, inFlight, withStrip, stripsAtWipe, pause: T.waveClearPause });
+  `);
+  check('a strip on its way down counts as a pickup still in play',
+    strip.stripsAtClear === 1 && strip.inFlight === true, strip);
+  check('and the stage waits for that too', strip.withStrip > strip.pause + 0.3, strip);
+  check('with nothing left on screen when the wipe fires',
+    strip.stripsAtWipe === 0, strip);
+
   // Catching it ends the wait at once - the hold is about the pod being
   // unresolved, not about a fixed grace period.
   const caught = await page.evaluate(SETTLE + SETTLE_WAVE + `
