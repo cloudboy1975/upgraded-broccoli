@@ -975,6 +975,23 @@
   var DIVE_INTERVAL_MIN = 0.78;   // was 0.9
   var DIVE_RAMP_SECONDS = 40;     // reach that floor sooner - was 45
   var WAVE_CLEAR_PAUSE = 0.7; // pause before the next full formation spawns - pure dead screen, so kept short
+  // ...and how long a cleared wave will WAIT for a powerup that is still
+  // coming down, before the screen gets wiped by a meteor stage or by
+  // the boss.
+  //
+  // Both of those clear everything in flight, which is right for bullets
+  // and strips of nobody's making - but a pod you shot loose and are
+  // flying to catch is yours, and having it vanish a stride from the
+  // ship reads as the game taking it back. Ordinary wave-to-wave needs
+  // none of this: the next formation flies in over the top and the drop
+  // keeps falling.
+  //
+  // The cap is a guard, not a timeout: a pod spawned the instant the
+  // last enemy died takes (GAME_HEIGHT + 10 + ORB_RADIUS + ORB_RADIUS) /
+  // ORB_FALL_SPEED to fall off the bottom, which is 3.94s, and a strip
+  // 3.24s. At 4.5 it never truncates a real one - it is only there so
+  // that a drop which somehow stops falling cannot hang the run.
+  var WAVE_SETTLE_MAX = 4.5;
   // Shape of a ship's approach. An ease-out decelerates into place, which
   // is what makes the landing exact and calm - but the flatter the tail,
   // the more of the flight is spent visibly crawling the last stretch. At
@@ -1372,6 +1389,7 @@
       entryStagger: ENTRY_STAGGER,   // seconds added per grid step - the diagonal sweep across a freshly spawned wave
       entryRowGap: ENTRY_ROW_GAP,    // seconds between rows, for the fly-ins that arrive row by row
       waveClearPause: WAVE_CLEAR_PAUSE, // dead screen between a wave clearing and the next arriving
+      waveSettleMax: WAVE_SETTLE_MAX, // ...and the cap on waiting for a falling powerup first
       entryEnabled: entryEnabled,    // which fly-in patterns the bag may draw - see ENTRY_PATTERNS
       telegraph: true,    // spin a pending ship before it drops (purely visual - the lead time below applies either way)
       telegraphLead: SORTIE_TELEGRAPH_LEAD,
@@ -2953,6 +2971,7 @@
       wave: 1,
       diveTimer: TUNING.diveIntervalStart,
       waveClearTimer: 0, // > 0 while waiting to spawn the next formation
+      waveSettleHeld: 0, // ...and seconds spent holding that for a powerup still falling
       challenge: null,      // the active challenge stage, or null during ordinary combat - see startChallenge()
       boss: null,           // the active boss fight, or null - see startBoss(). Never non-null at the same time as challenge
       tutorial: null,       // the running flight tutorial, or null - see startTutorial()
@@ -3574,7 +3593,7 @@
 
   MainScene.prototype.tryTriggerDive = function (dt) {
     var state = this.state;
-    if (state.waveClearTimer > 0) return; // formation's empty, waiting for the next wave
+    if (state.waveClearTimer !== 0) return; // formation's empty, waiting for the next wave
     state.diveTimer -= dt;
     if (state.diveTimer > 0) return;
 
@@ -3872,38 +3891,81 @@
   MainScene.prototype.checkWaveClear = function (dt) {
     var state = this.state;
     var anyAlive = state.formation.some(function (s) { return s.alive; });
-    if (anyAlive) { state.waveClearTimer = 0; return; }
-    if (state.waveClearTimer <= 0) state.waveClearTimer = TUNING.waveClearPause;
-    state.waveClearTimer -= dt;
-    if (state.waveClearTimer <= 0) {
-      state.wave++;
-      state.waveClearTimer = 0;
-      traceEvent('wave_clear', { wave: state.wave, elapsed: state.difficulty.elapsed });
-      // A challenge stage takes the next wave's SLOT - it runs instead of
-      // the formation flying in, and endChallenge() spawns that formation
-      // afterwards. Checked after the increment, against the number of
-      // waves actually cleared.
-      //
-      // Once the approach has actually arrived at the home world, the boss
-      // takes that same slot instead: the interruption you were expecting,
-      // but it is him. See bossDue().
-      if (this.challengeDue()) {
-        if (this.bossDue()) this.startBoss();
-        else this.startChallenge();
-        return;
-      }
-      state.diveTimer = this.diveInterval();
-      this.spawnFormation();
+    if (anyAlive) { state.waveClearTimer = 0; state.waveSettleHeld = 0; return; }
+    // waveClearTimer is ZERO while a wave is running and non-zero between
+    // waves - positive while the pause counts down, -1 once it is spent.
+    // It is armed the moment the formation empties and NOT re-armed
+    // afterwards, which matters because the hold below returns early with
+    // the pause already run down: an "if it has run out, set it again"
+    // test here starts the pause over every frame, and the hold then
+    // accrues one frame per PAUSE instead of one frame per frame. It
+    // looked like it worked, because the thing being waited for usually
+    // finished first anyway.
+    if (state.waveClearTimer === 0) state.waveClearTimer = TUNING.waveClearPause;
+    if (state.waveClearTimer > 0) {
+      state.waveClearTimer -= dt;
+      if (state.waveClearTimer > 0) return;
+      state.waveClearTimer = -1;
     }
+    // The next slot belongs to a meteor stage or to the boss, and both
+    // of those wipe the screen. Anything still coming down is yours -
+    // you shot it loose and you are flying to catch it - so the wipe
+    // waits for it. See WAVE_SETTLE_MAX for why the cap is where it is,
+    // and updatePowerupSpawns() for why nothing new arrives meanwhile.
+    if (this.wipeDueNextWave() && this.powerupsFalling()) {
+      state.waveSettleHeld += dt;
+      if (state.waveSettleHeld < TUNING.waveSettleMax) return;
+    }
+    state.waveSettleHeld = 0;
+    state.wave++;
+    state.waveClearTimer = 0;
+    traceEvent('wave_clear', { wave: state.wave, elapsed: state.difficulty.elapsed });
+    // A challenge stage takes the next wave's SLOT - it runs instead of
+    // the formation flying in, and endChallenge() spawns that formation
+    // afterwards. Checked after the increment, against the number of
+    // waves actually cleared.
+    //
+    // Once the approach has actually arrived at the home world, the boss
+    // takes that same slot instead: the interruption you were expecting,
+    // but it is him. See bossDue().
+    if (this.challengeDue()) {
+      if (this.bossDue()) this.startBoss();
+      else this.startChallenge();
+      return;
+    }
+    state.diveTimer = this.diveInterval();
+    this.spawnFormation();
   };
 
-  // Every Nth cleared wave. state.wave has already been incremented past
-  // the wave that just ended, so the count of CLEARED waves is one less.
-  MainScene.prototype.challengeDue = function () {
+  // Is there a powerup still on its way down? Only the two the player
+  // can go and get - a strip to fly under, a pod to touch. Bullets and
+  // debris are nobody's and get wiped without a second thought.
+  MainScene.prototype.powerupsFalling = function () {
+    return this.state.strips.length > 0 || this.state.orbs.length > 0;
+  };
+
+  // Every Nth cleared wave, asked of a count of cleared waves rather
+  // than of the state - because it gets asked from both sides of the
+  // increment, and two copies of this arithmetic would be two copies
+  // that can disagree about which wave the stage belongs to.
+  MainScene.prototype.stageDueAfter = function (cleared) {
     if (!TUNING.challengeEnabled) return false;
     var every = Math.max(1, Math.round(TUNING.challengeEveryWaves));
-    var cleared = this.state.wave - 1;
     return cleared > 0 && cleared % every === 0;
+  };
+
+  // Would the NEXT wave's slot be taken by something that clears the
+  // screen? Asked BEFORE state.wave is incremented - by which point it
+  // is too late to wait for anything.
+  MainScene.prototype.wipeDueNextWave = function () {
+    return this.stageDueAfter(this.state.wave);
+  };
+
+  // ...and the same question after it, which is where the branch that
+  // acts on it sits. state.wave has been incremented past the wave that
+  // just ended, so the count of CLEARED waves is one less.
+  MainScene.prototype.challengeDue = function () {
+    return this.stageDueAfter(this.state.wave - 1);
   };
 
   function isInvulnerable(state) { return performance.now() < state.ship.invulnerableUntil; }
@@ -6475,6 +6537,11 @@
   MainScene.prototype.updatePowerupSpawns = function (dt) {
     var state = this.state;
     if (state.powerupSpawnTimer > 0) state.powerupSpawnTimer -= dt;
+    // Not while a cleared wave is holding the screen open for whatever
+    // is already falling - see checkWaveClear(). Dropping a fresh one
+    // into that gap would either extend the wait or be wiped a second
+    // later, and both are worse than the pause being over.
+    if (this.wipeDueNextWave() && !state.formation.some(function (s) { return s.alive; })) return;
     var activeCount = state.strips.length + state.orbs.length;
     if (state.powerupSpawnTimer <= 0 && activeCount < state.colorBarRows) {
       state.powerupSpawnTimer = randomPowerupSpawnInterval();
@@ -7548,6 +7615,7 @@
     state.wave = 1;
     state.diveTimer = TUNING.diveIntervalStart;
     state.waveClearTimer = 0;
+    state.waveSettleHeld = 0;
     state.sortieBag = []; // a fresh run starts the book over rather than resuming mid-bag
     state.sortieBagTier = -1;
     state.lastSortie = null;
@@ -7679,6 +7747,21 @@
           slot.alive = false;
         });
         self.startChallenge();
+      },
+      // The powerup-and-wave-clear slice of update(), stepped exactly -
+      // for the tests about a cleared wave waiting for something that is
+      // still falling (see checkWaveClear()). Deliberately narrow: it
+      // runs the spawner, the two falling pickups, the fill they drive
+      // and the wave check, in update()'s own order, and nothing else.
+      // Divers and bullets are somebody else's stepper.
+      stepWaveClear: function (dt) {
+        var state = self.state;
+        state.clock += dt;
+        if (!state.tutorial) self.updatePowerupSpawns(dt);
+        self.updateStrips(dt);
+        self.updateShipFill(dt);
+        self.updateOrbs(dt);
+        if (!state.boss && !state.tutorial) self.checkWaveClear(dt);
       },
       // Advances an ACTIVE challenge stage by an exact dt, meteors and
       // collisions included - the stepped equivalent of the challenge
@@ -8018,6 +8101,7 @@
       { section: 'labEntry', key: 'entryStagger', label: 'Wave stagger', min: 0, max: 0.3, step: 0.01, unit: 's' },
       { section: 'labEntry', key: 'entryRowGap', label: 'Row gap', min: 0, max: 0.8, step: 0.02, unit: 's' },
       { section: 'labEntry', key: 'waveClearPause', label: 'Gap between waves', min: 0, max: 3, step: 0.1, unit: 's' },
+      { section: 'labEntry', key: 'waveSettleMax', label: 'Wait for a falling pickup', min: 0, max: 6, step: 0.5, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalStart', label: 'First shot interval', min: 0.4, max: 6, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireIntervalMin', label: 'Fastest shot interval', min: 0.2, max: 4, step: 0.1, unit: 's' },
       { section: 'labFire', key: 'enemyFireRampSeconds', label: 'Ramp length', min: 10, max: 240, step: 5, unit: 's' },

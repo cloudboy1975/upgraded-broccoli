@@ -138,6 +138,148 @@ harness.run(async (page, check, ctx) => {
   check('a stage starts on its wind-up beat', entry.beat === 'accelerate', entry);
   check('it takes its volley count from the live tuning', entry.volleysTotal === 6, entry);
 
+  // --- waiting for a pickup on its way down -------------------------------
+  // Entering a stage wipes the screen, which is right for bullets and for
+  // strips nobody went for - but a pod you shot loose and are flying to
+  // catch is yours, and having it vanish a stride from the ship reads as
+  // the game taking it back. So a cleared wave whose next slot belongs to
+  // a stage holds the cut until the sky is clear. See checkWaveClear().
+  //
+  // The whole thing is stepped, because what is being measured is a
+  // countdown against a fall, and a real-time wait cannot pin either.
+  const SETTLE_WAVE = `
+    const T = window.__headOnTuning.tuning;
+    T.challengeEveryWaves = 3;
+    function clearedWave(wave) {
+      scene.resetGame();
+      window.__headOnDebug.skipFormationEntry();
+      state.diveTimer = 9999;
+      state.wave = wave;
+      state.formation.forEach(s => { if (s.alive) { s.sprite.destroy(); s.alive = false; } });
+      state.strips.forEach(s => s.sprite.destroy()); state.strips = [];
+      state.orbs.forEach(o => o.hostSprite.destroy()); state.orbs = [];
+      state.powerupSpawnTimer = 9999;   // nothing arrives unasked during a measurement
+    }
+    function runUntil(done, cap) {
+      let t = 0;
+      for (let i = 0; i < (cap || 900) && !done(); i++) { window.__headOnDebug.stepWaveClear(0.016); t += 0.016; }
+      return +t.toFixed(2);
+    }
+  `;
+
+  const held = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    // Wave 3 cleared with challengeEveryWaves 3: the next slot is a stage.
+    clearedWave(3);
+    const dueBefore = scene.wipeDueNextWave();
+    scene.spawnOrb('red');
+    const withPod = runUntil(() => state.challenge);
+    const orbsAtStart = state.orbs.length;
+
+    // ...and with nothing falling, it goes at the ordinary pause.
+    clearedWave(3);
+    const bare = runUntil(() => state.challenge);
+
+    ({ dueBefore, withPod, bare, orbsAtStart, pause: T.waveClearPause });
+  `);
+  check('a stage is due after the wave that is about to be counted',
+    held.dueBefore === true, held);
+  check('with nothing falling, a stage starts on the ordinary wave pause',
+    Math.abs(held.bare - held.pause) < 0.1, held);
+  // The pod falls for about four seconds from the top; the point is that
+  // the stage waited for it rather than that it waited any exact length.
+  check('but a pod still coming down holds the stage back',
+    held.withPod > held.bare + 1, held);
+  check('and the pod got to finish its fall rather than being wiped',
+    held.orbsAtStart === 0, held);
+
+  // Catching it ends the wait at once - the hold is about the pod being
+  // unresolved, not about a fixed grace period.
+  const caught = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    clearedWave(3);
+    scene.spawnOrb('red');
+    // Let the pause run out and the hold begin.
+    const before = runUntil(() => state.waveSettleHeld > 0.2);
+    const heldAtCatch = state.waveSettleHeld;
+    const stageYet = !!state.challenge;
+    // Take it.
+    state.orbs.forEach(o => o.hostSprite.destroy()); state.orbs = [];
+    const after = runUntil(() => state.challenge);
+    ({ before, heldAtCatch, stageYet, after });
+  `);
+  check('the hold is visible while it is happening', caught.heldAtCatch > 0.2, caught);
+  check('and the stage has not started during it', caught.stageYet === false, caught);
+  check('catching the pod lets the stage start at once', caught.after < 0.2, caught);
+
+  // A pod that somehow stops falling must not hang the run. The cap is a
+  // guard rather than a timeout - it is set above the longest real fall,
+  // so this can only ever fire on something broken.
+  const capped = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    clearedWave(3);
+    scene.spawnOrb('red');
+    // Freeze it in place every step, as a stuck pod would be.
+    const orb = state.orbs[0];
+    let t = 0;
+    for (let i = 0; i < 900 && !state.challenge; i++) {
+      if (state.orbs.length) { state.orbs[0].y = 100; }
+      window.__headOnDebug.stepWaveClear(0.016);
+      t += 0.016;
+    }
+    ({ t: +t.toFixed(2), cap: T.waveSettleMax, pause: T.waveClearPause,
+       started: !!state.challenge, held: state.waveSettleHeld });
+  `);
+  check('a pod that never lands cannot hang the run', capped.started === true, capped);
+  // The ordinary wave pause runs first and the cap only governs the wait
+  // after it, so the whole thing is the two added together.
+  check('and the wait is capped where the tuning says',
+    capped.t > capped.cap && capped.t < capped.pause + capped.cap + 0.2, capped);
+
+  // Nothing new may arrive during the hold: a pod dropped into that gap
+  // either extends the wait or is wiped a second later, and both are
+  // worse than the pause being over.
+  const quiet = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    clearedWave(3);
+    state.powerupSpawnTimer = 0;   // the spawner would fire on the next step
+    state.colorBarRows = 4;        // ...and has room for several
+    scene.spawnOrb('red');
+    const started = state.orbs.length + state.strips.length;
+    let most = started;
+    for (let i = 0; i < 900 && !state.challenge; i++) {
+      window.__headOnDebug.stepWaveClear(0.016);
+      most = Math.max(most, state.orbs.length + state.strips.length);
+    }
+    ({ started, most });
+  `);
+  check('nothing new drops into the gap while a stage is waiting',
+    quiet.most === quiet.started, quiet);
+
+  // And an ordinary wave-to-wave must NOT wait: the next formation flies
+  // in over the top and the pod keeps falling, so a pause there would be
+  // dead screen bought for nothing.
+  const ordinary = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    clearedWave(1);
+    const dueBefore = scene.wipeDueNextWave();
+    scene.spawnOrb('red');
+    const was = state.wave;
+    const t = runUntil(() => state.wave !== was);
+    ({ dueBefore, t, pause: T.waveClearPause, orbsLeft: state.orbs.length });
+  `);
+  check('no stage is due after an ordinary wave', ordinary.dueBefore === false, ordinary);
+  check('so the next wave arrives on the ordinary pause, pod or no pod',
+    Math.abs(ordinary.t - ordinary.pause) < 0.1, ordinary);
+  check('and the pod is still falling when it does', ordinary.orbsLeft === 1, ordinary);
+
+  // The boss takes the same slot as a stage and clears the screen the
+  // same way, so he inherits the same courtesy from the same test.
+  const bossSlot = await page.evaluate(SETTLE + SETTLE_WAVE + `
+    clearedWave(3);
+    const sameQuestion = scene.wipeDueNextWave() === scene.stageDueAfter(state.wave);
+    state.wave = 4;
+    const afterIncrement = scene.challengeDue();
+    ({ sameQuestion, afterIncrement });
+  `);
+  check('the wait asks the same question the stage branch answers later',
+    bossSlot.sameQuestion && bossSlot.afterIncrement === true, bossSlot);
+
   // --- the stage itself --------------------------------------------------
   const ran = await page.evaluate(SETTLE + `
     window.__headOnDebug.forceChallenge();

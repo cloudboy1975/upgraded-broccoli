@@ -104,6 +104,13 @@ chapter of a longer game about two-dimensional aliens.
   arrives and he rises out of the planet. Three belly cores answer only
   to matching missiles, tentacle armour only to colour trails, and the
   hull is untouchable until both are gone
+- **A cleared wave waits for a pickup still coming down** before a
+  meteor stage or the boss takes the next slot. Both of those wipe the
+  screen, which is right for bullets and for strips nobody went for —
+  but a pod you shot loose and are flying to catch is yours, and having
+  it vanish a stride from the ship reads as the game taking it back.
+  Ordinary wave-to-wave needs none of this: the next formation flies in
+  over the top and the drop keeps falling
 - **Then down to their world** — with him dead the board clears, the
   engine lights, the stars stream past and the planet comes up solid
   ahead. The screen fades and the run carries on in the descent below,
