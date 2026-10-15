@@ -384,11 +384,28 @@ itself, for practice.
   come from up the street, out of doorways at the sides, and later from
   behind you. Anything that appears near you shows a ring on the ground
   first.
+- **Down the walls.** Aliens also crawl head first down the fronts of
+  the towers, both just ahead of you and far up the street. Up on a
+  wall they can't touch you, and only the low ones are in range of your
+  gun. Once they drop into the road they come for you like the rest.
+  They start from the beginning, slowly, and get more frequent (one
+  every 3.5s down to one every 1s, with up to 3 on the walls at first
+  and 12 later).
+- **A canyon.** The towers stand taller and shoulder to shoulder, with
+  only the odd cross street, and the edges of the picture are darkened.
 - **Fire from the buildings.** A window high up a tower ahead glows,
   then throws a slow ball of fire at where you're standing. A ring on
   the ground shows where it will land, getting brighter as it comes
   down. Step off the ring. Once it's low enough you can shoot it (50
-  points). It also burns any aliens it lands on.
+  points). It also burns any aliens it lands on. Further down the street
+  the windows throw in **volleys** of up to 3. The first is aimed at you
+  and the rest land around you, a beat apart, so several fireballs are
+  in the air at once (up to 10).
+- **The street takes damage.** Where fire lands it breaks the road open
+  into a crater that burns for 6s. Walking into the fire kills you, and
+  it burns aliens that walk into it too, with no points for those. Once
+  burnt out, the crater stays as rubble that slows you to about half
+  speed. A new life puts out any fire near where you fell.
 - **Lives, not a shield.** You start with 3 every time (nothing carries
   over from the descent), and get an extra one every 10,000 points.
   When you die everything freezes, Robotron style. You come back where

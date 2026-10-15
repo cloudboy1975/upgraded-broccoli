@@ -230,6 +230,71 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('an extra life every ' + C.EXTRA_LIFE_EVERY + ' points', s.lives === T.LIVES + 1 && s.banner === 'EXTRA LIFE', s);
 
+  // ---- The street takes damage -----------------------------------------
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => window.__streetDebug.launchFire({ x: 230, y: -100, d: p.d + 400, flight: 0.4, charge: 0.05, target: { x: p.x + 110, d: p.d } }), { x: s.px, d: s.pd });
+  s = await until(page, (st) => st.splashes > 0, 2000);
+  check('fire leaves a burning crater where it lands', s.craters.length === 1 && s.craters[0].burn > 0 &&
+    Math.abs(s.craters[0].x - (s.px + 110)) < 1, s.craters);
+  const crater = s.craters[0];
+  // Walk into it.
+  await page.keyboard.down('KeyD');
+  s = await until(page, (st) => st.mode === 'dying', 3000);
+  await page.keyboard.up('KeyD');
+  check('walking into a burning crater kills', s.mode === 'dying' && s.lastDeath === 'burn', s);
+  s = await until(page, (st) => st.mode === 'walking', 3000);
+  check('...and a new life puts out the fire round about', s.craters.every(c => c.burn === 0), s.craters);
+  check('...leaving the hole as rubble', s.craters.length === 1 && s.craters[0].x === crater.x, s.craters);
+
+  // Aliens burn in it too.
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => {
+    const d = window.__streetDebug;
+    d.addCrater(p.x, p.d + 100, 8, 30);
+    d.spawnEnemy('grunt', p.x, p.d + 170);   // walks straight at you, through the fire
+  }, { x: s.px, d: s.pd });
+  s = await until(page, (st) => st.enemies.length === 0, 4000);
+  check('an alien walking through a burning crater burns (no points)', s.enemies.length === 0 && s.score === 0 && s.mode === 'walking', s);
+
+  // Burnt out, it slows you down.
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => window.__streetDebug.addCrater(p.x, p.d, 0, 400), { x: s.px, d: s.pd });
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(500);
+  s = await state(page);
+  await page.keyboard.up('KeyW');
+  check('rubble slows you down', s.vd > 10 && s.vd <= T.WALK_SPEED * T.CRATER_SLOW + 1, { vd: s.vd, cap: T.WALK_SPEED * T.CRATER_SLOW });
+  check('...but doesn\'t hurt', s.mode === 'walking', s.mode);
+
+  // ---- Down the walls -------------------------------------------------------
+  await quietStreet(page);
+  s = await state(page);
+  // Placed right over you, so the only thing keeping it off you is how
+  // high it is - not the width of the pavement.
+  await D(page, (p) => window.__streetDebug.spawnClimber('grunt', p.x, p.d, 80), { x: s.px, d: s.pd });
+  s = await state(page);
+  check('a climber starts up on a wall', s.enemies.length === 1 && s.enemies[0].climb > 50, s.enemies);
+  await page.waitForTimeout(300);
+  s = await state(page);
+  check('...up there it can\'t reach you', s.mode === 'walking' && s.enemies[0].climb > 0, s);
+  s = await until(page, (st) => st.enemies.length && st.enemies[0].climb === 0, 5000);
+  check('...it comes down to the street', s.enemies.length === 1 && s.enemies[0].climb === 0, s.enemies);
+  s = await until(page, (st) => st.mode === 'dying', 3000);
+  check('...and then it can', s.lastDeath === 'contact', s);
+
+  // The spawner puts them on the walls by itself, from the start.
+  await D(page, () => { const d = window.__streetDebug; d.restart(); d.skipIntro(); d.setSpawning(true); d.setInvincible(true); d.clear(); });
+  s = await until(page, (st) => st.enemies.some(e => e.climb > 0), 8000);
+  check('climbers appear on the walls by themselves', s.enemies.some(e => e.climb > 0), s.enemies);
+
+  // ---- Volleys ---------------------------------------------------------------
+  await D(page, () => { const d = window.__streetDebug; d.restart(); d.jumpTo(d.constants().tuning.RAMP_M); d.setSpawning(true); d.setInvincible(true); });
+  s = await until(page, (st) => st.fires.length >= 3, 8000);
+  check('well down the street, several balls of fire are in the air at once', s.fires.length >= 3, s.fires.length);
+
   // ---- On from the descent ---------------------------------------------
   await page.goto(ctx.url('descent.html?from=head-on&score=4321'));
   await page.waitForTimeout(400);

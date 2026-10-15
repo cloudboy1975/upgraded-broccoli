@@ -404,16 +404,41 @@
   // Fire from the buildings: none for the first stretch, then slowly
   // more often, more at once, and a little quicker to land.
   var FIRE_START_M = 60;
-  var FIRE_EVERY_START = 7;
-  var FIRE_EVERY_PEAK = 1.6;
-  var FIRE_MAX_START = 1;
-  var FIRE_MAX_PEAK = 5;
+  var FIRE_EVERY_START = 5;
+  var FIRE_EVERY_PEAK = 1.1;
+  var FIRE_MAX_START = 2;
+  var FIRE_MAX_PEAK = 10;
+  // Later on a window doesn't throw alone: a volley comes from the
+  // towers around it, the first at you and the rest round about, a beat
+  // apart - several balls of fire in the air at once.
+  var FIRE_VOLLEY_START = 1;
+  var FIRE_VOLLEY_PEAK = 3;
+  var VOLLEY_SPREAD_X = 75;    // px either side of you the rest of a volley lands
+  var VOLLEY_STAGGER = 0.3;    // seconds between the windows of a volley
   var FIRE_FLIGHT_START = 3.6; // seconds from window to ground
   var FIRE_FLIGHT_PEAK = 2.4;
   var FIRE_CHARGE = 0.7;       // the window glows this long before it throws
   var FIRE_SPLASH = 24;        // px around the impact that kill
   var FIRE_R = 9;
   var PORTAL_TIME = 0.8;       // an alien coming out of a doorway shows this long first
+
+  // The street takes damage. Where fire lands it breaks the road open
+  // and the hole burns for a while - walk into it and it kills, and it
+  // burns aliens that walk into it too. Burnt out, it stays as rubble
+  // that slows you down.
+  var CRATER_BURN = 6;         // seconds a crater burns
+  var CRATER_SLOW = 0.55;      // your speed across rubble
+  var CRATER_SCALE = 0.85;     // crater radius, as a share of the splash
+
+  // Aliens coming down the buildings. They crawl head-first down the
+  // fronts of the towers, near and far up the street, drop into the
+  // road and come for you like the rest. Up on the wall they can't
+  // reach you, and the guns can only reach them once they are low.
+  var CLIMB_EVERY_START = 3.5; // seconds between climbers...
+  var CLIMB_EVERY_PEAK = 1;
+  var CLIMB_MAX_START = 3;     // ...and how many can be on the walls at once
+  var CLIMB_MAX_PEAK = 12;
+  var CLIMB_SPEED = 45;        // px/s down the wall
 
   var SCORE = { grunt: 100, dasher: 150, brute: 500, fire: 50 };
   var ENEMY_KINDS = {
@@ -455,7 +480,11 @@
     GRUNT_SPEED_START: GRUNT_SPEED_START, GRUNT_SPEED_PEAK: GRUNT_SPEED_PEAK, BRUTE_HP: BRUTE_HP,
     FIRE_START_M: FIRE_START_M, FIRE_EVERY_START: FIRE_EVERY_START, FIRE_EVERY_PEAK: FIRE_EVERY_PEAK,
     FIRE_MAX_START: FIRE_MAX_START, FIRE_MAX_PEAK: FIRE_MAX_PEAK,
-    FIRE_FLIGHT_START: FIRE_FLIGHT_START, FIRE_FLIGHT_PEAK: FIRE_FLIGHT_PEAK, FIRE_SPLASH: FIRE_SPLASH
+    FIRE_FLIGHT_START: FIRE_FLIGHT_START, FIRE_FLIGHT_PEAK: FIRE_FLIGHT_PEAK, FIRE_SPLASH: FIRE_SPLASH,
+    FIRE_VOLLEY_START: FIRE_VOLLEY_START, FIRE_VOLLEY_PEAK: FIRE_VOLLEY_PEAK,
+    CRATER_BURN: CRATER_BURN, CRATER_SLOW: CRATER_SLOW,
+    CLIMB_EVERY_START: CLIMB_EVERY_START, CLIMB_EVERY_PEAK: CLIMB_EVERY_PEAK,
+    CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED
   };
   var TUNING = {};
   function resetTuning() { Object.keys(TUNING_DEFAULTS).forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; }); }
@@ -713,8 +742,8 @@
       bestM: 0, block: 0,
       spawnAcc: TUNING.GROUP_EVERY_START - 5, // the first group five metres out of the ship
       trickle: 4,
-      fireTimer: 0,
-      enemies: [], bullets: [], fires: [], portals: [], bursts: [], shards: [],
+      fireTimer: 0, climbTimer: 2,
+      enemies: [], bullets: [], fires: [], portals: [], bursts: [], shards: [], craters: [],
       buildings: [], lamps: [], nextBuild: [0, 0], nextLamp: 0,
       banner: null, flash: 0, shake: 0,
       invincible: prev ? prev.invincible : false,
@@ -773,6 +802,7 @@
       this.stepGun(dt);
       this.stepBullets(dt);
       this.stepFires(dt);
+      this.stepCraters(dt);
       this.checkContact();
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else if (s.mode === 'dying') {
@@ -817,9 +847,10 @@
   MainScene.prototype.stepPlayer = function (dt) {
     var s = this.state;
     var k = 1 - Math.exp(-WALK_RESPONSE * dt);
+    var top = TUNING.WALK_SPEED * (this.craterAt(s.px, s.pd, false) ? TUNING.CRATER_SLOW : 1);
     // Up on the stick is up the street, away from you.
-    s.vx += (move.x * TUNING.WALK_SPEED - s.vx) * k;
-    s.vd += (-move.y * TUNING.WALK_SPEED - s.vd) * k;
+    s.vx += (move.x * top - s.vx) * k;
+    s.vd += (-move.y * top - s.vd) * k;
     // Come to rest, rather than creep on a tail that never quite ends.
     if (!move.x && Math.abs(s.vx) < 3) s.vx = 0;
     if (!move.y && Math.abs(s.vd) < 3) s.vd = 0;
@@ -870,7 +901,7 @@
       var sg = side ? 1 : -1;
       while (s.nextBuild[side] < far) {
         var w = rand(60, 130);
-        var top = rand(-360, -60);
+        var top = rand(-430, -110);
         var cols = Math.max(2, Math.round(w / 18)), rows = Math.max(3, Math.round((GROUND_Y - top) / 22));
         var lit = [];
         for (var i = 0; i < cols * rows; i++) lit.push(Math.random() < 0.35 ? Math.floor(Math.random() * COLOR_WINDOWS.length) : -1);
@@ -879,8 +910,9 @@
           shape: pick(['rect', 'rect', 'stepped', 'needle']), edge: pick(COLOR_TOWER_EDGES),
           cols: cols, rows: rows, lit: lit, glow: 0
         });
-        // Now and then a cross street: a wider gap.
-        s.nextBuild[side] += Math.random() < 0.12 ? rand(320, 420) : rand(110, 210);
+        // Shoulder to shoulder, tall: the street is a canyon. Only now
+        // and then a cross street opens a gap.
+        s.nextBuild[side] += Math.random() < 0.05 ? rand(320, 420) : rand(100, 190);
       }
     }
     while (s.nextLamp < far) {
@@ -899,7 +931,10 @@
   // make it harder, nor a way to make it stop.
   MainScene.prototype.groupEvery = function () { return lerp(TUNING.GROUP_EVERY_START, TUNING.GROUP_EVERY_PEAK, this.difficulty()); };
   MainScene.prototype.maxAlive = function () { return Math.round(lerp(TUNING.MAX_ALIVE_START, TUNING.MAX_ALIVE_PEAK, this.difficulty())); };
-  MainScene.prototype.alive = function () { return this.state.enemies.length + this.state.portals.length; };
+  MainScene.prototype.alive = function () {
+    return this.state.enemies.filter(function (e) { return !e.climb; }).length + this.state.portals.length;
+  };
+  MainScene.prototype.climbers = function () { return this.state.enemies.filter(function (e) { return e.climb > 0; }).length; };
 
   MainScene.prototype.stepSpawning = function (dt) {
     var s = this.state, D = this.difficulty();
@@ -923,9 +958,32 @@
       var maxFires = Math.round(lerp(TUNING.FIRE_MAX_START, TUNING.FIRE_MAX_PEAK, F));
       if (s.fireTimer <= 0) {
         s.fireTimer = lerp(TUNING.FIRE_EVERY_START, TUNING.FIRE_EVERY_PEAK, F) * rand(0.7, 1.3);
-        if (s.fires.length < maxFires) this.launchFire();
+        var volley = Math.round(lerp(TUNING.FIRE_VOLLEY_START, TUNING.FIRE_VOLLEY_PEAK, F) + rand(-0.4, 0.4));
+        for (var v = 0; v < Math.max(1, volley) && s.fires.length < maxFires; v++) {
+          this.launchFire(v === 0 ? null : { spread: true, charge: FIRE_CHARGE + v * VOLLEY_STAGGER });
+        }
       }
     }
+    // Climbers, from the start: they come down slowly, so they are a
+    // threat you see coming rather than a surprise.
+    s.climbTimer -= dt;
+    if (s.climbTimer <= 0) {
+      s.climbTimer = lerp(TUNING.CLIMB_EVERY_START, TUNING.CLIMB_EVERY_PEAK, D) * rand(0.7, 1.3);
+      if (this.climbers() < Math.round(lerp(TUNING.CLIMB_MAX_START, TUNING.CLIMB_MAX_PEAK, D))) this.spawnClimber();
+    }
+  };
+
+  // One on the front of a tower somewhere up the street - from just
+  // ahead of you to well into the distance - high up, coming down.
+  MainScene.prototype.spawnClimber = function (kind) {
+    var s = this.state, push = TUNING.PLAYER_Z_PUSH;
+    var lo = s.camD + DEPTH_PX * 0.9, hi = s.camD + DEPTH_PX * (push + 5);
+    var towers = s.buildings.filter(function (o) { return o.d > lo && o.d < hi && GROUND_Y - o.top > 140; });
+    if (!towers.length) return null;
+    var o = pick(towers);
+    var e = this.addEnemy(kind || this.pickKind(this.difficulty()), o.x - o.side * o.w / 2 + o.side * rand(6, 18), o.d - 2);
+    e.climb = rand(90, Math.min(GROUND_Y - o.top - 30, 320));
+    return e;
   };
 
   MainScene.prototype.pickKind = function (D) {
@@ -991,10 +1049,18 @@
   // apart keeps a crowd from collapsing into one shape.
   MainScene.prototype.stepEnemies = function (dt) {
     var s = this.state, es = s.enemies;
+    var burnt = [];
     for (var i = 0; i < es.length; i++) {
       var e = es[i];
       e.age += dt;
       e.flash = Math.max(0, e.flash - dt * 6);
+      if (e.climb > 0) {
+        // Down the wall in scuttles, head first.
+        e.climb -= TUNING.CLIMB_SPEED * (0.4 + 1.2 * Math.max(0, Math.sin(e.age * 7 + e.weave))) * dt;
+        if (e.climb <= 0) e.climb = 0;
+        continue;
+      }
+      if (this.craterAt(e.x, e.d, true, e.r * 0.5)) { burnt.push(e); continue; }
       var dx = s.px - e.x, dd = s.pd - e.d, dist = Math.hypot(dx, dd) || 1;
       var ux = dx / dist, ud = dd / dist, v = this.enemySpeed(e);
       if (e.type === 'dasher') {
@@ -1009,11 +1075,15 @@
         e.x += e.pushX * e.push * dt; e.d += e.pushD * e.push * dt;
         e.push = Math.max(0, e.push - 600 * dt);
       }
-      e.x = clamp(e.x, -FACADE_X + 6, FACADE_X - 6);
+      // Off a wall and into the street: stepped in, not snapped.
+      var cx = clamp(e.x, -FACADE_X + 6, FACADE_X - 6);
+      if (cx !== e.x) e.x += (cx - e.x) * Math.min(1, dt * 5);
       e.d = Math.max(e.d, s.camD + DEPTH_PX * 0.5);
     }
+    for (var bi = 0; bi < burnt.length; bi++) this.killEnemy(burnt[bi], false);
     for (var a = 0; a < es.length; a++) {
       for (var b = a + 1; b < es.length; b++) {
+        if (es[a].climb || es[b].climb) continue;
         var p = es[a], q = es[b], ddx = q.x - p.x, ddd = q.d - p.d, md = (p.r + q.r) * 0.9;
         var dd2 = ddx * ddx + ddd * ddd;
         if (dd2 >= md * md || dd2 < 1e-6) continue;
@@ -1045,7 +1115,7 @@
       b.x += b.vx * dt; b.d += b.vd * dt;
       b.travelled += TUNING.BULLET_SPEED * dt;
       var dead = b.travelled > BULLET_RANGE || b.d < s.camD + DEPTH_PX * Z_NEAR;
-      if (!dead && Math.abs(b.x) > FACADE_X) {
+      if (!dead && Math.abs(b.x) > FACADE_X + 45) {
         // The building fronts stop them.
         this.burst(b.x, BULLET_Y, b.d, COLOR_BULLET, true);
         dead = true;
@@ -1053,6 +1123,8 @@
       if (!dead) {
         for (var j = 0; j < s.enemies.length; j++) {
           var e = s.enemies[j];
+          // Up a wall, only the low ones are in reach.
+          if (e.climb && Math.abs(GROUND_Y - e.climb - e.h * 0.55 - BULLET_Y) > e.h * 0.5 + 4) continue;
           if (Math.hypot(e.x - b.x, e.d - b.d) < e.r + BULLET_HIT) { this.hitEnemy(e, b); dead = true; break; }
         }
       }
@@ -1129,7 +1201,8 @@
       tx: 0, td: 0,
       flight: opts && opts.flight || lerp(TUNING.FIRE_FLIGHT_START, TUNING.FIRE_FLIGHT_PEAK, F),
       charge: opts && opts.charge != null ? opts.charge : FIRE_CHARGE,
-      aimAt: opts && opts.target || null
+      aimAt: opts && opts.target || null,
+      spread: !!(opts && opts.spread)
     };
     s.fires.push(f);
     s.firesLaunched++;
@@ -1146,7 +1219,11 @@
         // Thrown at where you are now, give or take a step.
         f.stage = 'fly'; f.age = 0;
         if (f.aimAt) { f.tx = f.aimAt.x; f.td = f.aimAt.d; }
-        else { f.tx = clamp(s.px + rand(-18, 18), -STREET_HALF, STREET_HALF); f.td = s.pd + rand(-18, 18); }
+        else if (f.spread) {
+          // The rest of a volley: round about you, to box you in.
+          f.tx = clamp(s.px + (Math.random() < 0.5 ? -1 : 1) * rand(25, VOLLEY_SPREAD_X), -STREET_HALF, STREET_HALF);
+          f.td = Math.max(s.pd + rand(-50, 80), s.camD + DEPTH_PX * (PLAYER_Z_MIN + 0.05));
+        } else { f.tx = clamp(s.px + rand(-18, 18), -STREET_HALF, STREET_HALF); f.td = s.pd + rand(-18, 18); }
         Sound.whoosh();
         continue;
       }
@@ -1171,7 +1248,49 @@
       var e = s.enemies[i];
       if (Math.hypot(e.x - f.tx, e.d - f.td) < R + e.r) this.killEnemy(e, false);
     }
+    this.addCrater(f.tx, f.td);
     if (s.mode === 'walking' && Math.hypot(s.px - f.tx, s.pd - f.td) < R + PLAYER_R) this.die('fire');
+  };
+
+  // ---- The damaged street -----------------------------------------------
+  // A hit on an old crater sets it burning again rather than piling a
+  // second one on top.
+  MainScene.prototype.addCrater = function (x, d, burn, r) {
+    var s = this.state;
+    r = r || TUNING.FIRE_SPLASH * CRATER_SCALE;
+    burn = burn == null ? TUNING.CRATER_BURN : burn;
+    for (var i = 0; i < s.craters.length; i++) {
+      var c = s.craters[i];
+      if (Math.hypot(c.x - x, c.d - d) < c.r * 0.6) { c.burn = Math.max(c.burn, burn); c.r = Math.max(c.r, r); return c; }
+    }
+    var cracks = [];
+    for (var k = 0; k < 7; k++) cracks.push({ a: rand(0, Math.PI * 2), l: rand(1.15, 1.8) });
+    var c2 = { kind: 'crater', x: x, d: d, r: r, burn: burn, age: 0, cracks: cracks, seed: rand(0, 100) };
+    s.craters.push(c2);
+    return c2;
+  };
+
+  MainScene.prototype.stepCraters = function (dt) {
+    var s = this.state, gone = s.camD + DEPTH_PX * Z_NEAR;
+    for (var i = s.craters.length - 1; i >= 0; i--) {
+      var c = s.craters[i];
+      c.age += dt;
+      if (c.burn > 0) c.burn = Math.max(0, c.burn - dt);
+      if (c.d + c.r < gone) s.craters.splice(i, 1);
+    }
+  };
+
+  // The crater under a point, if any: a burning one when `burning`,
+  // burnt-out rubble otherwise. `slop` shrinks the reach (a foot on the
+  // rim is not a foot in the fire).
+  MainScene.prototype.craterAt = function (x, d, burning, slop) {
+    var cs = this.state.craters;
+    for (var i = 0; i < cs.length; i++) {
+      var c = cs[i];
+      if ((c.burn > 0) !== burning) continue;
+      if (Math.hypot(c.x - x, c.d - d) < c.r - (slop || 0)) return c;
+    }
+    return null;
   };
 
   // ---- Dying -----------------------------------------------------------
@@ -1180,8 +1299,10 @@
     if (s.mode !== 'walking') return;
     for (var i = 0; i < s.enemies.length; i++) {
       var e = s.enemies[i];
+      if (e.climb > 0) continue;
       if (Math.hypot(e.x - s.px, e.d - s.pd) < e.r + PLAYER_R) { this.die('contact'); return; }
     }
+    if (this.craterAt(s.px, s.pd, true, PLAYER_R * 0.5)) this.die('burn');
   };
 
   MainScene.prototype.die = function (cause) {
@@ -1216,6 +1337,7 @@
     s.portals = s.portals.filter(function (p) { return Math.hypot(p.x - s.px, p.d - s.pd) >= RESPAWN_CLEAR; });
     s.fires.length = 0;
     s.bullets.length = 0;
+    s.craters.forEach(function (c) { if (Math.hypot(c.x - s.px, c.d - s.pd) < RESPAWN_CLEAR) c.burn = 0; });
     s.vx = s.vd = 0;
     s.invuln = INVULN_TIME;
     this.setMode('walking');
@@ -1270,6 +1392,7 @@
     var self = this, items = [];
     function add(list) { for (var i = 0; i < list.length; i++) { var z = self.zOf(list[i].d); if (z >= Z_NEAR && z < Z_FAR) items.push({ o: list[i], z: z }); } }
     add(s.buildings); add(s.lamps); add(s.enemies); add(s.bullets); add(s.fires); add(s.bursts);
+    add(s.craters.filter(function (c) { return c.burn > 0; }));
     items.push({ o: { kind: 'ship' }, z: this.zOf(s.ship.d) });
     if (s.mode !== 'over' && !(s.mode === 'dying') && !(s.mode === 'intro' && s.emerge <= 0)) items.push({ o: { kind: 'player' }, z: this.zOf(s.pd) });
     items.sort(function (a, b) { return b.z - a.z; });
@@ -1282,6 +1405,7 @@
       else if (o.kind === 'bullet') this.drawBullet(g, o, z);
       else if (o.kind === 'fire') this.drawFire(g, o, z);
       else if (o.kind === 'burst') this.drawBurst(g, o, z);
+      else if (o.kind === 'crater') this.drawFlames(g, o, z);
       else if (o.kind === 'ship') this.drawShip(g, z);
       else if (o.kind === 'player') this.drawPlayer(g, z);
     }
@@ -1407,6 +1531,8 @@
       g.fillStyle(0xf0abfc, 0.15);
       g.fillEllipse(cx, cy, w * 0.5, h * 0.5);
     }
+    // Craters: the road broken open, burning or burnt out.
+    for (var cr = 0; cr < s.craters.length; cr++) this.drawCrater(g, s.craters[cr]);
     // Portals: a ring opening on the ground in the alien's colour.
     for (var p = 0; p < s.portals.length; p++) {
       var po = s.portals[p], zz = this.zOf(po.d);
@@ -1447,8 +1573,52 @@
       g.fillStyle(0x000000, 0.4);
       g.fillEllipse(self.sx(x, z), self.sy(G, z), r * 2.4 / z, r * 0.7 / z);
     }
-    s.enemies.forEach(function (e) { shadow(e.x, e.d, e.r); });
+    s.enemies.forEach(function (e) { if (!e.climb) shadow(e.x, e.d, e.r); });
     if (s.mode === 'walking' || (s.mode === 'intro' && s.emerge >= 1)) shadow(s.px, s.pd, PLAYER_R);
+  };
+
+  // A crater: a dark hole in the road with cracks running out of it.
+  // Burning, it glows and throws light round about.
+  MainScene.prototype.drawCrater = function (g, c) {
+    var z = this.zOf(c.d);
+    if (z < Z_NEAR || z > Z_FAR) return;
+    var G = GROUND_Y, x = this.sx(c.x, z), y = this.sy(G, z), rx = c.r / z, ry = c.r * 0.3 / z;
+    var heat = clamp(c.burn / 1.5, 0, 1), t = this.state.t;
+    if (heat > 0) {
+      g.fillStyle(COLOR_FIRE, 0.12 * heat * (0.8 + 0.2 * Math.sin(t * 13 + c.seed)));
+      g.fillEllipse(x, y, rx * 4.2, ry * 4.2);
+    }
+    g.lineStyle(Math.max(1, 1.4 / z), heat > 0 ? mixColor(0x3b1d10, COLOR_FIRE, heat * 0.7) : 0x2a2140, 0.9);
+    for (var i = 0; i < c.cracks.length; i++) {
+      var k = c.cracks[i], ca = Math.cos(k.a), sa = Math.sin(k.a);
+      var mx = this.sx(c.x + ca * c.r * (k.l + 1) / 2 + sa * 4, z), my = this.sy(G, z) + sa * ry * (k.l + 1) / 2;
+      g.lineBetween(x + ca * rx * 0.8, y + sa * ry * 0.8, mx, my);
+      g.lineBetween(mx, my, x + ca * rx * k.l, y + sa * ry * k.l);
+    }
+    g.fillStyle(0x07040d, 1);
+    g.fillEllipse(x, y, rx * 2, ry * 2);
+    g.fillStyle(heat > 0 ? mixColor(0x2a0c05, COLOR_FIRE, 0.6 * heat) : 0x1a1426, heat > 0 ? 0.9 : 1);
+    g.fillEllipse(x, y + ry * 0.1, rx * 1.4, ry * 1.2);
+    g.lineStyle(Math.max(1, 1.5 / z), heat > 0 ? COLOR_FLAME_OUTER : 0x3b3355, heat > 0 ? 0.6 + 0.3 * heat : 0.8);
+    g.strokeEllipse(x, y, rx * 2, ry * 2);
+  };
+
+  // Its fire: tongues of flame standing up out of the hole, flickering,
+  // dying down as it burns out. Drawn in depth order, so you and the
+  // aliens stand in front of it or behind it.
+  MainScene.prototype.drawFlames = function (g, c, z) {
+    var heat = clamp(c.burn / 1.5, 0, 1), t = this.state.t, G = GROUND_Y;
+    var y = this.sy(G, z), rx = c.r / z, ry = c.r * 0.3 / z;
+    for (var i = 0; i < 6; i++) {
+      var f = (i + 0.5) / 6, fx = this.sx(c.x, z) + (f * 2 - 1) * rx * 0.75;
+      var fy = y + Math.sin(i * 2.3 + c.seed) * ry * 0.5;
+      var h = (14 + 12 * Math.abs(Math.sin(t * 9 + i * 1.7 + c.seed))) / z * heat * (1 - Math.abs(f * 2 - 1) * 0.5);
+      var w = Math.max(1.5, 5 / z);
+      g.fillStyle(COLOR_FLAME_OUTER, 0.85);
+      g.fillTriangle(fx - w, fy, fx + w, fy, fx + Math.sin(t * 7 + i) * w, fy - h);
+      g.fillStyle(COLOR_FLAME_INNER, 0.9);
+      g.fillTriangle(fx - w * 0.5, fy, fx + w * 0.5, fy, fx, fy - h * 0.55);
+    }
   };
 
   MainScene.prototype.drawTower = function (g, o, z) {
@@ -1613,10 +1783,11 @@
   MainScene.prototype.drawEnemy = function (g, e, z) {
     var a = depthAlpha(z) * (z < 0.6 ? clamp((z - Z_NEAR) / 0.25, 0, 1) : 1);
     if (a <= 0) return;
-    var x = this.sx(e.x, z), feet = this.sy(GROUND_Y, z), h = e.h / z, w = e.r * 2.1 / z;
+    var x = this.sx(e.x, z), feet = this.sy(GROUND_Y - (e.climb || 0), z), h = e.h / z, w = e.r * 2.1 / z;
     var col = e.flash > 0 ? mixColor(e.color, 0xffffff, e.flash) : e.color;
     var step = Math.sin(e.age * 9 + e.weave);
     var cy = feet - h * 0.6;
+    if (e.climb > 0) return this.drawClimber(g, e, x, cy, w, h, col, a, z);
     g.fillStyle(mixColor(e.color, 0x000000, 0.45), a);
     g.fillRect(x - w * 0.3, feet - h * 0.32 - Math.max(0, step) * h * 0.08, w * 0.16, h * 0.32);
     g.fillRect(x + w * 0.14, feet - h * 0.32 - Math.max(0, -step) * h * 0.08, w * 0.16, h * 0.32);
@@ -1651,6 +1822,28 @@
         g.fillCircle(x - bw * 0.7 + (i % 4) * bw * 0.46, by + bh * (i < 4 ? 0.75 : 0.9), bw * 0.08);
       }
     }
+  };
+
+  // On the wall: spread flat against it, limbs out gripping, eye down
+  // toward the street, inching down.
+  MainScene.prototype.drawClimber = function (g, e, x, cy, w, h, col, a, z) {
+    var sc = Math.sin(e.age * 7 + e.weave), r = h * 0.36;
+    g.lineStyle(Math.max(1, 2.2 / z), mixColor(e.color, 0x000000, 0.35), a);
+    for (var i = 0; i < 4; i++) {
+      var sx = i < 2 ? -1 : 1, up = i % 2 === 0 ? -1 : 1;
+      var reach = (i % 2 === 0 ? sc : -sc) * r * 0.25;
+      var kx = x + sx * w * 0.55, ky = cy + up * r * 0.55 + reach;
+      g.lineBetween(x + sx * w * 0.2, cy + up * r * 0.25, kx, ky);
+      g.lineBetween(kx, ky, kx + sx * w * 0.25, ky + up * r * 0.4);
+    }
+    g.fillStyle(col, a);
+    g.beginPath();
+    g.moveTo(x, cy - r); g.lineTo(x + w * 0.45, cy); g.lineTo(x, cy + r); g.lineTo(x - w * 0.45, cy);
+    g.closePath(); g.fillPath();
+    g.fillStyle(COLOR_EYE, a);
+    g.fillCircle(x, cy + r * 0.3, r * 0.26);
+    g.fillStyle(COLOR_FIRE, a * (0.5 + 0.5 * Math.sin(e.age * 5)));
+    g.fillCircle(x, cy + r * 0.3, r * 0.1);
   };
 
   MainScene.prototype.drawBullet = function (g, b, z) {
@@ -1702,6 +1895,15 @@
 
   MainScene.prototype.drawFx = function () {
     var s = this.state, g = this.gFx;
+    // Close in: the edges of the picture darken, so the street reads as
+    // a canyon you are at the bottom of.
+    for (var v = 0; v < 8; v++) {
+      var va = 0.09 * (8 - v) / 8, vw = 6;
+      g.fillStyle(0x000000, va);
+      g.fillRect(v * vw, 0, vw, GAME_HEIGHT);
+      g.fillRect(GAME_WIDTH - (v + 1) * vw, 0, vw, GAME_HEIGHT);
+      g.fillRect(0, GAME_HEIGHT - (v + 1) * 5, GAME_WIDTH, 5);
+    }
     for (var i = 0; i < s.shards.length; i++) {
       var p = s.shards[i], a = 1 - p.age / p.life;
       var dx = Math.cos(p.rot) * p.len / 2, dy = Math.sin(p.rot) * p.len / 2;
@@ -1769,7 +1971,20 @@
       ['FIRE_MAX_PEAK', 'Most at once (full)', 1, 12, 1, ''],
       ['FIRE_FLIGHT_START', 'Takes (start)', 1, 8, 0.1, ' s'],
       ['FIRE_FLIGHT_PEAK', 'Takes (full)', 0.8, 6, 0.1, ' s'],
-      ['FIRE_SPLASH', 'Splash', 8, 60, 1, ' px']
+      ['FIRE_SPLASH', 'Splash', 8, 60, 1, ' px'],
+      ['FIRE_VOLLEY_START', 'Volley (start)', 1, 6, 1, ''],
+      ['FIRE_VOLLEY_PEAK', 'Volley (full)', 1, 8, 1, '']
+    ] },
+    { title: 'Damaged street', rows: [
+      ['CRATER_BURN', 'Craters burn for', 0, 30, 0.5, ' s'],
+      ['CRATER_SLOW', 'Speed over rubble', 0.2, 1, 0.05, '\u00d7']
+    ] },
+    { title: 'Climbers', rows: [
+      ['CLIMB_EVERY_START', 'One every (start)', 0.5, 15, 0.5, ' s'],
+      ['CLIMB_EVERY_PEAK', 'One every (full)', 0.2, 10, 0.1, ' s'],
+      ['CLIMB_MAX_START', 'Most on walls (start)', 0, 20, 1, ''],
+      ['CLIMB_MAX_PEAK', 'Most on walls (full)', 0, 30, 1, ''],
+      ['CLIMB_SPEED', 'Climb-down speed', 10, 150, 1, ' px/s']
     ] }
   ];
 
@@ -1881,7 +2096,8 @@
         groupEvery: scene.groupEvery(), maxAlive: scene.maxAlive(),
         shotsFired: s.shotsFired, kills: s.kills, firesShot: s.firesShot, firesLaunched: s.firesLaunched, splashes: s.splashes || 0,
         bullets: s.bullets.map(function (b) { return { x: b.x, d: b.d, vx: b.vx, vd: b.vd }; }),
-        enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r }; }),
+        enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r, climb: e.climb || 0 }; }),
+        craters: s.craters.map(function (c) { return { x: c.x, d: c.d, r: c.r, burn: c.burn }; }),
         portals: s.portals.length,
         fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight }; }),
         buildings: s.buildings.length, banner: s.banner && s.banner.text,
@@ -1898,7 +2114,7 @@
     restart: function () { scene.restart(); },
     skipIntro: function () { jumpTo(0); var s = scene.state; s.px = EXIT_X; s.pd = EXIT_D; return true; },
     jumpTo: function (m) { jumpTo(m); return true; },
-    clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; },
+    clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },
     setPlayer: function (x, d) { var s = scene.state; s.px = x; s.pd = d; s.vx = s.vd = 0; },
@@ -1907,6 +2123,11 @@
     setScore: function (n) { scene.state.score = n; },
     addScore: function (n) { scene.addScore(n); },
     spawnEnemy: function (type, x, d) { scene.addEnemy(type, x, d); return true; },
+    spawnClimber: function (type, x, d, climb) {
+      if (x == null) return !!scene.spawnClimber(type);
+      var e = scene.addEnemy(type || 'grunt', x, d); e.climb = climb; return true;
+    },
+    addCrater: function (x, d, burn, r) { scene.addCrater(x, d, burn, r); return true; },
     spawnFrom: function (type, from) { scene.spawnEnemy(type, from); return true; },
     launchFire: function (opts) { return !!scene.launchFire(opts); },
     projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z), y: scene.sy(GROUND_Y, z), z: z }; },
