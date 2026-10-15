@@ -84,6 +84,16 @@ harness.run(async (page, check, ctx) => {
   await page.keyboard.up('KeyS');
   check('...and never back: walking back stops at the bottom of the picture', s.camD === camAfter && s.z >= C.PLAYER_Z_MIN - 1e-6, { camAfter, s });
 
+  // The scroll point is a lab setting: moved deeper, the camera lets
+  // you walk that much further up the street before it follows.
+  await quietStreet(page);
+  await D(page, () => window.__streetDebug.tune('PLAYER_Z_PUSH', 2.5));
+  await page.keyboard.down('KeyW');
+  s = await until(page, (st) => st.camD > 100, 6000);
+  await page.keyboard.up('KeyW');
+  check('a deeper scroll point: the camera follows from there', s.camD > 100 && Math.abs(s.z - 2.5) < 0.05, s);
+  await D(page, (v) => window.__streetDebug.tune('PLAYER_Z_PUSH', v), T.PLAYER_Z_PUSH);
+
   // ---- The right stick fires, on its own ------------------------------
   await quietStreet(page);
   await page.keyboard.down('KeyW');

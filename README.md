@@ -407,7 +407,11 @@ itself, for practice.
   100 m.
 - **Settings lab.** Backquote, or triple-tap the "Main Street" tag.
   Every ramp has a start and a full value, plus jumps to 25%, 50% and
-  full difficulty, and **No death**.
+  full difficulty, and **No death**. **Scroll point (depth)** sets how
+  far up the street you can walk before the camera follows (1 is the
+  ship's depth, 1.5 the default; higher gives you more room on screen
+  and less warning of what's ahead). Where the aliens come from and
+  which towers throw fire move with it.
 - Tests: `tests/test-street.js`.
 
 #### Left off the lawn, into the trees
