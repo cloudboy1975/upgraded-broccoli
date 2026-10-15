@@ -1,0 +1,1910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Head-On &mdash; Main Street</title>
+<style>
+  :root {
+    --bg-1: #05061a;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #fb923c;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+
+  /* The same frame as descent.html: a header, a box the canvas is FIT
+     into, and the two thumbs' controls underneath it. */
+  body {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-1);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .hud-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+    flex-shrink: 0;
+  }
+  .back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .back-link:hover { color: var(--text); }
+  .chapter-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid rgba(226, 232, 240, 0.2);
+    border-radius: 999px;
+    padding: 3px 9px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  #gameRoot { position: relative; flex: 1; min-height: 0; }
+  #gameRoot canvas { display: block; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(5, 6, 26, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 5;
+    text-align: center;
+    padding: 0 16px;
+  }
+  .overlay.visible { opacity: 1; pointer-events: auto; }
+  .overlay-title { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.04em; }
+  .overlay-line { color: var(--muted); font-size: 0.9rem; }
+  .overlay-link { margin-top: 10px; color: var(--accent); font-size: 0.85rem; text-decoration: underline; }
+  .btn {
+    margin-top: 6px;
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #1a0d03;
+    background: var(--accent);
+    border: none;
+    border-radius: 999px;
+    padding: 10px 26px;
+    cursor: pointer;
+  }
+  /* Arriving from descent.html: start black and lift once there is a
+     frame, so the step out of the ship follows straight on. */
+  .arrival-fade {
+    position: fixed; inset: 0; z-index: 55; background: #000;
+    opacity: 0; pointer-events: none; transition: opacity 0.5s ease;
+  }
+  .arrival-fade.visible { opacity: 1; }
+
+  /* Two halves, each WHOLE half a stick: the left walks, the right
+     aims and fires. Same reasoning as descent.html - the circles only
+     show where the thumbs go; a thumb landing anywhere on its half
+     counts, and that press's centre is wherever it landed. */
+  .control-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: stretch;
+    touch-action: none;
+  }
+  .pad {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 154px;
+    padding-top: 10px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
+  }
+  .move-pad { justify-content: flex-start; padding-left: max(14px, env(safe-area-inset-left)); }
+  .aim-pad { justify-content: flex-end; padding-right: max(14px, env(safe-area-inset-right)); }
+  /* Hit slop above the bar, as in descent.html. */
+  .pad::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -56px;
+    height: 56px;
+  }
+  .stick-ring {
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: rgba(30, 41, 59, 0.55);
+    border: 1px solid rgba(226, 232, 240, 0.15);
+    flex-shrink: 0;
+    pointer-events: none;
+  }
+  /* The right stick is the guns: tinted the bullets' green, so the two
+     identical sticks are never confused. */
+  .aim-pad .stick-ring {
+    border-color: rgba(34, 197, 94, 0.45);
+    background: radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.16), rgba(20, 83, 45, 0.22) 70%);
+  }
+  .aim-pad.active .stick-ring { background: radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.32), rgba(20, 83, 45, 0.35) 70%); }
+  .stick-anchor {
+    position: absolute;
+    top: 0; left: 0;
+    width: 10px; height: 10px;
+    margin-left: -5px; margin-top: -5px;
+    border-radius: 50%;
+    background: rgba(226, 232, 240, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-knob {
+    position: absolute;
+    top: 0; left: 0;
+    width: 50px; height: 50px;
+    margin-left: -25px; margin-top: -25px;
+    border-radius: 50%;
+    background: rgba(226, 232, 240, 0.16);
+    border: 2px solid rgba(226, 232, 240, 0.45);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .aim-pad .stick-knob { border-color: rgba(134, 239, 172, 0.7); background: rgba(34, 197, 94, 0.2); }
+  .stick-anchor.visible, .stick-knob.visible { opacity: 1; }
+
+  /* ---- Settings lab: descent.html's, for this file's knobs. ---- */
+  .lab {
+    --line: #334155;
+    --bg-2: #1e293b;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    background: rgba(8, 12, 24, 0.97);
+    color: var(--text);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    touch-action: pan-y;
+    font-size: 0.8rem;
+  }
+  .lab.visible { display: block; }
+  .lab-inner { max-width: 460px; margin: 0 auto; }
+  .lab h2 { margin: 0 0 2px; font-size: 1rem; letter-spacing: 0.02em; }
+  .lab-sub { color: var(--muted); font-size: 0.72rem; margin-bottom: 12px; }
+  .lab-section {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: rgba(30, 41, 59, 0.5);
+  }
+  .lab-section h3 {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .lab-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .lab-row:last-child { margin-bottom: 0; }
+  .lab-row label { flex: 0 0 128px; color: var(--muted); }
+  .lab-row input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--accent); }
+  .lab-row input[type="checkbox"] { accent-color: var(--accent); }
+  .lab-row .lab-val { flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .lab-row.changed .lab-val { color: var(--accent); }
+  .lab-btn {
+    border: 1px solid var(--line);
+    background: var(--bg-2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 4px 9px;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lab-btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0d03; }
+  .lab-btn.wide { width: 100%; padding: 8px; }
+  .lab-actions { display: flex; gap: 8px; }
+  .lab-actions + .lab-actions, .lab-row + .lab-actions { margin-top: 8px; }
+</style>
+</head>
+<body>
+  <div class="hud-bar">
+    <a class="back-link" href="index.html">&larr; All</a>
+    <div class="chapter-tag" id="labTap" title="Triple-tap for the settings lab">Main Street</div>
+  </div>
+
+  <div id="gameRoot">
+    <div class="overlay" id="overOverlay">
+      <div class="overlay-title" id="overTitle">Overrun</div>
+      <div class="overlay-line" id="overLine"></div>
+      <button type="button" class="btn" id="againBtn">Walk it again</button>
+      <a class="overlay-link" id="fromTopLink" href="head-on.html">Start over from Head-On</a>
+    </div>
+  </div>
+
+  <div class="arrival-fade" id="arrivalFade" aria-hidden="true"></div>
+  <script>
+    if (/(?:^|[?&])from=descent(?:&|$)/.test(location.search)) document.getElementById('arrivalFade').classList.add('visible');
+  </script>
+
+  <div class="control-bar">
+    <div class="pad move-pad" id="moveZone" aria-label="Walk: press anywhere on the left half and drag">
+      <span class="stick-ring" aria-hidden="true"></span>
+      <span class="stick-anchor" id="moveAnchor" aria-hidden="true"></span>
+      <span class="stick-knob" id="moveKnob" aria-hidden="true"></span>
+    </div>
+    <div class="pad aim-pad" id="aimZone" aria-label="Fire: press anywhere on the right half and drag the way to shoot">
+      <span class="stick-ring" aria-hidden="true"></span>
+      <span class="stick-anchor" id="aimAnchor" aria-hidden="true"></span>
+      <span class="stick-knob" id="aimKnob" aria-hidden="true"></span>
+    </div>
+  </div>
+
+  <div class="lab" id="lab" aria-hidden="true">
+    <div class="lab-inner">
+      <h2>Settings lab</h2>
+      <div class="lab-sub">The street is paused while this is open. Changes apply at once and persist in this browser; values that differ from the default show in orange.</div>
+      <div class="lab-section">
+        <h3>Jump down the street</h3>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide" data-jump="0">Start</button>
+          <button type="button" class="lab-btn wide" data-jump="0.25">25%</button>
+          <button type="button" class="lab-btn wide" data-jump="0.5">50%</button>
+          <button type="button" class="lab-btn wide" data-jump="1">Full</button>
+        </div>
+        <div class="lab-row" style="margin-top:8px">
+          <label for="labNoDeath">No death</label>
+          <input type="checkbox" id="labNoDeath">
+        </div>
+      </div>
+      <div id="labSections"></div>
+      <div class="lab-actions">
+        <button type="button" class="lab-btn wide" id="labResetBtn">Reset to defaults</button>
+        <button type="button" class="lab-btn wide primary" id="labCloseBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+<script src="phaser.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ==================================================================
+  // Main Street: out of the ship and on foot.
+  //
+  // Straight on from descent.html's landing. The camera is exactly
+  // where the descent left it - behind and above the ship sitting on the
+  // pad - and the projection is the same one divide:
+  //
+  //     screen = centre + (world - camera) / z
+  //
+  // What changes is that the thing at z=1 now walks. The ground is a
+  // plane: everything on it has a lateral position x (world px) and a
+  // depth d along the street (also world px; DEPTH_PX of it make one
+  // unit of z). The camera only ever moves forward, pushed by you, so
+  // the street is a long arena that scrolls one way - Robotron, laid
+  // down flat and looked at from behind.
+  //
+  // Twin sticks. The left thumb walks (the stick that flew the ship);
+  // the right thumb is a copy of it that aims, and while it is pushed
+  // the gun fires as fast as it can in that direction, independent of
+  // which way you are walking. Ground aliens don't shoot - they come at
+  // you, and touching one kills. Fire comes slowly down out of the
+  // buildings at where you are standing. Lives, not a shield.
+  //
+  // It gets harder by how far down the street you have got, never by
+  // the clock: standing still holds the difficulty where it is.
+  // ==================================================================
+
+  var GAME_WIDTH = 360;
+  var GAME_HEIGHT = 480;
+  var CX = GAME_WIDTH / 2;
+  var CY = 196;                // the vanishing point, as in descent.html
+
+  // ---- The camera, as the landing left it --------------------------
+  // descent.html's camera rides at shipY * CAM_FOLLOW - CAM_RAISE; the
+  // ship came to rest at CITY_TOUCHDOWN_Y. That height is kept for the
+  // whole street, so the view does not move when you step out.
+  var GROUND_Y = 175;
+  var TOUCHDOWN_Y = GROUND_Y - 4;
+  var CAM_FOLLOW = 0.5;
+  var CAM_RAISE = 74;
+  var CAM_Y = TOUCHDOWN_Y * CAM_FOLLOW - CAM_RAISE;
+  var CAM_X_FOLLOW = 0.5;      // the camera swings after you sideways, part of the way
+
+  var DEPTH_PX = 240;          // world px of depth in one unit of z
+  var Z_NEAR = 0.35;           // closer than this to the camera: not drawn
+  var Z_FAR = 15;              // the street is built out to here
+  var Z_FADE = 3;              // ...and fades in over this much of it
+
+  // ---- You ----------------------------------------------------------
+  var PLAYER_Z_MIN = 0.72;     // as near the camera as you can come (the bottom of the picture)
+  var PLAYER_Z_PUSH = 1.5;     // walk deeper than this and the camera comes with you
+  var STREET_HALF = 165;       // how far either side of the centre line you can walk
+  var FACADE_X = 195;          // where the buildings' fronts stand
+  var PLAYER_R = 9;            // contact radius, on the ground
+  var PLAYER_H = 38;           // height in world px
+  var WALK_SPEED = 125;        // px/s at full stick
+  var WALK_RESPONSE = 14;
+  var LIVES = 3;
+  var EXTRA_LIFE_EVERY = 10000;
+  var RESPAWN_CLEAR = 170;     // a new life clears aliens this close
+  var INVULN_TIME = 2.2;
+  var DEATH_TIME = 1.5;
+  var INTRO_TIME = 1.7;
+
+  // ---- The gun ------------------------------------------------------
+  var AIM_DEADZONE = 0.3;      // the right stick fires once pushed this far
+  var FIRE_INTERVAL = 0.085;   // seconds between shots: rapid
+  var BULLET_SPEED = 600;      // px/s along the ground
+  var BULLET_RANGE = 700;
+  var BULLET_Y = GROUND_Y - 21; // chest height
+  var BULLET_HIT = 5;          // added to a target's radius
+
+  // ---- Progress and difficulty --------------------------------------
+  // Everything that makes it harder is a function of D, how far down
+  // the street the camera has been pushed, from 0 at the ship to 1 at
+  // RAMP_M metres. Time spent standing still never changes it.
+  var PX_PER_M = 20;
+  var RAMP_M = 600;
+  var BLOCK_M = 100;           // a banner each time you pass another block
+  var GROUP_EVERY_START = 24;  // metres walked per group of aliens, at the ship...
+  var GROUP_EVERY_PEAK = 8;    // ...and at full difficulty
+  var GROUP_SIZE_START = 2;
+  var GROUP_SIZE_PEAK = 6;
+  var MAX_ALIVE_START = 4;
+  var MAX_ALIVE_PEAK = 22;
+  var TRICKLE_START = 5.5;     // seconds between stragglers while you stand still
+  var TRICKLE_PEAK = 2.2;
+  var GRUNT_SPEED_START = 34;  // px/s
+  var GRUNT_SPEED_PEAK = 76;
+  var DASHER_FROM = 0.12;      // D at which each kind starts to show up
+  var BRUTE_FROM = 0.35;
+  var SIDE_FROM = 0.05;
+  var BEHIND_FROM = 0.4;
+  var BRUTE_HP = 6;
+  // Fire from the buildings: none for the first stretch, then slowly
+  // more often, more at once, and a little quicker to land.
+  var FIRE_START_M = 60;
+  var FIRE_EVERY_START = 7;
+  var FIRE_EVERY_PEAK = 1.6;
+  var FIRE_MAX_START = 1;
+  var FIRE_MAX_PEAK = 5;
+  var FIRE_FLIGHT_START = 3.6; // seconds from window to ground
+  var FIRE_FLIGHT_PEAK = 2.4;
+  var FIRE_CHARGE = 0.7;       // the window glows this long before it throws
+  var FIRE_SPLASH = 24;        // px around the impact that kill
+  var FIRE_R = 9;
+  var PORTAL_TIME = 0.8;       // an alien coming out of a doorway shows this long first
+
+  var SCORE = { grunt: 100, dasher: 150, brute: 500, fire: 50 };
+  var ENEMY_KINDS = {
+    grunt: { r: 11, h: 32, hp: 1, speed: 1, colors: [0x38bdf8, 0xf472b6] },
+    dasher: { r: 10, h: 28, hp: 1, speed: 1.45, colors: [0xa3e635] },
+    brute: { r: 19, h: 48, hp: BRUTE_HP, speed: 0.55, colors: [0xa78bfa] }
+  };
+
+  // ---- Colours ------------------------------------------------------
+  var COLOR_SHIP = 0xe2e8f0;
+  var COLOR_SHIP_FILL = 0x1e293b;
+  var COLOR_FLAME_OUTER = 0xf97316;
+  var COLOR_FLAME_INNER = 0xfde68a;
+  var COLOR_BULLET = 0x22c55e;
+  var COLOR_HIT = 0xef4444;
+  var COLOR_FIRE = 0xff7a1a;
+  var COLOR_EYE = 0x0f172a;
+  var COLOR_SKY_TOP = 0x03041a;
+  var COLOR_SKY_HORIZON = 0x24164a;
+  var COLOR_FLOOR = 0x0b0716;
+  var COLOR_FLOOR_BAND = 0x150b28;
+  var COLOR_WALK = 0x1b1233;
+  var COLOR_CURB = 0x67e8f9;
+  var COLOR_GRID = 0xa78bfa;
+  var COLOR_TOWER_EDGES = [0x67e8f9, 0xf0abfc, 0xa78bfa, 0xfde68a];
+  var COLOR_WINDOWS = [0xfde68a, 0x67e8f9, 0xf9a8d4, 0xfef3c7];
+  var STAR_COLORS = [0xf8fafc, 0xdbeafe, 0xe9d5ff, 0xfce7f3, 0xfef3c7];
+
+  var BEST_KEY = 'street-best-v1';
+
+  // ---- Tuning: the live values -------------------------------------
+  var TUNING_KEY = 'street-tuning-v1';
+  var TUNING_DEFAULTS = {
+    WALK_SPEED: WALK_SPEED, FIRE_INTERVAL: FIRE_INTERVAL, BULLET_SPEED: BULLET_SPEED, LIVES: LIVES,
+    RAMP_M: RAMP_M, GROUP_EVERY_START: GROUP_EVERY_START, GROUP_EVERY_PEAK: GROUP_EVERY_PEAK,
+    GROUP_SIZE_START: GROUP_SIZE_START, GROUP_SIZE_PEAK: GROUP_SIZE_PEAK,
+    MAX_ALIVE_START: MAX_ALIVE_START, MAX_ALIVE_PEAK: MAX_ALIVE_PEAK,
+    TRICKLE_START: TRICKLE_START, TRICKLE_PEAK: TRICKLE_PEAK,
+    GRUNT_SPEED_START: GRUNT_SPEED_START, GRUNT_SPEED_PEAK: GRUNT_SPEED_PEAK, BRUTE_HP: BRUTE_HP,
+    FIRE_START_M: FIRE_START_M, FIRE_EVERY_START: FIRE_EVERY_START, FIRE_EVERY_PEAK: FIRE_EVERY_PEAK,
+    FIRE_MAX_START: FIRE_MAX_START, FIRE_MAX_PEAK: FIRE_MAX_PEAK,
+    FIRE_FLIGHT_START: FIRE_FLIGHT_START, FIRE_FLIGHT_PEAK: FIRE_FLIGHT_PEAK, FIRE_SPLASH: FIRE_SPLASH
+  };
+  var TUNING = {};
+  function resetTuning() { Object.keys(TUNING_DEFAULTS).forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; }); }
+  function loadTuning() {
+    resetTuning();
+    try {
+      var saved = JSON.parse(localStorage.getItem(TUNING_KEY) || 'null');
+      if (saved) Object.keys(TUNING_DEFAULTS).forEach(function (k) { if (typeof saved[k] === 'number') TUNING[k] = saved[k]; });
+    } catch (e) {}
+  }
+  function saveTuning() { try { localStorage.setItem(TUNING_KEY, JSON.stringify(TUNING)); } catch (e) {} }
+  loadTuning();
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
+  function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function mixColor(a, b, t) {
+    t = clamp(t, 0, 1);
+    var ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+    var br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+    return (Math.round(ar + (br - ar) * t) << 16) | (Math.round(ag + (bg - ag) * t) << 8) | Math.round(ab + (bb - ab) * t);
+  }
+
+  // How hard it is at a given distance down the street (metres).
+  function difficultyAt(m) { return clamp(m / Math.max(1, TUNING.RAMP_M), 0, 1); }
+  // How far into the fire's own ramp, which starts later.
+  function fireDifficultyAt(m) {
+    return clamp((m - TUNING.FIRE_START_M) / Math.max(1, TUNING.RAMP_M - TUNING.FIRE_START_M), 0, 1);
+  }
+
+  // ---- The run so far ------------------------------------------------
+  // Played straight on from descent.html (and, before it, head-on.html),
+  // this is the same run: the Head-On score comes along for the end
+  // screen. Lives do not - they start fresh here.
+  var FROM_DESCENT = /(?:^|[?&])from=descent(?:&|$)/.test(location.search || '');
+  var CARRIED_SCORE = (function () {
+    var m = /(?:^|[?&])score=(\d+)/.exec(location.search || '');
+    return m ? parseInt(m[1], 10) : null;
+  })();
+  function runLine() {
+    return CARRIED_SCORE != null ? ' · Head-On score ' + CARRIED_SCORE.toLocaleString() : '';
+  }
+
+  // ---- Sound ---------------------------------------------------------
+  var Sound = (function () {
+    var ctx = null;
+    function ensureAudio() {
+      if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      try { ctx = new AC(); } catch (e) { ctx = null; }
+    }
+    function blip(f0, f1, dur, type, vol) {
+      if (!ctx) return;
+      var now = ctx.currentTime;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, now);
+      o.frequency.exponentialRampToValueAtTime(f1, now + dur);
+      g.gain.setValueAtTime(vol, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      o.connect(g).connect(ctx.destination);
+      o.start(now);
+      o.stop(now + dur + 0.05);
+    }
+    return {
+      ensureAudio: ensureAudio,
+      shot: function () { blip(1100, 500, 0.05, 'square', 0.025); },
+      pop: function () { blip(520, 90, 0.18, 'sawtooth', 0.08); },
+      thud: function () { blip(180, 120, 0.06, 'square', 0.05); },
+      boom: function () { blip(220, 30, 0.35, 'sawtooth', 0.12); },
+      death: function () { blip(400, 40, 0.9, 'sawtooth', 0.16); },
+      whoosh: function () { blip(160, 420, 0.5, 'triangle', 0.05); },
+      portal: function () { blip(300, 700, 0.18, 'triangle', 0.05); },
+      life: function () { blip(660, 1320, 0.3, 'sine', 0.1); }
+    };
+  })();
+
+  // ==================================================================
+  // Input: two copies of descent.html's stick. Left walks, right aims.
+  // On a keyboard: WASD walks, the arrow keys fire.
+  // ==================================================================
+  var move = { x: 0, y: 0, tx: 0, ty: 0, kx: 0, ky: 0 };
+  var aim = { x: 0, y: 0, tx: 0, ty: 0, kx: 0, ky: 0 };
+  var STICK_MAX_RADIUS_PX = 44;
+  var HOLD_WATCHDOG_MS = 12000;
+  var kbMove = { up: false, down: false, left: false, right: false };
+  var kbAim = { up: false, down: false, left: false, right: false };
+
+  function compose(v) {
+    var x = v.tx + v.kx, y = v.ty + v.ky, mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    v.x = x; v.y = y;
+  }
+  function keyVector(v, k) {
+    var x = (k.right ? 1 : 0) - (k.left ? 1 : 0), y = (k.down ? 1 : 0) - (k.up ? 1 : 0);
+    var mag = Math.hypot(x, y);
+    if (mag > 1) { x /= mag; y /= mag; }
+    v.kx = x; v.ky = y;
+    compose(v);
+  }
+
+  function bindStick(el, anchorEl, knobEl, v) {
+    var activeId = null, watchdogTimer = null, anchorX = 0, anchorY = 0;
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+    function release() {
+      if (activeId === null) return;
+      activeId = null;
+      clearTimeout(watchdogTimer);
+      anchorEl.classList.remove('visible');
+      knobEl.classList.remove('visible');
+      el.classList.remove('active');
+      knobEl.style.transform = 'translate(0px, 0px)';
+      v.tx = 0; v.ty = 0;
+      compose(v);
+    }
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.ensureAudio();
+      release();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      var rect = el.getBoundingClientRect();
+      anchorX = e.clientX; anchorY = e.clientY;
+      var lx = anchorX - rect.left, ly = anchorY - rect.top;
+      anchorEl.style.left = lx + 'px'; anchorEl.style.top = ly + 'px';
+      knobEl.style.left = lx + 'px'; knobEl.style.top = ly + 'px';
+      knobEl.style.transform = 'translate(0px, 0px)';
+      anchorEl.classList.add('visible');
+      knobEl.classList.add('visible');
+      el.classList.add('active');
+      v.tx = 0; v.ty = 0;
+      compose(v);
+      watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== activeId) return;
+      var dx = e.clientX - anchorX, dy = e.clientY - anchorY, dist = Math.hypot(dx, dy);
+      var c = Math.min(dist, STICK_MAX_RADIUS_PX);
+      var kx = dist > 0 ? dx / dist * c : 0, ky = dist > 0 ? dy / dist * c : 0;
+      knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+      v.tx = kx / STICK_MAX_RADIUS_PX; v.ty = ky / STICK_MAX_RADIUS_PX;
+      compose(v);
+      // A press that keeps moving is a thumb in use: push the watchdog back.
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
+    });
+    function up(e) { if (e.pointerId === activeId) release(); }
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
+    window.addEventListener('blur', release);
+    return release;
+  }
+  var releaseMove = bindStick(document.getElementById('moveZone'), document.getElementById('moveAnchor'), document.getElementById('moveKnob'), move);
+  var releaseAim = bindStick(document.getElementById('aimZone'), document.getElementById('aimAnchor'), document.getElementById('aimKnob'), aim);
+
+  var MOVE_KEYS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
+  var AIM_KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyI: 'up', KeyK: 'down', KeyJ: 'left', KeyL: 'right' };
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Backquote') { e.preventDefault(); setLabOpen(!labOpen); return; }
+    if (labOpen) { if (e.code === 'Escape') setLabOpen(false); return; }
+    Sound.ensureAudio();
+    if (MOVE_KEYS[e.code]) { kbMove[MOVE_KEYS[e.code]] = true; keyVector(move, kbMove); e.preventDefault(); return; }
+    if (AIM_KEYS[e.code]) { kbAim[AIM_KEYS[e.code]] = true; keyVector(aim, kbAim); e.preventDefault(); return; }
+    if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'over' && !e.repeat) {
+      e.preventDefault();
+      scene.restart();
+    }
+  });
+  window.addEventListener('keyup', function (e) {
+    if (MOVE_KEYS[e.code]) { kbMove[MOVE_KEYS[e.code]] = false; keyVector(move, kbMove); }
+    if (AIM_KEYS[e.code]) { kbAim[AIM_KEYS[e.code]] = false; keyVector(aim, kbAim); }
+  });
+  function releaseKeys() {
+    ['up', 'down', 'left', 'right'].forEach(function (k) { kbMove[k] = false; kbAim[k] = false; });
+    keyVector(move, kbMove); keyVector(aim, kbAim);
+  }
+  window.addEventListener('blur', releaseKeys);
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  // The city on the horizon - descent.html's skyline, the spire you were
+  // flying toward still standing at the end of the street.
+  function makeSkyline() {
+    var out = [], shapes = ['rect', 'rect', 'stepped', 'needle'];
+    for (var i = 0; i < 26; i++) {
+      var x = rand(-260, 260), mid = 1 - Math.min(1, Math.abs(x) / 260);
+      var w = rand(14, 38), h = rand(26, 60) + 70 * mid * Math.random();
+      var win = [];
+      for (var k = 0; k < Math.round(w * h / 160); k++) {
+        win.push({ fx: rand(0.15, 0.85), fy: rand(0.08, 0.92), c: pick(COLOR_WINDOWS), r: rand(0.3, 1.2), p: rand(0, 6) });
+      }
+      out.push({ x: x, w: w, h: h, shape: pick(shapes), edge: pick(COLOR_TOWER_EDGES), windows: win });
+    }
+    out.sort(function (a, b) { return b.h - a.h; });
+    var spireWin = [];
+    for (var j = 0; j < 14; j++) spireWin.push({ fx: 0.5, fy: j / 14 + 0.03, c: 0xf0abfc, r: 0.8, p: j });
+    out.push({ x: 0, w: 22, h: 150, shape: 'needle', edge: 0xf0abfc, windows: spireWin, beacon: true });
+    return out;
+  }
+
+  // ==================================================================
+  // The scene
+  // ==================================================================
+  var scene = null;
+  var labOpen = false;
+
+  function MainScene() { Phaser.Scene.call(this, { key: 'main' }); }
+  MainScene.prototype = Object.create(Phaser.Scene.prototype);
+  MainScene.prototype.constructor = MainScene;
+
+  MainScene.prototype.create = function () {
+    scene = this;
+    this.shakeX = 0; this.shakeY = 0;
+    this.gBack = this.add.graphics().setDepth(0);
+    this.gGround = this.add.graphics().setDepth(1);
+    this.gWorld = this.add.graphics().setDepth(2);
+    this.gFx = this.add.graphics().setDepth(3);
+    this.gHud = this.add.graphics().setDepth(10);
+
+    var ts = { fontFamily: '-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif', fontSize: '12px', color: '#e2e8f0' };
+    this.scoreText = this.add.text(GAME_WIDTH - 10, 8, '', ts).setOrigin(1, 0).setDepth(10).setResolution(2);
+    this.distText = this.add.text(GAME_WIDTH - 10, 24, '', Object.assign({}, ts, { fontSize: '11px', color: '#94a3b8' })).setOrigin(1, 0).setDepth(10).setResolution(2);
+    this.bannerText = this.add.text(CX, 92, '', { fontFamily: ts.fontFamily, fontSize: '13px', fontStyle: 'bold', color: '#fde68a' })
+      .setOrigin(0.5).setDepth(10).setResolution(2);
+    this.bannerText.setLetterSpacing && this.bannerText.setLetterSpacing(2);
+
+    this.best = 0;
+    try { this.best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) {}
+    var self = this;
+    document.getElementById('againBtn').addEventListener('click', function () { self.restart(); });
+    this.restart();
+    var fade = document.getElementById('arrivalFade');
+    if (fade) window.setTimeout(function () { fade.classList.remove('visible'); }, 60);
+  };
+
+  MainScene.prototype.restart = function () {
+    var prev = this.state;
+    var st = this.state = {
+      mode: 'intro',           // 'intro' | 'walking' | 'dying' | 'over'
+      t: 0, modeAge: 0,
+      camD: 0, camX: 0,
+      // You start inside the ship; the intro puts you on the ground.
+      px: 0, pd: DEPTH_PX, vx: 0, vd: 0, elev: 0, emerge: 0,
+      aimX: 0, aimD: 1, firing: false, walkPhase: 0,
+      ship: { x: 0, d: DEPTH_PX },
+      lives: Math.max(1, Math.round(TUNING.LIVES)),
+      score: 0, nextLife: EXTRA_LIFE_EVERY,
+      invuln: 0, deaths: 0,
+      fireCooldown: 0, shotsFired: 0, kills: 0, firesShot: 0, firesLaunched: 0,
+      bestM: 0, block: 0,
+      spawnAcc: TUNING.GROUP_EVERY_START - 5, // the first group five metres out of the ship
+      trickle: 4,
+      fireTimer: 0,
+      enemies: [], bullets: [], fires: [], portals: [], bursts: [], shards: [],
+      buildings: [], lamps: [], nextBuild: [0, 0], nextLamp: 0,
+      banner: null, flash: 0, shake: 0,
+      invincible: prev ? prev.invincible : false,
+      spawning: prev ? prev.spawning : true
+    };
+    st.stars = [];
+    for (var j = 0; j < 140; j++) {
+      var big = Math.random();
+      st.stars.push({ x: rand(-30, GAME_WIDTH + 30), h: Math.pow(Math.random(), 0.7),
+        size: big < 0.06 ? 1.5 : big < 0.25 ? 1.25 : 1, color: pick(STAR_COLORS), tw: rand(0, 6.3), rate: rand(0.5, 1.6) });
+    }
+    st.skyline = makeSkyline();
+    // The towers that stood round the pad as you came down.
+    st.nextBuild = [DEPTH_PX * 0.45, DEPTH_PX * 0.55];
+    st.nextLamp = DEPTH_PX * 0.6;
+    this.buildStreet();
+    document.getElementById('overOverlay').classList.remove('visible');
+  };
+
+  // ---- Projection ----------------------------------------------------
+  MainScene.prototype.zOf = function (d) { return (d - this.state.camD) / DEPTH_PX; };
+  MainScene.prototype.sx = function (x, z) { return CX + this.shakeX + (x - this.state.camX) / z; };
+  MainScene.prototype.sy = function (y, z) { return CY + this.shakeY + (y - CAM_Y) / z; };
+
+  MainScene.prototype.progressM = function () { return this.state.camD / PX_PER_M; };
+  MainScene.prototype.difficulty = function () { return difficultyAt(this.progressM()); };
+
+  // ---- Update --------------------------------------------------------
+  MainScene.prototype.update = function (time, deltaMs) {
+    if (labOpen) return;
+    try {
+      var dt = Math.min(deltaMs / 1000, 0.05) * debug.timeScale;
+      this.step(dt);
+      this.draw();
+    } catch (e) {
+      debug.runtimeErrors.count++;
+      debug.runtimeErrors.last = String(e && e.stack || e);
+      throw e;
+    }
+  };
+
+  MainScene.prototype.step = function (dt) {
+    var s = this.state;
+    s.t += dt;
+    s.modeAge += dt;
+    if (s.banner) { s.banner.age += dt; if (s.banner.age > 2.6) s.banner = null; }
+
+    if (s.mode === 'intro') {
+      this.stepIntro(dt);
+    } else if (s.mode === 'walking') {
+      this.stepPlayer(dt);
+      this.stepCamera(dt);
+      this.stepSpawning(dt);
+      this.stepPortals(dt);
+      this.stepEnemies(dt);
+      this.stepGun(dt);
+      this.stepBullets(dt);
+      this.stepFires(dt);
+      this.checkContact();
+      if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
+    } else if (s.mode === 'dying') {
+      // Everything holds still while you go up - Robotron's freeze.
+      if (s.modeAge >= DEATH_TIME) this.afterDeath();
+    }
+    this.stepCamX(dt);
+    this.buildStreet();
+    this.stepBursts(dt);
+    s.flash = Math.max(0, s.flash - dt * 2.5);
+    s.shake = Math.max(0, s.shake - dt * 3);
+    this.shakeX = s.shake ? rand(-1, 1) * s.shake * 7 : 0;
+    this.shakeY = s.shake ? rand(-1, 1) * s.shake * 7 : 0;
+  };
+
+  // Out of the ship: the engines die, you climb out of the hull - the
+  // yard's boarding, run backwards - and hop down onto the street.
+  var INTRO_JETS_OFF = 0.6, INTRO_OUT = 1.1;
+  var EXIT_X = 34, EXIT_D = DEPTH_PX + 34;
+  MainScene.prototype.stepIntro = function (dt) {
+    var s = this.state, t = s.modeAge;
+    if (t < INTRO_JETS_OFF) { s.emerge = 0; return; }
+    if (t < INTRO_OUT) {
+      s.emerge = smooth((t - INTRO_JETS_OFF) / (INTRO_OUT - INTRO_JETS_OFF));
+      s.px = s.ship.x; s.pd = s.ship.d + 2; s.elev = 15;
+      return;
+    }
+    var u = clamp((t - INTRO_OUT) / (INTRO_TIME - INTRO_OUT), 0, 1);
+    s.emerge = 1;
+    s.px = lerp(s.ship.x, EXIT_X, u);
+    s.pd = lerp(s.ship.d + 2, EXIT_D, u);
+    s.elev = lerp(15, 0, u) + Math.sin(Math.PI * u) * 18;
+    if (t >= INTRO_TIME) {
+      s.elev = 0;
+      this.setMode('walking');
+      s.banner = { text: 'MAIN STREET', age: 0 };
+    }
+  };
+
+  MainScene.prototype.setMode = function (m) { this.state.mode = m; this.state.modeAge = 0; };
+
+  MainScene.prototype.stepPlayer = function (dt) {
+    var s = this.state;
+    var k = 1 - Math.exp(-WALK_RESPONSE * dt);
+    // Up on the stick is up the street, away from you.
+    s.vx += (move.x * TUNING.WALK_SPEED - s.vx) * k;
+    s.vd += (-move.y * TUNING.WALK_SPEED - s.vd) * k;
+    // Come to rest, rather than creep on a tail that never quite ends.
+    if (!move.x && Math.abs(s.vx) < 3) s.vx = 0;
+    if (!move.y && Math.abs(s.vd) < 3) s.vd = 0;
+    var nx = s.px + s.vx * dt, nd = s.pd + s.vd * dt;
+    s.px = clamp(nx, -STREET_HALF, STREET_HALF);
+    var dMin = s.camD + PLAYER_Z_MIN * DEPTH_PX;
+    s.pd = Math.max(nd, dMin);
+    if (s.px !== nx) s.vx = 0;
+    if (s.pd !== nd) s.vd = 0;
+    var sp = Math.hypot(s.vx, s.vd);
+    s.walkPhase += sp * dt * 0.09;
+    // Aim: the right stick's direction, kept after it is let go so the
+    // gun keeps pointing where you last fired.
+    var am = Math.hypot(aim.x, aim.y);
+    s.firing = am >= AIM_DEADZONE;
+    if (s.firing) { s.aimX = aim.x / am; s.aimD = -aim.y / am; }
+    else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; }
+  };
+
+  // The camera only ever moves forward, and only because you pushed it:
+  // walk past PLAYER_Z_PUSH and it comes with you. That push is the
+  // progress the difficulty is measured by.
+  MainScene.prototype.stepCamera = function () {
+    var s = this.state, want = s.pd - PLAYER_Z_PUSH * DEPTH_PX;
+    if (want > s.camD) s.camD = want;
+    var m = this.progressM();
+    if (m > s.bestM) {
+      var add = m - s.bestM;
+      s.bestM = m;
+      s.spawnAcc += add;
+    }
+    var block = Math.floor(m / BLOCK_M);
+    if (block > s.block) { s.block = block; s.banner = { text: 'BLOCK ' + (block + 1), age: 0 }; }
+  };
+
+  MainScene.prototype.stepCamX = function (dt) {
+    var s = this.state;
+    s.camX += (s.px * CAM_X_FOLLOW - s.camX) * (1 - Math.exp(-5 * dt));
+  };
+
+  // ---- The street ------------------------------------------------------
+  // Towers down both sides, built ahead of you as you go and dropped once
+  // they are behind the camera. descent.html's towers: flat, dark, a
+  // neon edge and a grid of windows.
+  MainScene.prototype.buildStreet = function () {
+    var s = this.state, far = s.camD + Z_FAR * DEPTH_PX;
+    for (var side = 0; side < 2; side++) {
+      var sg = side ? 1 : -1;
+      while (s.nextBuild[side] < far) {
+        var w = rand(60, 130);
+        var top = rand(-360, -60);
+        var cols = Math.max(2, Math.round(w / 18)), rows = Math.max(3, Math.round((GROUND_Y - top) / 22));
+        var lit = [];
+        for (var i = 0; i < cols * rows; i++) lit.push(Math.random() < 0.35 ? Math.floor(Math.random() * COLOR_WINDOWS.length) : -1);
+        s.buildings.push({
+          kind: 'building', side: sg, x: sg * (FACADE_X + w / 2 + rand(0, 40)), w: w, top: top, d: s.nextBuild[side],
+          shape: pick(['rect', 'rect', 'stepped', 'needle']), edge: pick(COLOR_TOWER_EDGES),
+          cols: cols, rows: rows, lit: lit, glow: 0
+        });
+        // Now and then a cross street: a wider gap.
+        s.nextBuild[side] += Math.random() < 0.12 ? rand(320, 420) : rand(110, 210);
+      }
+    }
+    while (s.nextLamp < far) {
+      s.lamps.push({ kind: 'lamp', x: -STREET_HALF - 18, d: s.nextLamp });
+      s.lamps.push({ kind: 'lamp', x: STREET_HALF + 18, d: s.nextLamp });
+      s.nextLamp += 300;
+    }
+    var gone = s.camD + Z_NEAR * DEPTH_PX;
+    s.buildings = s.buildings.filter(function (o) { return o.d > gone; });
+    s.lamps = s.lamps.filter(function (o) { return o.d > gone; });
+  };
+
+  // ---- Spawning ------------------------------------------------------
+  // Groups come with distance walked; stragglers come with time, but at
+  // the rate the distance has set - so standing still is never a way to
+  // make it harder, nor a way to make it stop.
+  MainScene.prototype.groupEvery = function () { return lerp(TUNING.GROUP_EVERY_START, TUNING.GROUP_EVERY_PEAK, this.difficulty()); };
+  MainScene.prototype.maxAlive = function () { return Math.round(lerp(TUNING.MAX_ALIVE_START, TUNING.MAX_ALIVE_PEAK, this.difficulty())); };
+  MainScene.prototype.alive = function () { return this.state.enemies.length + this.state.portals.length; };
+
+  MainScene.prototype.stepSpawning = function (dt) {
+    var s = this.state, D = this.difficulty();
+    if (!s.spawning) return;
+    var every = Math.max(2, this.groupEvery());
+    while (s.spawnAcc >= every) {
+      s.spawnAcc -= every;
+      var n = Math.round(lerp(TUNING.GROUP_SIZE_START, TUNING.GROUP_SIZE_PEAK, D) + rand(-0.5, 0.5));
+      for (var i = 0; i < n && this.alive() < this.maxAlive(); i++) this.spawnEnemy();
+    }
+    s.trickle -= dt;
+    if (s.trickle <= 0) {
+      s.trickle = lerp(TUNING.TRICKLE_START, TUNING.TRICKLE_PEAK, D) * rand(0.8, 1.25);
+      if (this.alive() < Math.max(2, this.maxAlive() * 0.6)) this.spawnEnemy();
+    }
+    // Fire from the buildings, once you are far enough in.
+    var m = this.progressM();
+    if (m >= TUNING.FIRE_START_M) {
+      var F = fireDifficultyAt(m);
+      s.fireTimer -= dt;
+      var maxFires = Math.round(lerp(TUNING.FIRE_MAX_START, TUNING.FIRE_MAX_PEAK, F));
+      if (s.fireTimer <= 0) {
+        s.fireTimer = lerp(TUNING.FIRE_EVERY_START, TUNING.FIRE_EVERY_PEAK, F) * rand(0.7, 1.3);
+        if (s.fires.length < maxFires) this.launchFire();
+      }
+    }
+  };
+
+  MainScene.prototype.pickKind = function (D) {
+    var r = Math.random();
+    var brute = D >= BRUTE_FROM ? lerp(0.06, 0.14, (D - BRUTE_FROM) / (1 - BRUTE_FROM)) : 0;
+    var dasher = D >= DASHER_FROM ? lerp(0.12, 0.32, (D - DASHER_FROM) / (1 - DASHER_FROM)) : 0;
+    return r < brute ? 'brute' : r < brute + dasher ? 'dasher' : 'grunt';
+  };
+
+  // Where it comes from: far up the street, out of a doorway at the
+  // side, or - later on - from behind you. The near ones show a portal
+  // first, so nothing appears on top of you unannounced.
+  MainScene.prototype.spawnEnemy = function (kind, from) {
+    var s = this.state, D = this.difficulty();
+    kind = kind || this.pickKind(D);
+    if (!from) {
+      var r = Math.random();
+      var side = D >= SIDE_FROM ? lerp(0.25, 0.45, D) : 0;
+      var behind = D >= BEHIND_FROM ? lerp(0.08, 0.16, (D - BEHIND_FROM) / (1 - BEHIND_FROM)) : 0;
+      from = r < behind ? 'behind' : r < behind + side ? 'side' : 'ahead';
+    }
+    var x, d;
+    for (var tries = 0; tries < 6; tries++) {
+      if (from === 'ahead') { x = rand(-140, 140); d = s.camD + DEPTH_PX * rand(3, 4.6); }
+      else if (from === 'side') { x = (Math.random() < 0.5 ? -1 : 1) * (FACADE_X - 8); d = s.camD + DEPTH_PX * rand(1.1, 3.2); }
+      else { x = rand(-140, 140); d = s.camD + DEPTH_PX * 0.62; }
+      if (Math.hypot(x - s.px, d - s.pd) > 150) break;
+      from = 'ahead';
+    }
+    if (from === 'ahead') return this.addEnemy(kind, x, d);
+    s.portals.push({ kind: 'portal', enemy: kind, x: x, d: d, age: 0, color: ENEMY_KINDS[kind].colors[0] });
+    Sound.portal();
+    return null;
+  };
+
+  MainScene.prototype.addEnemy = function (kind, x, d) {
+    var K = ENEMY_KINDS[kind];
+    var e = {
+      kind: 'enemy', type: kind, x: x, d: d, r: K.r, h: K.h,
+      hp: kind === 'brute' ? Math.round(TUNING.BRUTE_HP) : K.hp,
+      color: pick(K.colors), age: rand(0, 3), flash: 0, weave: rand(0, 6.3), push: 0, pushX: 0, pushD: 0
+    };
+    this.state.enemies.push(e);
+    return e;
+  };
+
+  MainScene.prototype.stepPortals = function (dt) {
+    var s = this.state;
+    for (var i = s.portals.length - 1; i >= 0; i--) {
+      var p = s.portals[i];
+      p.age += dt;
+      if (p.age >= PORTAL_TIME) { s.portals.splice(i, 1); this.addEnemy(p.enemy, p.x, p.d); }
+    }
+  };
+
+  MainScene.prototype.enemySpeed = function (e) {
+    return lerp(TUNING.GRUNT_SPEED_START, TUNING.GRUNT_SPEED_PEAK, this.difficulty()) * ENEMY_KINDS[e.type].speed;
+  };
+
+  // They come straight at you - Robotron's grunts - the dashers weaving
+  // as they come, the brutes slow and soaking up shots. A little push
+  // apart keeps a crowd from collapsing into one shape.
+  MainScene.prototype.stepEnemies = function (dt) {
+    var s = this.state, es = s.enemies;
+    for (var i = 0; i < es.length; i++) {
+      var e = es[i];
+      e.age += dt;
+      e.flash = Math.max(0, e.flash - dt * 6);
+      var dx = s.px - e.x, dd = s.pd - e.d, dist = Math.hypot(dx, dd) || 1;
+      var ux = dx / dist, ud = dd / dist, v = this.enemySpeed(e);
+      if (e.type === 'dasher') {
+        var w = Math.sin(e.age * 4 + e.weave) * 0.9;
+        ux += -ud * w; ud += (dx / dist) * w;
+        var m = Math.hypot(ux, ud) || 1; ux /= m; ud /= m;
+      }
+      // Grunts go in steps, the way the originals did.
+      if (e.type === 'grunt') v *= 0.55 + 0.9 * Math.max(0, Math.sin(e.age * 9 + e.weave));
+      e.x += ux * v * dt; e.d += ud * v * dt;
+      if (e.push > 0) {
+        e.x += e.pushX * e.push * dt; e.d += e.pushD * e.push * dt;
+        e.push = Math.max(0, e.push - 600 * dt);
+      }
+      e.x = clamp(e.x, -FACADE_X + 6, FACADE_X - 6);
+      e.d = Math.max(e.d, s.camD + DEPTH_PX * 0.5);
+    }
+    for (var a = 0; a < es.length; a++) {
+      for (var b = a + 1; b < es.length; b++) {
+        var p = es[a], q = es[b], ddx = q.x - p.x, ddd = q.d - p.d, md = (p.r + q.r) * 0.9;
+        var dd2 = ddx * ddx + ddd * ddd;
+        if (dd2 >= md * md || dd2 < 1e-6) continue;
+        var dl = Math.sqrt(dd2), push = (md - dl) / 2;
+        ddx /= dl; ddd /= dl;
+        p.x -= ddx * push; p.d -= ddd * push;
+        q.x += ddx * push; q.d += ddd * push;
+      }
+    }
+  };
+
+  MainScene.prototype.stepGun = function (dt) {
+    var s = this.state;
+    s.fireCooldown = Math.max(0, s.fireCooldown - dt);
+    if (!s.firing || s.fireCooldown > 0) return;
+    s.fireCooldown = TUNING.FIRE_INTERVAL;
+    var v = TUNING.BULLET_SPEED;
+    s.bullets.push({ kind: 'bullet', x: s.px + s.aimX * 12, d: s.pd + s.aimD * 12, vx: s.aimX * v, vd: s.aimD * v, travelled: 0 });
+    s.shotsFired++;
+    s.muzzle = 0.05;
+    Sound.shot();
+  };
+
+  MainScene.prototype.stepBullets = function (dt) {
+    var s = this.state;
+    if (s.muzzle) s.muzzle = Math.max(0, s.muzzle - dt);
+    for (var i = s.bullets.length - 1; i >= 0; i--) {
+      var b = s.bullets[i];
+      b.x += b.vx * dt; b.d += b.vd * dt;
+      b.travelled += TUNING.BULLET_SPEED * dt;
+      var dead = b.travelled > BULLET_RANGE || b.d < s.camD + DEPTH_PX * Z_NEAR;
+      if (!dead && Math.abs(b.x) > FACADE_X) {
+        // The building fronts stop them.
+        this.burst(b.x, BULLET_Y, b.d, COLOR_BULLET, true);
+        dead = true;
+      }
+      if (!dead) {
+        for (var j = 0; j < s.enemies.length; j++) {
+          var e = s.enemies[j];
+          if (Math.hypot(e.x - b.x, e.d - b.d) < e.r + BULLET_HIT) { this.hitEnemy(e, b); dead = true; break; }
+        }
+      }
+      if (!dead) {
+        // Fire coming down can be shot once it is low enough to reach.
+        for (var k = 0; k < s.fires.length; k++) {
+          var f = s.fires[k];
+          if (f.stage !== 'fly') continue;
+          if (Math.abs(f.y - BULLET_Y) < 16 && Math.hypot(f.x - b.x, f.d - b.d) < FIRE_R + BULLET_HIT + 4) {
+            f.dead = true; dead = true;
+            s.firesShot++;
+            this.addScore(SCORE.fire);
+            this.burst(f.x, f.y, f.d, COLOR_FIRE);
+            Sound.pop();
+            break;
+          }
+        }
+      }
+      if (dead) s.bullets.splice(i, 1);
+    }
+    s.fires = s.fires.filter(function (f) { return !f.dead; });
+  };
+
+  MainScene.prototype.hitEnemy = function (e, b) {
+    e.hp--;
+    e.flash = 1;
+    if (e.type === 'brute' && b) {
+      // A brute is knocked back by every shot it takes.
+      var m = Math.hypot(b.vx, b.vd) || 1;
+      e.pushX = b.vx / m; e.pushD = b.vd / m; e.push = 140;
+    }
+    if (e.hp > 0) { Sound.thud(); return; }
+    this.killEnemy(e, true);
+  };
+
+  MainScene.prototype.killEnemy = function (e, scored) {
+    var s = this.state, i = s.enemies.indexOf(e);
+    if (i >= 0) s.enemies.splice(i, 1);
+    if (scored) { s.kills++; this.addScore(SCORE[e.type]); }
+    this.burst(e.x, GROUND_Y - e.h / 2, e.d, e.color);
+    Sound.pop();
+  };
+
+  MainScene.prototype.addScore = function (n) {
+    var s = this.state;
+    s.score += n;
+    while (s.score >= s.nextLife) {
+      s.nextLife += EXTRA_LIFE_EVERY;
+      s.lives++;
+      s.banner = { text: 'EXTRA LIFE', age: 0 };
+      Sound.life();
+    }
+  };
+
+  // ---- Fire from the buildings ---------------------------------------
+  // A window high up a tower ahead glows, then throws a ball of fire at
+  // where you are standing. It comes down slowly, in a straight line,
+  // and a ring on the ground shows where it will land - getting
+  // brighter as it gets closer. Move off the ring. Low enough, it can
+  // be shot.
+  MainScene.prototype.launchFire = function (opts) {
+    var s = this.state;
+    var lo = s.camD + DEPTH_PX * 1.6, hi = s.camD + DEPTH_PX * 4;
+    var towers = s.buildings.filter(function (o) { return o.d > lo && o.d < hi; });
+    var o = opts && opts.tower || (towers.length ? pick(towers) : null);
+    if (!o && !(opts && opts.x != null)) return null;
+    var F = fireDifficultyAt(this.progressM());
+    var wx = opts && opts.x != null ? opts.x : o.x - o.side * o.w * rand(0.1, 0.35);
+    var wy = opts && opts.y != null ? opts.y : rand(Math.max(o.top + 20, -260), GROUND_Y - 130);
+    var wd = opts && opts.d != null ? opts.d : o.d;
+    var f = {
+      kind: 'fire', stage: 'charge', age: 0, tower: o || null,
+      x0: wx, y0: wy, d0: wd, x: wx, y: wy, d: wd,
+      tx: 0, td: 0,
+      flight: opts && opts.flight || lerp(TUNING.FIRE_FLIGHT_START, TUNING.FIRE_FLIGHT_PEAK, F),
+      charge: opts && opts.charge != null ? opts.charge : FIRE_CHARGE,
+      aimAt: opts && opts.target || null
+    };
+    s.fires.push(f);
+    s.firesLaunched++;
+    return f;
+  };
+
+  MainScene.prototype.stepFires = function (dt) {
+    var s = this.state;
+    for (var i = s.fires.length - 1; i >= 0; i--) {
+      var f = s.fires[i];
+      f.age += dt;
+      if (f.stage === 'charge') {
+        if (f.age < f.charge) continue;
+        // Thrown at where you are now, give or take a step.
+        f.stage = 'fly'; f.age = 0;
+        if (f.aimAt) { f.tx = f.aimAt.x; f.td = f.aimAt.d; }
+        else { f.tx = clamp(s.px + rand(-18, 18), -STREET_HALF, STREET_HALF); f.td = s.pd + rand(-18, 18); }
+        Sound.whoosh();
+        continue;
+      }
+      var u = clamp(f.age / f.flight, 0, 1);
+      f.x = lerp(f.x0, f.tx, u); f.y = lerp(f.y0, GROUND_Y - 4, u); f.d = lerp(f.d0, f.td, u);
+      // Walking into it on its way down is as bad as being under it.
+      if (s.mode === 'walking' && f.y > GROUND_Y - PLAYER_H && Math.hypot(f.x - s.px, f.d - s.pd) < PLAYER_R + FIRE_R * 0.6) {
+        this.impact(f); s.fires.splice(i, 1); continue;
+      }
+      if (u >= 1) { this.impact(f); s.fires.splice(i, 1); }
+    }
+  };
+
+  MainScene.prototype.impact = function (f) {
+    var s = this.state, R = TUNING.FIRE_SPLASH;
+    this.burst(f.tx, GROUND_Y - 6, f.td, COLOR_FIRE, false, R);
+    s.splashes = (s.splashes || 0) + 1;
+    Sound.boom();
+    s.shake = Math.max(s.shake, 0.25);
+    // It takes out aliens caught in it too - no points for those.
+    for (var i = s.enemies.length - 1; i >= 0; i--) {
+      var e = s.enemies[i];
+      if (Math.hypot(e.x - f.tx, e.d - f.td) < R + e.r) this.killEnemy(e, false);
+    }
+    if (s.mode === 'walking' && Math.hypot(s.px - f.tx, s.pd - f.td) < R + PLAYER_R) this.die('fire');
+  };
+
+  // ---- Dying -----------------------------------------------------------
+  MainScene.prototype.checkContact = function () {
+    var s = this.state;
+    if (s.mode !== 'walking') return;
+    for (var i = 0; i < s.enemies.length; i++) {
+      var e = s.enemies[i];
+      if (Math.hypot(e.x - s.px, e.d - s.pd) < e.r + PLAYER_R) { this.die('contact'); return; }
+    }
+  };
+
+  MainScene.prototype.die = function (cause) {
+    var s = this.state;
+    if (s.invuln > 0 || s.invincible || s.mode !== 'walking') return false;
+    s.lastDeath = cause;
+    s.deaths++;
+    s.lives--;
+    this.setMode('dying');
+    s.flash = 1; s.shake = 1;
+    this.burst(s.px, GROUND_Y - PLAYER_H / 2, s.pd, COLOR_FLAME_INNER, false, 40);
+    // Shards of you, flung out flat across the screen.
+    var z = this.zOf(s.pd), x = this.sx(s.px, z), y = this.sy(GROUND_Y - PLAYER_H / 2, z);
+    for (var i = 0; i < 18; i++) {
+      var a = rand(0, Math.PI * 2), v = rand(60, 220);
+      s.shards.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: a, len: rand(4, 10), age: 0, life: rand(0.7, 1.3) });
+    }
+    Sound.death();
+    return true;
+  };
+
+  MainScene.prototype.afterDeath = function () {
+    var s = this.state;
+    if (s.lives <= 0) return this.gameOver();
+    // A fresh life where you fell: the aliens nearest you are cleared
+    // and the fire in the air put out, so you never come back into a
+    // death you could do nothing about.
+    var self = this;
+    s.enemies.slice().forEach(function (e) {
+      if (Math.hypot(e.x - s.px, e.d - s.pd) < RESPAWN_CLEAR) self.killEnemy(e, false);
+    });
+    s.portals = s.portals.filter(function (p) { return Math.hypot(p.x - s.px, p.d - s.pd) >= RESPAWN_CLEAR; });
+    s.fires.length = 0;
+    s.bullets.length = 0;
+    s.vx = s.vd = 0;
+    s.invuln = INVULN_TIME;
+    this.setMode('walking');
+  };
+
+  MainScene.prototype.gameOver = function () {
+    var s = this.state;
+    this.setMode('over');
+    var m = Math.floor(s.bestM);
+    if (s.score > this.best) {
+      this.best = s.score;
+      try { localStorage.setItem(BEST_KEY, String(s.score)); } catch (e) {}
+    }
+    document.getElementById('overTitle').textContent = 'Overrun';
+    document.getElementById('overLine').textContent = m.toLocaleString() + ' m down Main Street · score ' +
+      s.score.toLocaleString() + ' · best ' + this.best.toLocaleString() + runLine();
+    setTimeout(function () {
+      if (scene && scene.state === s && s.mode === 'over') document.getElementById('overOverlay').classList.add('visible');
+    }, 700);
+  };
+
+  // ---- Effects ---------------------------------------------------------
+  MainScene.prototype.burst = function (x, y, d, color, small, size) {
+    this.state.bursts.push({ kind: 'burst', x: x, y: y, d: d, color: color, small: !!small, r: size || (small ? 6 : 22), age: 0, life: small ? 0.25 : 0.5, spin: rand(0, 6.3) });
+  };
+  MainScene.prototype.stepBursts = function (dt) {
+    var s = this.state;
+    for (var i = s.bursts.length - 1; i >= 0; i--) if ((s.bursts[i].age += dt) > s.bursts[i].life) s.bursts.splice(i, 1);
+    for (var j = s.shards.length - 1; j >= 0; j--) {
+      var p = s.shards[j];
+      p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += dt * 6;
+      if (p.age > p.life) s.shards.splice(j, 1);
+    }
+  };
+
+  // ==================================================================
+  // Drawing
+  // ==================================================================
+  function depthAlpha(z) {
+    if (z < Z_NEAR) return 0;
+    if (z > Z_FAR - Z_FADE) return clamp((Z_FAR - z) / Z_FADE, 0, 1);
+    return 1;
+  }
+
+  MainScene.prototype.draw = function () {
+    var s = this.state;
+    this.gBack.clear(); this.gGround.clear(); this.gWorld.clear(); this.gFx.clear(); this.gHud.clear();
+    this.drawSky();
+    this.drawGround();
+    this.drawGroundMarks();
+
+    var self = this, items = [];
+    function add(list) { for (var i = 0; i < list.length; i++) { var z = self.zOf(list[i].d); if (z >= Z_NEAR && z < Z_FAR) items.push({ o: list[i], z: z }); } }
+    add(s.buildings); add(s.lamps); add(s.enemies); add(s.bullets); add(s.fires); add(s.bursts);
+    items.push({ o: { kind: 'ship' }, z: this.zOf(s.ship.d) });
+    if (s.mode !== 'over' && !(s.mode === 'dying') && !(s.mode === 'intro' && s.emerge <= 0)) items.push({ o: { kind: 'player' }, z: this.zOf(s.pd) });
+    items.sort(function (a, b) { return b.z - a.z; });
+    var g = this.gWorld;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i], o = it.o, z = it.z;
+      if (o.kind === 'building') this.drawTower(g, o, z);
+      else if (o.kind === 'lamp') this.drawLamp(g, o, z);
+      else if (o.kind === 'enemy') this.drawEnemy(g, o, z);
+      else if (o.kind === 'bullet') this.drawBullet(g, o, z);
+      else if (o.kind === 'fire') this.drawFire(g, o, z);
+      else if (o.kind === 'burst') this.drawBurst(g, o, z);
+      else if (o.kind === 'ship') this.drawShip(g, z);
+      else if (o.kind === 'player') this.drawPlayer(g, z);
+    }
+    this.drawFx();
+    this.drawHud();
+  };
+
+  MainScene.prototype.horizon = function () { return this.sy(GROUND_Y, 60); };
+
+  // The night sky the descent ended in: stars, the violet haze, and the
+  // city's skyline round the spire - which grows as you walk toward it.
+  MainScene.prototype.drawSky = function () {
+    var s = this.state, g = this.gBack, horizon = this.horizon(), t = s.t;
+    var bands = 10, h = (horizon + 20) / bands;
+    for (var i = 0; i < bands; i++) {
+      g.fillStyle(mixColor(COLOR_SKY_TOP, COLOR_SKY_HORIZON, i / (bands - 1)), 1);
+      g.fillRect(-20, -20 + i * h, GAME_WIDTH + 40, h + 1);
+    }
+    var dx = -s.camX * 0.02;
+    for (var k = 0; k < 9; k++) {
+      var f = k / 8;
+      g.fillStyle(mixColor(0x7c3aed, 0xdb2777, f), 0.055);
+      g.fillEllipse(lerp(-60, GAME_WIDTH + 40, f) + dx * 0.5, lerp(horizon - 20, 10, f) + Math.sin(f * 7) * 12, 190, 70);
+    }
+    for (var j = 0; j < s.stars.length; j++) {
+      var p = s.stars[j], x = p.x + dx, y = horizon - 6 - p.h * (horizon - 6 + 10);
+      var a = clamp((0.4 + 0.6 * p.h) * (0.55 + 0.45 * Math.sin(t * p.rate + p.tw)), 0, 1);
+      if (p.size > 1) { g.fillStyle(p.color, a * 0.1); g.fillCircle(x, y, p.size * 2); }
+      g.fillStyle(p.color, a);
+      g.fillCircle(x, y, p.size * 0.7);
+    }
+    // The skyline at the far end of the street.
+    var scale = 1.8 + 0.8 * smooth(this.progressM() / Math.max(1, TUNING.RAMP_M * 1.5));
+    var cx = CX - s.camX * 0.05, sk = s.skyline;
+    for (var n = 0; n < sk.length; n++) {
+      var b = sk[n], bx = cx + b.x * scale, w = b.w * scale, bh = b.h * scale;
+      g.fillStyle(0x140b2a, 1);
+      g.fillRect(bx - w / 2, horizon - bh, w, bh + 1);
+      if (b.shape === 'stepped') g.fillRect(bx - w * 0.3, horizon - bh * 1.18, w * 0.6, bh * 0.18 + 1);
+      if (b.shape === 'needle') g.fillTriangle(bx - w * 0.12, horizon - bh, bx + w * 0.12, horizon - bh, bx, horizon - bh - bh * 0.35);
+      g.lineStyle(1, b.edge, 0.55);
+      g.strokeRect(bx - w / 2, horizon - bh, w, bh);
+      for (var q = 0; q < b.windows.length; q++) {
+        var wn = b.windows[q], ws = Math.max(1, 1.2 * scale * 0.6);
+        g.fillStyle(wn.c, 0.55 + 0.35 * Math.sin(t * wn.r + wn.p));
+        g.fillRect(bx - w / 2 + wn.fx * w, horizon - bh + wn.fy * bh, ws, ws);
+      }
+      if (b.beacon) {
+        var top = horizon - bh - bh * 0.35, pulse = 0.5 + 0.5 * Math.sin(t * 3);
+        g.fillStyle(0xf0abfc, 0.2 + 0.3 * pulse);
+        g.fillCircle(bx, top, 5 + 6 * pulse);
+        g.fillStyle(0xffffff, 1);
+        g.fillCircle(bx, top, 1.6);
+      }
+    }
+  };
+
+  // The street: the city floor of the descent, with bands across it at
+  // fixed depths (so it visibly scrolls as you walk), pavements either
+  // side, glowing kerbs and a dashed centre line, all running to the
+  // vanishing point.
+  MainScene.prototype.drawGround = function () {
+    var s = this.state, g = this.gBack, G = GROUND_Y, zFar = 60, horizon = this.horizon(), self = this;
+    g.fillStyle(COLOR_FLOOR, 1);
+    g.fillRect(-20, horizon, GAME_WIDTH + 40, GAME_HEIGHT + 20 - horizon);
+    var band = 120, zl = 0.25;
+    g.fillStyle(COLOR_FLOOR_BAND, 1);
+    var first = Math.floor(s.camD / (band * 2)) * band * 2;
+    for (var d = first; d < s.camD + zFar * DEPTH_PX * 0.4; d += band * 2) {
+      var z0 = Math.max(zl, this.zOf(d)), z1 = this.zOf(d + band);
+      if (z1 <= z0) continue;
+      var y0 = Math.min(this.sy(G, z0), GAME_HEIGHT + 20), y1 = this.sy(G, z1);
+      if (y1 > GAME_HEIGHT + 20) continue;
+      g.fillRect(-20, y1, GAME_WIDTH + 40, y0 - y1);
+    }
+    // Pavements.
+    function quad(x0, x1, color, a) {
+      g.fillStyle(color, a);
+      g.beginPath();
+      g.moveTo(self.sx(x0, zl), self.sy(G, zl)); g.lineTo(self.sx(x0, zFar), self.sy(G, zFar));
+      g.lineTo(self.sx(x1, zFar), self.sy(G, zFar)); g.lineTo(self.sx(x1, zl), self.sy(G, zl));
+      g.closePath(); g.fillPath();
+    }
+    quad(-900, -STREET_HALF - 6, COLOR_WALK, 0.9);
+    quad(STREET_HALF + 6, 900, COLOR_WALK, 0.9);
+    // Faint grid lines down the street, as in the city.
+    g.lineStyle(1, COLOR_GRID, 0.22);
+    for (var k = -1; k <= 1; k += 2) {
+      for (var gx = 80; gx < STREET_HALF; gx += 80) {
+        g.lineBetween(this.sx(k * gx, zl), this.sy(G, zl), this.sx(k * gx, zFar), this.sy(G, zFar));
+      }
+    }
+    // Kerbs.
+    g.lineStyle(1.5, COLOR_CURB, 0.75);
+    g.lineBetween(this.sx(-STREET_HALF - 6, zl), this.sy(G, zl), this.sx(-STREET_HALF - 6, zFar), this.sy(G, zFar));
+    g.lineBetween(this.sx(STREET_HALF + 6, zl), this.sy(G, zl), this.sx(STREET_HALF + 6, zFar), this.sy(G, zFar));
+    // The centre line: dashes at fixed depths.
+    var dash = 70, gap = 90, period = dash + gap;
+    g.lineStyle(2, 0xf0abfc, 0.5);
+    for (var dd = Math.floor(s.camD / period) * period; dd < s.camD + 20 * DEPTH_PX; dd += period) {
+      var za = Math.max(zl, this.zOf(dd)), zb = this.zOf(dd + dash);
+      if (zb <= za) continue;
+      g.lineBetween(this.sx(0, za), this.sy(G, za), this.sx(0, zb), this.sy(G, zb));
+    }
+    // A haze where the street meets the sky.
+    g.fillStyle(0x7c3aed, 0.12);
+    g.fillRect(-20, horizon - 2, GAME_WIDTH + 40, 6);
+  };
+
+  // Flat on the street, under everything standing on it: the pad you
+  // landed on, doorway portals, where the fire will land, shadows.
+  MainScene.prototype.drawGroundMarks = function () {
+    var s = this.state, g = this.gGround, G = GROUND_Y, t = s.t;
+    // The pad.
+    var zp = this.zOf(s.ship.d);
+    if (zp > Z_NEAR) {
+      var cx = this.sx(s.ship.x, zp), cy = this.sy(G, zp), w = 150 / zp, h = w * 0.16;
+      for (var i = 0; i < 3; i++) {
+        var kk = 1 - i * 0.28, pulse = 0.5 + 0.5 * Math.sin(t * 3 - i);
+        g.lineStyle(2, i === 0 ? 0xf0abfc : 0x67e8f9, 0.4 + 0.4 * pulse);
+        g.strokeEllipse(cx, cy, w * kk, h * kk);
+      }
+      g.fillStyle(0xf0abfc, 0.15);
+      g.fillEllipse(cx, cy, w * 0.5, h * 0.5);
+    }
+    // Portals: a ring opening on the ground in the alien's colour.
+    for (var p = 0; p < s.portals.length; p++) {
+      var po = s.portals[p], zz = this.zOf(po.d);
+      if (zz < Z_NEAR) continue;
+      var u = po.age / PORTAL_TIME, r = (8 + 22 * u) / zz;
+      g.lineStyle(Math.max(1, 2 / zz), po.color, 0.4 + 0.6 * u);
+      g.strokeEllipse(this.sx(po.x, zz), this.sy(G, zz), r * 2, r * 0.6);
+      g.fillStyle(po.color, 0.25 * u);
+      g.fillEllipse(this.sx(po.x, zz), this.sy(G, zz), r * 1.2, r * 0.36);
+      g.lineStyle(Math.max(1, 1.5 / zz), po.color, 0.5 * u);
+      g.lineBetween(this.sx(po.x, zz), this.sy(G, zz), this.sx(po.x, zz), this.sy(G - 40 * u, zz));
+    }
+    // Where the fire will come down: a ring the size of its splash,
+    // brightening and filling as it falls.
+    for (var f = 0; f < s.fires.length; f++) {
+      var fi = s.fires[f];
+      if (fi.stage !== 'fly') continue;
+      var zt = this.zOf(fi.td);
+      if (zt < Z_NEAR) continue;
+      var uu = clamp(fi.age / fi.flight, 0, 1), R = TUNING.FIRE_SPLASH / zt;
+      var tx = this.sx(fi.tx, zt), ty = this.sy(G, zt);
+      g.fillStyle(COLOR_FIRE, 0.08 + 0.25 * uu);
+      g.fillEllipse(tx, ty, R * 2 * uu, R * 0.6 * uu);
+      g.lineStyle(Math.max(1, 2 / zt), COLOR_FIRE, 0.35 + 0.55 * uu * (0.7 + 0.3 * Math.sin(t * 20)));
+      g.strokeEllipse(tx, ty, R * 2, R * 0.6);
+      // Its shadow on the street, under the ball itself.
+      var zf = this.zOf(fi.d);
+      if (zf > Z_NEAR) {
+        g.fillStyle(0x000000, 0.35 * uu);
+        g.fillEllipse(this.sx(fi.x, zf), this.sy(G, zf), 16 / zf, 5 / zf);
+      }
+    }
+    // Shadows under you and the aliens.
+    var self = this;
+    function shadow(x, d, r) {
+      var z = self.zOf(d);
+      if (z < Z_NEAR) return;
+      g.fillStyle(0x000000, 0.4);
+      g.fillEllipse(self.sx(x, z), self.sy(G, z), r * 2.4 / z, r * 0.7 / z);
+    }
+    s.enemies.forEach(function (e) { shadow(e.x, e.d, e.r); });
+    if (s.mode === 'walking' || (s.mode === 'intro' && s.emerge >= 1)) shadow(s.px, s.pd, PLAYER_R);
+  };
+
+  MainScene.prototype.drawTower = function (g, o, z) {
+    var a = depthAlpha(z) * (z < 0.6 ? clamp((z - Z_NEAR) / 0.25, 0, 1) : 1);
+    if (a <= 0) return;
+    var G = GROUND_Y, x = this.sx(o.x, z), hw = o.w / 2 / z;
+    var top = this.sy(o.top, z), base = this.sy(G + 10, z);
+    g.fillStyle(0x120a24, a);
+    g.fillRect(x - hw, top, hw * 2, base - top);
+    if (o.shape === 'stepped') {
+      g.fillRect(x - hw * 0.6, top - hw * 0.7, hw * 1.2, hw * 0.7 + 1);
+      g.lineStyle(Math.max(1, 1.4 / z), o.edge, a * 0.8);
+      g.strokeRect(x - hw * 0.6, top - hw * 0.7, hw * 1.2, hw * 0.7);
+    } else if (o.shape === 'needle') {
+      g.lineStyle(Math.max(1, 1.4 / z), o.edge, a * 0.8);
+      g.lineBetween(x, top, x, top - hw * 1.6);
+      g.fillStyle(o.edge, a * (0.5 + 0.5 * Math.sin(this.state.t * 4 + o.x)));
+      g.fillCircle(x, top - hw * 1.6, Math.max(1, 1.5 / z));
+    }
+    g.lineStyle(Math.max(1, 1.6 / z), o.edge, a * 0.75);
+    g.strokeRect(x - hw, top, hw * 2, base - top);
+    var cw = hw * 2 / o.cols, rh = (base - top) / o.rows, ws = Math.max(1, Math.min(cw, rh) * 0.35);
+    if (ws * 3 > 2) {
+      for (var r = 0; r < o.rows; r++) {
+        var wy = top + rh * (r + 0.35);
+        if (wy > GAME_HEIGHT) break;
+        if (wy < -5) continue;
+        for (var c = 0; c < o.cols; c++) {
+          var li = o.lit[r * o.cols + c];
+          if (li < 0) continue;
+          g.fillStyle(COLOR_WINDOWS[li], a * 0.85);
+          g.fillRect(x - hw + cw * (c + 0.33), wy, ws, ws);
+        }
+      }
+    }
+    // A window about to throw fire: a hot glow swelling in it.
+    var s = this.state;
+    for (var i = 0; i < s.fires.length; i++) {
+      var f = s.fires[i];
+      if (f.tower !== o) continue;
+      var k = f.stage === 'charge' ? f.age / f.charge : Math.max(0, 1 - f.age / 0.4);
+      if (k <= 0) continue;
+      var fx = this.sx(f.x0, z), fy = this.sy(f.y0, z);
+      g.fillStyle(COLOR_FIRE, a * 0.25 * k);
+      g.fillCircle(fx, fy, (6 + 14 * k) / z);
+      g.fillStyle(COLOR_FLAME_INNER, a * k);
+      g.fillRect(fx - 4 / z, fy - 5 / z, 8 / z, 10 / z);
+    }
+  };
+
+  MainScene.prototype.drawLamp = function (g, o, z) {
+    var a = depthAlpha(z) * clamp((z - Z_NEAR) / 0.3, 0, 1);
+    if (a <= 0) return;
+    var x = this.sx(o.x, z), base = this.sy(GROUND_Y, z), top = this.sy(GROUND_Y - 70, z);
+    var arm = (o.x < 0 ? 1 : -1) * 14 / z;
+    g.lineStyle(Math.max(1, 2 / z), 0x334155, a);
+    g.lineBetween(x, base, x, top);
+    g.lineBetween(x, top, x + arm, top);
+    g.fillStyle(0x67e8f9, a * 0.18);
+    g.fillCircle(x + arm, top + 2 / z, 10 / z);
+    g.fillStyle(0xe0f2fe, a);
+    g.fillCircle(x + arm, top + 2 / z, Math.max(1, 2.2 / z));
+  };
+
+  // The ship, parked on the pad: descent.html's chevron from behind,
+  // levelled out, the lift jets guttering out as the intro starts.
+  MainScene.prototype.drawShip = function (g, z) {
+    if (z < Z_NEAR) return;
+    var s = this.state, x = this.sx(s.ship.x, z), y = this.sy(TOUCHDOWN_Y, z);
+    var a = z < 0.7 ? clamp((z - Z_NEAR) / 0.35, 0, 1) : 1;
+    var r = 18 / z, pitch = 0.55;
+    function P(px, py) { return [x + px, y + py * pitch]; }
+    var nose = P(0, -r * 0.55), rw = P(r * 1.15, r * 0.35), notch = P(0, r * 0.08), lw = P(-r * 1.15, r * 0.35);
+    var jets = s.mode === 'intro' ? 0.09 * Math.max(0, 1 - s.modeAge / INTRO_JETS_OFF) : 0;
+    if (jets > 0) {
+      var groundY = this.sy(GROUND_Y, z), reach = Math.min(groundY - y, 26 + 70 * jets);
+      [[0, 1, 9], [-r * 0.65, 0.7, 5], [r * 0.65, 0.7, 5]].forEach(function (j) {
+        var jx = x + j[0], top = y + r * 0.15, len = reach * j[1] * rand(0.85, 1.1), w = j[2] * (0.7 + 0.3 * jets);
+        g.fillStyle(COLOR_FLAME_OUTER, 0.85);
+        g.fillTriangle(jx - w, top, jx + w, top, jx, top + len);
+        g.fillStyle(COLOR_FLAME_INNER, 1);
+        g.fillTriangle(jx - w * 0.5, top, jx + w * 0.5, top, jx, top + len * 0.6);
+      });
+    }
+    g.fillStyle(COLOR_SHIP_FILL, 0.85 * a);
+    g.lineStyle(2, COLOR_SHIP, a);
+    g.beginPath();
+    g.moveTo(nose[0], nose[1]); g.lineTo(rw[0], rw[1]); g.lineTo(notch[0], notch[1]); g.lineTo(lw[0], lw[1]);
+    g.closePath(); g.fillPath(); g.strokePath();
+    // The hatch, open once you are out.
+    if (s.mode !== 'intro' || s.emerge > 0) {
+      g.fillStyle(COLOR_FLAME_INNER, 0.5 * a);
+      g.fillRect(x - r * 0.18, y - r * 0.18, r * 0.36, r * 0.12);
+    }
+  };
+
+  // You, from behind: the yard's figure in a jacket, now with a gun arm
+  // that points wherever the right stick says, separately from where
+  // your legs are taking you.
+  MainScene.prototype.drawPlayer = function (g, z) {
+    var s = this.state;
+    if (s.invuln > 0 && Math.floor(s.invuln * 12) % 2 === 0) return;
+    var sc = (s.mode === 'intro' ? s.emerge : 1) / z;
+    if (sc <= 0) return;
+    var x = this.sx(s.px, z), feet = this.sy(GROUND_Y - s.elev, z);
+    var w = 20 * sc, h = PLAYER_H * sc;
+    var walking = Math.hypot(s.vx, s.vd) > 15 && s.mode === 'walking';
+    var stride = walking ? Math.sin(s.walkPhase) * h * 0.06 : 0;
+    // Legs.
+    g.fillStyle(0x2f3f63, 1);
+    g.fillRect(x - w * 0.28, feet - h * 0.42 - stride, w * 0.22, h * 0.42 + stride);
+    g.fillRect(x + w * 0.06, feet - h * 0.42 + stride, w * 0.22, h * 0.42 - stride);
+    // The gun arm, drawn behind the body when it points away.
+    var bodyTop = feet - h * 0.78, chest = feet - h * 0.6;
+    var gz = Math.max(Z_NEAR, this.zOf(s.pd + s.aimD * 16));
+    var gx = this.sx(s.px + s.aimX * 16, gz), gy = this.sy(GROUND_Y - s.elev - 21, gz);
+    var ax = gx - x, ay = gy - (this.sy(GROUND_Y - s.elev - 21, z));
+    var len = Math.hypot(ax, ay) || 1, armLen = Math.max(w * 0.9, len);
+    var ux = ax / len, uy = ay / len;
+    var shoulderX = x + (s.aimX >= 0 ? w * 0.3 : -w * 0.3);
+    var hx = shoulderX + ux * armLen, hy = chest + uy * armLen;
+    var awayFromCam = s.aimD > 0.3;
+    function arm() {
+      g.lineStyle(Math.max(2, w * 0.2), 0x9fb0d4, 1);
+      g.lineBetween(shoulderX, chest, hx, hy);
+      g.lineStyle(Math.max(1.5, w * 0.14), 0x475569, 1);
+      g.lineBetween(hx, hy, hx + ux * w * 0.45, hy + uy * w * 0.45);
+      if (s.muzzle > 0) {
+        g.fillStyle(COLOR_FLAME_INNER, 0.9);
+        g.fillCircle(hx + ux * w * 0.6, hy + uy * w * 0.6, Math.max(2, w * 0.18));
+      }
+    }
+    if (awayFromCam) arm();
+    // Jacket and the other sleeve.
+    g.fillStyle(0x7d8fb5, 1);
+    g.fillRoundedRect(x - w * 0.38, bodyTop, w * 0.76, h * 0.4, Math.min(4, w * 0.15));
+    g.fillStyle(0x9fb0d4, 1);
+    var off = s.aimX >= 0 ? -1 : 1;
+    g.fillRect(x + off * w * 0.36 - (off < 0 ? w * 0.14 : 0), bodyTop + h * 0.03, w * 0.14, h * 0.3);
+    // Head from behind: hair, a little skin at the neck.
+    g.fillStyle(0xe6c9a8, 1);
+    g.fillCircle(x, bodyTop - h * 0.1, w * 0.27);
+    g.fillStyle(0x3a2d24, 1);
+    g.fillCircle(x, bodyTop - h * 0.12, w * 0.26);
+    if (!awayFromCam) arm();
+  };
+
+  // An alien on foot: descent.html's flat diamond with one eye, on two
+  // stubby legs; the dashers are arrowheads; the brutes are squares
+  // with two eyes that dent with every hit.
+  MainScene.prototype.drawEnemy = function (g, e, z) {
+    var a = depthAlpha(z) * (z < 0.6 ? clamp((z - Z_NEAR) / 0.25, 0, 1) : 1);
+    if (a <= 0) return;
+    var x = this.sx(e.x, z), feet = this.sy(GROUND_Y, z), h = e.h / z, w = e.r * 2.1 / z;
+    var col = e.flash > 0 ? mixColor(e.color, 0xffffff, e.flash) : e.color;
+    var step = Math.sin(e.age * 9 + e.weave);
+    var cy = feet - h * 0.6;
+    g.fillStyle(mixColor(e.color, 0x000000, 0.45), a);
+    g.fillRect(x - w * 0.3, feet - h * 0.32 - Math.max(0, step) * h * 0.08, w * 0.16, h * 0.32);
+    g.fillRect(x + w * 0.14, feet - h * 0.32 - Math.max(0, -step) * h * 0.08, w * 0.16, h * 0.32);
+    g.fillStyle(col, a);
+    if (e.type === 'grunt') {
+      var r = h * 0.38;
+      g.beginPath();
+      g.moveTo(x, cy - r); g.lineTo(x + w * 0.55, cy); g.lineTo(x, cy + r); g.lineTo(x - w * 0.55, cy);
+      g.closePath(); g.fillPath();
+      g.fillStyle(col, a * 0.7);
+      g.fillTriangle(x - w * 0.4, cy, x - w * 0.95, cy - r * 0.6 + step * r * 0.15, x - w * 0.7, cy + r * 0.3);
+      g.fillTriangle(x + w * 0.4, cy, x + w * 0.95, cy - r * 0.6 - step * r * 0.15, x + w * 0.7, cy + r * 0.3);
+      g.fillStyle(COLOR_EYE, a);
+      g.fillCircle(x, cy, r * 0.3);
+    } else if (e.type === 'dasher') {
+      var r2 = h * 0.36;
+      g.fillTriangle(x - w * 0.6, cy - r2, x + w * 0.6, cy - r2, x, cy + r2);
+      g.fillStyle(COLOR_EYE, a);
+      g.fillCircle(x, cy - r2 * 0.3, r2 * 0.26);
+      g.lineStyle(Math.max(1, 1.5 / z), mixColor(e.color, 0xffffff, 0.5), a * 0.8);
+      g.lineBetween(x - w * 0.6, cy - r2, x + w * 0.6, cy - r2);
+    } else {
+      var bw = w * 0.62, bh = h * 0.56, by = feet - h * 0.3 - bh;
+      g.fillRect(x - bw, by, bw * 2, bh);
+      g.lineStyle(Math.max(1, 2 / z), mixColor(e.color, 0xffffff, 0.5), a);
+      g.strokeRect(x - bw, by, bw * 2, bh);
+      g.fillStyle(COLOR_EYE, a);
+      g.fillCircle(x - bw * 0.4, by + bh * 0.35, bw * 0.18);
+      g.fillCircle(x + bw * 0.4, by + bh * 0.35, bw * 0.18);
+      // A dent per hit taken.
+      for (var i = 0; i < Math.round(TUNING.BRUTE_HP) - e.hp; i++) {
+        g.fillCircle(x - bw * 0.7 + (i % 4) * bw * 0.46, by + bh * (i < 4 ? 0.75 : 0.9), bw * 0.08);
+      }
+    }
+  };
+
+  MainScene.prototype.drawBullet = function (g, b, z) {
+    var z2 = this.zOf(b.d - b.vd * 0.03);
+    if (z2 < Z_NEAR) z2 = Z_NEAR;
+    g.lineStyle(Math.max(2, 3.5 / z), COLOR_BULLET, 1);
+    g.lineBetween(this.sx(b.x, z), this.sy(BULLET_Y, z), this.sx(b.x - b.vx * 0.03, z2), this.sy(BULLET_Y, z2));
+  };
+
+  // A ball of fire: an orange orb with a halo and a ragged tail back
+  // along the way it came.
+  MainScene.prototype.drawFire = function (g, f, z) {
+    if (f.stage !== 'fly') return;
+    var x = this.sx(f.x, z), y = this.sy(f.y, z), r = Math.max(3, FIRE_R / z);
+    var bx = f.x0 - f.x, by = f.y0 - f.y, bd = f.d0 - f.d, bl = Math.hypot(bx, by, bd) || 1;
+    var tz = Math.max(Z_NEAR, this.zOf(f.d + bd / bl * 26));
+    var tx = this.sx(f.x + bx / bl * 26, tz), ty = this.sy(f.y + by / bl * 26, tz);
+    g.fillStyle(COLOR_FLAME_OUTER, 0.5);
+    g.fillTriangle(x - r * 0.8, y, x + r * 0.8, y, tx + rand(-2, 2), ty + rand(-2, 2));
+    g.fillStyle(COLOR_FIRE, 0.3);
+    g.fillCircle(x, y, r * 1.9);
+    g.fillStyle(COLOR_FIRE, 1);
+    g.fillCircle(x, y, r);
+    g.fillStyle(COLOR_FLAME_INNER, 1);
+    g.fillCircle(x, y, r * 0.45);
+  };
+
+  MainScene.prototype.drawBurst = function (g, o, z) {
+    var t = o.age / o.life, cx = this.sx(o.x, z), cy = this.sy(o.y, z);
+    var r = o.small ? Math.max(3, o.r * (0.5 + t) / z) : Math.max(8 + t * 12, o.r * (0.6 + t * 1.6) / z);
+    var a = 1 - t;
+    if (!o.small && t < 0.5) {
+      g.fillStyle(o.color, (0.5 - t) * 2 * 0.9);
+      for (var k = 0; k < 6; k++) {
+        var ka = o.spin + k * Math.PI / 3, kx = cx + Math.cos(ka) * r * 0.9, ky = cy + Math.sin(ka) * r * 0.9, ks = r * 0.22;
+        g.fillTriangle(kx, ky - ks, kx + ks, ky + ks, kx - ks, ky + ks);
+      }
+    }
+    if (t < 0.3) { g.fillStyle(COLOR_FLAME_INNER, (0.3 - t) / 0.3 * 0.8); g.fillCircle(cx, cy, r * 0.7); }
+    g.lineStyle(Math.max(1.5, 3 / z), o.small ? o.color : COLOR_FLAME_INNER, a);
+    g.strokeCircle(cx, cy, r);
+    if (o.small) return;
+    g.lineStyle(Math.max(1, 2 / z), COLOR_FLAME_OUTER, a);
+    for (var i = 0; i < 8; i++) {
+      var ang = o.spin + i * Math.PI / 4;
+      g.lineBetween(cx + Math.cos(ang) * r * 0.5, cy + Math.sin(ang) * r * 0.5, cx + Math.cos(ang) * r * 1.25, cy + Math.sin(ang) * r * 1.25);
+    }
+  };
+
+  MainScene.prototype.drawFx = function () {
+    var s = this.state, g = this.gFx;
+    for (var i = 0; i < s.shards.length; i++) {
+      var p = s.shards[i], a = 1 - p.age / p.life;
+      var dx = Math.cos(p.rot) * p.len / 2, dy = Math.sin(p.rot) * p.len / 2;
+      g.lineStyle(2, i % 3 === 0 ? COLOR_FLAME_OUTER : 0x7d8fb5, a);
+      g.lineBetween(p.x - dx, p.y - dy, p.x + dx, p.y + dy);
+    }
+    if (s.flash > 0) {
+      g.lineStyle(10, COLOR_HIT, s.flash * 0.7);
+      g.strokeRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    }
+  };
+
+  MainScene.prototype.drawHud = function () {
+    var s = this.state, g = this.gHud;
+    this.scoreText.setText(s.score.toLocaleString());
+    this.distText.setText(Math.floor(s.bestM).toLocaleString() + ' m');
+    // Lives: a little figure each, top left.
+    for (var i = 0; i < Math.min(s.lives, 8); i++) {
+      var x = 16 + i * 14, y = 12;
+      g.fillStyle(0x7d8fb5, 1); g.fillRect(x - 4, y + 4, 8, 7);
+      g.fillStyle(0x2f3f63, 1); g.fillRect(x - 3, y + 11, 2.5, 5); g.fillRect(x + 0.5, y + 11, 2.5, 5);
+      g.fillStyle(0x3a2d24, 1); g.fillCircle(x, y + 1.5, 3);
+    }
+    if (s.lives > 8) { g.fillStyle(0xe2e8f0, 1); g.fillRect(16 + 8 * 14 - 2, 18, 4, 1); }
+    if (s.banner) {
+      this.bannerText.setText(s.banner.text);
+      this.bannerText.setAlpha(clamp(Math.min(s.banner.age / 0.2, (2.6 - s.banner.age) / 0.6), 0, 1));
+    } else this.bannerText.setAlpha(0);
+  };
+
+  // ==================================================================
+  // Settings lab
+  // ==================================================================
+  var LAB_SPEC = [
+    { title: 'You', rows: [
+      ['WALK_SPEED', 'Walk speed', 60, 240, 5, ' px/s'],
+      ['LIVES', 'Lives', 1, 9, 1, ''],
+      ['FIRE_INTERVAL', 'Fire every', 0.03, 0.3, 0.005, ' s'],
+      ['BULLET_SPEED', 'Shot speed', 250, 1200, 10, ' px/s']
+    ] },
+    { title: 'Ramp', rows: [
+      ['RAMP_M', 'Full difficulty at', 100, 2000, 10, ' m']
+    ] },
+    { title: 'Aliens (start → full)', rows: [
+      ['GROUP_EVERY_START', 'Group every (start)', 4, 60, 1, ' m'],
+      ['GROUP_EVERY_PEAK', 'Group every (full)', 2, 40, 1, ' m'],
+      ['GROUP_SIZE_START', 'Group size (start)', 1, 10, 1, ''],
+      ['GROUP_SIZE_PEAK', 'Group size (full)', 1, 14, 1, ''],
+      ['MAX_ALIVE_START', 'Most at once (start)', 1, 20, 1, ''],
+      ['MAX_ALIVE_PEAK', 'Most at once (full)', 2, 40, 1, ''],
+      ['TRICKLE_START', 'Straggler every (start)', 1, 20, 0.5, ' s'],
+      ['TRICKLE_PEAK', 'Straggler every (full)', 0.5, 10, 0.5, ' s'],
+      ['GRUNT_SPEED_START', 'Speed (start)', 10, 150, 1, ' px/s'],
+      ['GRUNT_SPEED_PEAK', 'Speed (full)', 10, 200, 1, ' px/s'],
+      ['BRUTE_HP', 'Brute takes', 1, 20, 1, ' hits']
+    ] },
+    { title: 'Fire from the buildings', rows: [
+      ['FIRE_START_M', 'Starts at', 0, 400, 5, ' m'],
+      ['FIRE_EVERY_START', 'Every (start)', 1, 20, 0.5, ' s'],
+      ['FIRE_EVERY_PEAK', 'Every (full)', 0.3, 10, 0.1, ' s'],
+      ['FIRE_MAX_START', 'Most at once (start)', 1, 10, 1, ''],
+      ['FIRE_MAX_PEAK', 'Most at once (full)', 1, 12, 1, ''],
+      ['FIRE_FLIGHT_START', 'Takes (start)', 1, 8, 0.1, ' s'],
+      ['FIRE_FLIGHT_PEAK', 'Takes (full)', 0.8, 6, 0.1, ' s'],
+      ['FIRE_SPLASH', 'Splash', 8, 60, 1, ' px']
+    ] }
+  ];
+
+  var labEl = document.getElementById('lab');
+  var labSyncers = [];
+  function labFmt(v, step) {
+    var places = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
+    return v.toFixed(places);
+  }
+  (function buildLab() {
+    var host = document.getElementById('labSections');
+    LAB_SPEC.forEach(function (sec) {
+      var box = document.createElement('div');
+      box.className = 'lab-section';
+      var h = document.createElement('h3');
+      h.textContent = sec.title;
+      box.appendChild(h);
+      sec.rows.forEach(function (r) {
+        var key = r[0], step = r[4], unit = r[5];
+        var row = document.createElement('div');
+        row.className = 'lab-row';
+        var label = document.createElement('label');
+        label.textContent = r[1];
+        var input = document.createElement('input');
+        input.type = 'range';
+        input.min = r[2]; input.max = r[3]; input.step = step;
+        input.dataset.key = key;
+        var val = document.createElement('span');
+        val.className = 'lab-val';
+        function show() {
+          val.textContent = labFmt(TUNING[key], step) + unit;
+          row.classList.toggle('changed', Math.abs(TUNING[key] - TUNING_DEFAULTS[key]) > step / 2);
+        }
+        input.addEventListener('input', function () { TUNING[key] = parseFloat(input.value); show(); saveTuning(); });
+        row.appendChild(label); row.appendChild(input); row.appendChild(val);
+        box.appendChild(row);
+        labSyncers.push(function () { input.value = TUNING[key]; show(); });
+      });
+      host.appendChild(box);
+    });
+  })();
+
+  function setLabOpen(open) {
+    labOpen = open;
+    labEl.classList.toggle('visible', open);
+    labEl.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (open) {
+      releaseMove(); releaseAim(); releaseKeys();
+      labSyncers.forEach(function (f) { f(); });
+      if (scene) document.getElementById('labNoDeath').checked = !!scene.state.invincible;
+    }
+  }
+  document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
+  document.getElementById('labResetBtn').addEventListener('click', function () {
+    resetTuning(); saveTuning(); labSyncers.forEach(function (f) { f(); });
+  });
+  document.getElementById('labNoDeath').addEventListener('change', function (e) {
+    if (scene) scene.state.invincible = e.target.checked;
+  });
+  // Jump: a fresh street, already that far down it.
+  Array.prototype.forEach.call(document.querySelectorAll('[data-jump]'), function (btn) {
+    btn.addEventListener('click', function () {
+      if (!scene) return;
+      scene.restart();
+      scene.state.invincible = document.getElementById('labNoDeath').checked;
+      var frac = parseFloat(btn.getAttribute('data-jump'));
+      if (frac > 0) jumpTo(frac * TUNING.RAMP_M);
+      setLabOpen(false);
+    });
+  });
+  // Straight out onto the street, already `m` metres down it.
+  function jumpTo(m) {
+    var s = scene.state;
+    s.mode = 'walking'; s.modeAge = 0; s.emerge = 1; s.elev = 0;
+    s.camD = m * PX_PER_M;
+    s.bestM = m; s.block = Math.floor(m / BLOCK_M);
+    s.px = 0; s.pd = s.camD + DEPTH_PX * 1.1;
+    s.spawnAcc = 0;
+    s.nextBuild = [s.camD + DEPTH_PX * 0.4, s.camD + DEPTH_PX * 0.5];
+    s.nextLamp = s.camD + DEPTH_PX * 0.5;
+    s.buildings = []; s.lamps = [];
+    scene.buildStreet();
+  }
+  (function () {
+    var taps = 0, tapTimer = null;
+    document.getElementById('labTap').addEventListener('pointerup', function () {
+      taps++;
+      clearTimeout(tapTimer);
+      if (taps >= 3) { taps = 0; setLabOpen(true); return; }
+      tapTimer = setTimeout(function () { taps = 0; }, 600);
+    });
+  })();
+
+  // ==================================================================
+  // Debug hook, for the tests. Returns plain values only.
+  // ==================================================================
+  var debug = window.__streetDebug = {
+    runtimeErrors: { count: 0, last: null },
+    timeScale: 1,
+    run: function () { return { fromDescent: FROM_DESCENT, score: CARRIED_SCORE }; },
+    state: function () {
+      var s = scene.state;
+      return {
+        mode: s.mode, t: s.t, modeAge: s.modeAge, camD: s.camD, camX: s.camX,
+        px: s.px, pd: s.pd, vx: s.vx, vd: s.vd, z: scene.zOf(s.pd), emerge: s.emerge, elev: s.elev,
+        aimX: s.aimX, aimD: s.aimD, firing: s.firing,
+        lives: s.lives, score: s.score, deaths: s.deaths, lastDeath: s.lastDeath || null, invuln: s.invuln,
+        progressM: scene.progressM(), bestM: s.bestM, difficulty: scene.difficulty(), block: s.block,
+        groupEvery: scene.groupEvery(), maxAlive: scene.maxAlive(),
+        shotsFired: s.shotsFired, kills: s.kills, firesShot: s.firesShot, firesLaunched: s.firesLaunched, splashes: s.splashes || 0,
+        bullets: s.bullets.map(function (b) { return { x: b.x, d: b.d, vx: b.vx, vd: b.vd }; }),
+        enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r }; }),
+        portals: s.portals.length,
+        fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight }; }),
+        buildings: s.buildings.length, banner: s.banner && s.banner.text,
+        overlay: document.getElementById('overOverlay').classList.contains('visible'),
+        input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y }
+      };
+    },
+    constants: function () {
+      return { DEPTH_PX: DEPTH_PX, PLAYER_Z_MIN: PLAYER_Z_MIN, PLAYER_Z_PUSH: PLAYER_Z_PUSH, STREET_HALF: STREET_HALF,
+        FACADE_X: FACADE_X, PLAYER_R: PLAYER_R, PX_PER_M: PX_PER_M, INTRO_TIME: INTRO_TIME, DEATH_TIME: DEATH_TIME,
+        INVULN_TIME: INVULN_TIME, RESPAWN_CLEAR: RESPAWN_CLEAR, PORTAL_TIME: PORTAL_TIME, EXTRA_LIFE_EVERY: EXTRA_LIFE_EVERY,
+        CAM_Y: CAM_Y, GROUND_Y: GROUND_Y, CY: CY, tuning: JSON.parse(JSON.stringify(TUNING)) };
+    },
+    restart: function () { scene.restart(); },
+    skipIntro: function () { jumpTo(0); var s = scene.state; s.px = EXIT_X; s.pd = EXIT_D; return true; },
+    jumpTo: function (m) { jumpTo(m); return true; },
+    clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; },
+    setSpawning: function (on) { scene.state.spawning = !!on; },
+    setInvincible: function (on) { scene.state.invincible = !!on; },
+    setPlayer: function (x, d) { var s = scene.state; s.px = x; s.pd = d; s.vx = s.vd = 0; },
+    setLives: function (n) { scene.state.lives = n; },
+    setScore: function (n) { scene.state.score = n; },
+    addScore: function (n) { scene.addScore(n); },
+    spawnEnemy: function (type, x, d) { scene.addEnemy(type, x, d); return true; },
+    spawnFrom: function (type, from) { scene.spawnEnemy(type, from); return true; },
+    launchFire: function (opts) { return !!scene.launchFire(opts); },
+    projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z), y: scene.sy(GROUND_Y, z), z: z }; },
+    difficultyAt: difficultyAt,
+    lab: { isOpen: function () { return labOpen; }, setOpen: function (o) { setLabOpen(!!o); }, storageKey: TUNING_KEY }
+  };
+
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'gameRoot',
+    width: GAME_WIDTH,
+    height: GAME_HEIGHT,
+    backgroundColor: COLOR_SKY_TOP,
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    scene: [MainScene],
+    disableContextMenu: true
+  });
+})();
+</script>
+</body>
+</html>

@@ -355,6 +355,61 @@ descent by itself, for practice.
   (it isn't saved).
 - Tests: `tests/test-descent.js`.
 
+#### Main Street
+
+[`main-street.html`](main-street.html) is what comes after the landing:
+out of the ship and down the aliens' main street on foot, a
+Robotron-style twin-stick fight.
+[Try it](https://cloudboy1975.github.io/upgraded-broccoli/main-street.html).
+The descent's landed screen now has a **Step outside** button that
+leads straight into it (`main-street.html?from=descent&score=N`,
+carrying the Head-On score along). Opened on its own, it's the street by
+itself, for practice.
+
+- **The same view.** The camera stays exactly where the landing left
+  it, behind and above the ship on the pad, with the same projection.
+  The engines gutter out, you climb out of the hull (the yard's
+  boarding, run backwards) and hop down onto the street. From there
+  the camera only moves forward, and only when you walk past the middle
+  of the picture. The street is a long arena that scrolls one way.
+- **Twin sticks.** The left stick, the one that flew the ship, now walks
+  you. Up is up the street. The fire button is replaced by a copy of the
+  stick, tinted green. Push it in any direction and the gun fires
+  rapidly that way, whichever way you're walking. Your arm points where
+  you aim. On a keyboard, WASD walks and the arrow keys (or IJKL) fire.
+- **Ground aliens don't shoot. Touching one kills.** *Grunts* (the
+  descent's diamond aliens, on legs) march straight at you in steps.
+  *Dashers* (lime arrowheads) are faster and weave. *Brutes* (violet
+  squares) are slow, take 6 hits and get knocked back by each one. They
+  come from up the street, out of doorways at the sides, and later from
+  behind you. Anything that appears near you shows a ring on the ground
+  first.
+- **Fire from the buildings.** A window high up a tower ahead glows,
+  then throws a slow ball of fire at where you're standing. A ring on
+  the ground shows where it will land, getting brighter as it comes
+  down. Step off the ring. Once it's low enough you can shoot it (50
+  points). It also burns any aliens it lands on.
+- **Lives, not a shield.** You start with 3 every time (nothing carries
+  over from the descent), and get an extra one every 10,000 points.
+  When you die everything freezes, Robotron style. You come back where
+  you fell, blinking, with the aliens close by cleared and the fire in
+  the air put out. Lose the last life and it's **Overrun**, with the
+  distance walked, the score and your best.
+- **Harder the further you get, not the longer you play.** Difficulty
+  is measured in metres down the street, from 0 at the ship to full at
+  600 m. It sets how often groups come (every 24 m walked at the start,
+  every 8 m at full), how big they are (2 to 6), how many can be up at
+  once (4 to 22), how fast they walk, when dashers (12%), side doors
+  (5%), brutes (35%) and attacks from behind (40%) start, and the fire:
+  none for the first 60 m, then more often, more at once and quicker
+  to land. Standing still only brings the odd straggler, at the rate
+  your distance has already set. A **BLOCK n** banner marks every
+  100 m.
+- **Settings lab.** Backquote, or triple-tap the "Main Street" tag.
+  Every ramp has a start and a full value, plus jumps to 25%, 50% and
+  full difficulty, and **No death**.
+- Tests: `tests/test-street.js`.
+
 #### Left off the lawn, into the trees
 
 **Walk left from anywhere on the lawn** and you end up in the trees.

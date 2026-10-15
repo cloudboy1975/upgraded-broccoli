@@ -331,6 +331,7 @@
     <div class="overlay" id="crashOverlay">
       <div class="overlay-title" id="overlayTitle">Crashed</div>
       <div class="overlay-line" id="crashLine"></div>
+      <a class="btn" id="outBtn" href="main-street.html" style="display:none;text-decoration:none">Step outside</a>
       <button type="button" class="btn" id="againBtn">Fly again</button>
       <a class="overlay-link" id="fromTopLink" href="head-on.html">Start over from Head-On</a>
     </div>
@@ -1262,6 +1263,7 @@
     this.state.skyline = makeSkyline();
     this.state.nextShooting = rand(3, 7);
     document.getElementById('crashOverlay').classList.remove('visible');
+    document.getElementById('outBtn').style.display = 'none';
   };
 
   // ---- Projection ----------------------------------------------------
@@ -2688,6 +2690,11 @@
     }
     document.getElementById('overlayTitle').textContent = 'The city';
     document.getElementById('crashLine').textContent = 'Landed at the centre \u00b7 ' + dist.toLocaleString() + ' m flown \u00b7 best ' + this.best.toLocaleString() + ' m' + runLine();
+    // On from here: out of the ship and down Main Street on foot, with
+    // the Head-On score carried along as it was carried here.
+    var out = document.getElementById('outBtn');
+    out.href = 'main-street.html?from=descent' + (CARRIED_SCORE != null ? '&score=' + CARRIED_SCORE : '');
+    out.style.display = '';
     var self = this;
     setTimeout(function () {
       if (self.state.mode === 'won') document.getElementById('crashOverlay').classList.add('visible');
