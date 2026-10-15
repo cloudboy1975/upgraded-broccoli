@@ -1556,24 +1556,35 @@
     g.fillStyle(0x2f3f63, 1);
     g.fillRect(x - w * 0.28, feet - h * 0.42 - stride, w * 0.22, h * 0.42 + stride);
     g.fillRect(x + w * 0.06, feet - h * 0.42 + stride, w * 0.22, h * 0.42 - stride);
-    // The gun arm, drawn behind the body when it points away.
-    var bodyTop = feet - h * 0.78, chest = feet - h * 0.6;
+    // The gun arm. It hangs from a real shoulder at the side of the
+    // body, never the middle, and never swings below shoulder height:
+    // aimed toward the camera it is foreshortened into a short stub
+    // held out at the side, not a line hanging down the front.
+    var bodyTop = feet - h * 0.78, shoulderY = bodyTop + h * 0.07;
+    var side = s.aimX < -0.15 ? -1 : 1;
+    var shoulderX = x + side * w * 0.4;
     var gz = Math.max(Z_NEAR, this.zOf(s.pd + s.aimD * 16));
-    var gx = this.sx(s.px + s.aimX * 16, gz), gy = this.sy(GROUND_Y - s.elev - 21, gz);
-    var ax = gx - x, ay = gy - (this.sy(GROUND_Y - s.elev - 21, z));
-    var len = Math.hypot(ax, ay) || 1, armLen = Math.max(w * 0.9, len);
+    var ax = this.sx(s.px + s.aimX * 16, gz) - x;
+    var ay = this.sy(GROUND_Y - s.elev - 21, gz) - this.sy(GROUND_Y - s.elev - 21, z);
+    if (ay > 0) ay = 0;                               // toward the camera: held level
+    if (Math.abs(ax) < w * 0.15) ax = side * w * 0.15; // always out to its own side a little
+    var len = Math.hypot(ax, ay) || 1;
     var ux = ax / len, uy = ay / len;
-    var shoulderX = x + (s.aimX >= 0 ? w * 0.3 : -w * 0.3);
-    var hx = shoulderX + ux * armLen, hy = chest + uy * armLen;
+    var armLen = clamp(len, w * 0.3, w * 0.75);
+    var hx = shoulderX + ux * armLen, hy = shoulderY + uy * armLen;
     var awayFromCam = s.aimD > 0.3;
     function arm() {
-      g.lineStyle(Math.max(2, w * 0.2), 0x9fb0d4, 1);
-      g.lineBetween(shoulderX, chest, hx, hy);
-      g.lineStyle(Math.max(1.5, w * 0.14), 0x475569, 1);
-      g.lineBetween(hx, hy, hx + ux * w * 0.45, hy + uy * w * 0.45);
+      g.lineStyle(Math.max(2, w * 0.18), 0x9fb0d4, 1);
+      g.lineBetween(shoulderX, shoulderY, hx, hy);
+      // A pistol: a dark block in the hand with a short barrel.
+      var gs = Math.max(2, w * 0.16);
+      g.fillStyle(0x334155, 1);
+      g.fillRect(hx - gs / 2, hy - gs / 2, gs, gs);
+      g.lineStyle(Math.max(1.5, w * 0.1), 0x475569, 1);
+      g.lineBetween(hx, hy, hx + ux * w * 0.25, hy + uy * w * 0.25);
       if (s.muzzle > 0) {
         g.fillStyle(COLOR_FLAME_INNER, 0.9);
-        g.fillCircle(hx + ux * w * 0.6, hy + uy * w * 0.6, Math.max(2, w * 0.18));
+        g.fillCircle(hx + ux * w * 0.35, hy + uy * w * 0.35, Math.max(2, w * 0.16));
       }
     }
     if (awayFromCam) arm();
@@ -1581,7 +1592,7 @@
     g.fillStyle(0x7d8fb5, 1);
     g.fillRoundedRect(x - w * 0.38, bodyTop, w * 0.76, h * 0.4, Math.min(4, w * 0.15));
     g.fillStyle(0x9fb0d4, 1);
-    var off = s.aimX >= 0 ? -1 : 1;
+    var off = -side;
     g.fillRect(x + off * w * 0.36 - (off < 0 ? w * 0.14 : 0), bodyTop + h * 0.03, w * 0.14, h * 0.3);
     // Head from behind: hair, a little skin at the neck.
     g.fillStyle(0xe6c9a8, 1);
