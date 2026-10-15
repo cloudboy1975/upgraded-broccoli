@@ -98,14 +98,14 @@ harness.run(async (page, check, ctx) => {
   await quietStreet(page);
   await page.keyboard.down('KeyW');
   await page.keyboard.down('ArrowLeft');
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(1000);
   s = await state(page);
   await page.keyboard.up('ArrowLeft');
   await page.keyboard.up('KeyW');
   check('aiming left while walking forward: firing, aimed left', s.firing && s.aimX < -0.99 && Math.abs(s.aimD) < 0.01, s);
   check('...walking forward all the same', s.vd > 50, s.vd);
   check('...and the shots go left, not where you walk', s.bullets.length > 0 && s.bullets.every(b => b.vx < 0 && Math.abs(b.vd) < 1e-6), s.bullets);
-  check('rapid fire: several shots a second', s.shotsFired >= 5, s.shotsFired);
+  check('steady fire: several shots a second', s.shotsFired >= 5, s.shotsFired);
   await page.waitForTimeout(300);
   s = await state(page);
   check('letting go stops the gun', !s.firing, s.firing);

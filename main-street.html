@@ -357,12 +357,12 @@
   // you. 1 is the ship's own depth, where you climb out; higher puts it
   // further up the street, higher on screen - more room to walk around
   // in before it scrolls, less warning of what is coming.
-  var PLAYER_Z_PUSH = 1.5;
+  var PLAYER_Z_PUSH = 1.2;
   var STREET_HALF = 165;       // how far either side of the centre line you can walk
   var FACADE_X = 195;          // where the buildings' fronts stand
   var PLAYER_R = 9;            // contact radius, on the ground
   var PLAYER_H = 38;           // height in world px
-  var WALK_SPEED = 125;        // px/s at full stick
+  var WALK_SPEED = 185;        // px/s at full stick
   var WALK_RESPONSE = 14;
   var LIVES = 3;
   var EXTRA_LIFE_EVERY = 10000;
@@ -373,7 +373,7 @@
 
   // ---- The gun ------------------------------------------------------
   var AIM_DEADZONE = 0.3;      // the right stick fires once pushed this far
-  var FIRE_INTERVAL = 0.085;   // seconds between shots: rapid
+  var FIRE_INTERVAL = 0.16;    // seconds between shots while the stick is pushed
   var BULLET_SPEED = 600;      // px/s along the ground
   var BULLET_RANGE = 700;
   var BULLET_Y = GROUND_Y - 21; // chest height
