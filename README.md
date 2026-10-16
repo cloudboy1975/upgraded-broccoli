@@ -397,8 +397,11 @@ itself, for practice.
   only the odd cross street, and the edges of the picture are darkened.
 - **Fire from the buildings.** A window high up a tower ahead glows,
   then throws a slow ball of fire at where you're standing. A ring on
-  the ground shows where it will land, getting brighter as it comes
-  down. Step off the ring. Once it's low enough you can shoot it (50
+  the ground shows where it will land, but only for the last fifth of
+  its fall by default, so you have to read where it's heading. The
+  lab's **Landing spot shown** slider sets how much of the fall it's
+  marked for, from never (0) to the whole way down (1). Step off the
+  ring. Once it's low enough you can shoot it (50
   points). It also burns any aliens it lands on. Further down the street
   the windows throw in **volleys** of up to 3. The first is aimed at you
   and the rest land around you, a beat apart, so several fireballs are
