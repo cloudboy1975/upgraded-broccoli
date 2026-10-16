@@ -96,16 +96,18 @@ harness.run(async (page, check, ctx) => {
 
   // ---- The right stick fires, on its own ------------------------------
   await quietStreet(page);
+  const fireT0 = (await state(page)).t;
   await page.keyboard.down('KeyW');
   await page.keyboard.down('ArrowLeft');
-  await page.waitForTimeout(1000);
-  s = await state(page);
+  // A second of GAME time: on a slow machine that is more than a second
+  // of wall clock, and the rate is the game's, not the clock's.
+  s = await until(page, (st) => st.t - fireT0 >= 1, 8000);
   await page.keyboard.up('ArrowLeft');
   await page.keyboard.up('KeyW');
   check('aiming left while walking forward: firing, aimed left', s.firing && s.aimX < -0.99 && Math.abs(s.aimD) < 0.01, s);
   check('...walking forward all the same', s.vd > 50, s.vd);
   check('...and the shots go left, not where you walk', s.bullets.length > 0 && s.bullets.every(b => b.vx < 0 && Math.abs(b.vd) < 1e-6), s.bullets);
-  check('steady fire: several shots a second', s.shotsFired >= 5, s.shotsFired);
+  check('steady fire: a shot every ' + T.FIRE_INTERVAL + 's while aimed', s.shotsFired >= Math.floor((s.t - fireT0) / T.FIRE_INTERVAL) - 1, { shots: s.shotsFired, gameSeconds: s.t - fireT0 });
   await page.waitForTimeout(300);
   s = await state(page);
   check('letting go stops the gun', !s.firing, s.firing);
@@ -289,6 +291,40 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => { const d = window.__streetDebug; d.restart(); d.skipIntro(); d.setSpawning(true); d.setInvincible(true); d.clear(); });
   s = await until(page, (st) => st.enemies.some(e => e.climb > 0), 8000);
   check('climbers appear on the walls by themselves', s.enemies.some(e => e.climb > 0), s.enemies);
+
+  // ---- Fire into the road ahead ------------------------------------------
+  await quietStreet(page);
+  s = await state(page);
+  const aheadT = { x: s.px, d: s.pd + 260 };
+  check('a tower up the street can throw into the road ahead', await D(page, (t) => window.__streetDebug.launchAhead(t), aheadT));
+  s = await state(page);
+  check('...a big one', s.fires.length === 1 && s.fires[0].ahead && s.fires[0].size === T.AHEAD_SIZE, s.fires);
+  // Fire straight at it all the way down: it can't be stopped.
+  await page.keyboard.down('ArrowUp');
+  s = await until(page, (st) => st.splashes > 0, 8000);
+  await page.keyboard.up('ArrowUp');
+  check('...too big to shoot down', s.firesShot === 0 && s.splashes === 1, { shot: s.firesShot, splashes: s.splashes });
+  check('...it lands ahead of you and leaves a big burning crater to walk round',
+    s.craters.length === 1 && s.craters[0].d > s.pd + 150 && s.craters[0].burn > 0 &&
+    Math.abs(s.craters[0].r - T.FIRE_SPLASH * T.AHEAD_SIZE * 0.85) < 0.01, { craters: s.craters, pd: s.pd });
+
+  await D(page, () => { const d = window.__streetDebug; d.restart(); d.jumpTo(d.constants().tuning.AHEAD_START_M + 40); d.setSpawning(true); d.setInvincible(true); });
+  s = await until(page, (st) => st.firesAhead > 0, 10000);
+  check('the spawner throws fire into the road ahead by itself', s.firesAhead > 0, s.firesAhead);
+
+  // ---- Left behind -----------------------------------------------------
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => window.__streetDebug.spawnEnemy('grunt', 120, p.d - 20), { d: s.camD + 0.6 * C.DEPTH_PX + 20 });
+  await page.keyboard.down('KeyW');
+  s = await until(page, (st) => st.camD > 200 && st.enemies.length === 0, 6000);
+  await page.keyboard.up('KeyW');
+  check('an alien you outrun is left behind, not held at the bottom of the picture', s.enemies.length === 0 && s.camD > 200, s);
+
+  // ---- Crawling walls from the first step ------------------------------
+  await D(page, () => { const d = window.__streetDebug; d.restart(); d.setSpawning(true); });
+  s = await until(page, (st) => st.mode === 'walking', 15000);
+  check('stepping out, the walls are already crawling', s.enemies.filter(e => e.climb > 0).length >= 3, s.enemies);
 
   // ---- Volleys ---------------------------------------------------------------
   await D(page, () => { const d = window.__streetDebug; d.restart(); d.jumpTo(d.constants().tuning.RAMP_M); d.setSpawning(true); d.setInvincible(true); });
