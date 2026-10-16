@@ -428,6 +428,7 @@
   var FIRE_FLIGHT_PEAK = 2.4;
   var FIRE_CHARGE = 0.7;       // the window glows this long before it throws
   var FIRE_SPLASH = 24;        // px around the impact that kill
+  var FIRE_WARNING = 0.2;      // share of the fall, at the end, during which the landing spot is marked
   var FIRE_R = 9;
   var PORTAL_TIME = 0.8;       // an alien coming out of a doorway shows this long first
 
@@ -490,7 +491,7 @@
     GRUNT_SPEED_START: GRUNT_SPEED_START, GRUNT_SPEED_PEAK: GRUNT_SPEED_PEAK, BRUTE_HP: BRUTE_HP,
     FIRE_START_M: FIRE_START_M, FIRE_EVERY_START: FIRE_EVERY_START, FIRE_EVERY_PEAK: FIRE_EVERY_PEAK,
     FIRE_MAX_START: FIRE_MAX_START, FIRE_MAX_PEAK: FIRE_MAX_PEAK,
-    FIRE_FLIGHT_START: FIRE_FLIGHT_START, FIRE_FLIGHT_PEAK: FIRE_FLIGHT_PEAK, FIRE_SPLASH: FIRE_SPLASH,
+    FIRE_FLIGHT_START: FIRE_FLIGHT_START, FIRE_FLIGHT_PEAK: FIRE_FLIGHT_PEAK, FIRE_SPLASH: FIRE_SPLASH, FIRE_WARNING: FIRE_WARNING,
     FIRE_VOLLEY_START: FIRE_VOLLEY_START, FIRE_VOLLEY_PEAK: FIRE_VOLLEY_PEAK,
     CRATER_BURN: CRATER_BURN, CRATER_SLOW: CRATER_SLOW,
     AHEAD_START_M: AHEAD_START_M, AHEAD_EVERY_START: AHEAD_EVERY_START, AHEAD_EVERY_PEAK: AHEAD_EVERY_PEAK,
@@ -1638,17 +1639,19 @@
       g.lineBetween(this.sx(po.x, zz), this.sy(G, zz), this.sx(po.x, zz), this.sy(G - 40 * u, zz));
     }
     // Where the fire will come down: a ring the size of its splash,
-    // brightening and filling as it falls.
+    // brightening and filling as it falls. Only for the last part of
+    // the fall (FIRE_WARNING of it), so how much warning you get is a
+    // setting: 1 marks the spot the whole way down, 0 never.
     for (var f = 0; f < s.fires.length; f++) {
-      var fi = s.fires[f];
-      if (fi.stage !== 'fly') continue;
+      var fi = s.fires[f], uu = this.fireMarked(fi);
+      if (uu <= 0) continue;
       var zt = this.zOf(fi.td);
       if (zt < Z_NEAR) continue;
-      var uu = clamp(fi.age / fi.flight, 0, 1), R = TUNING.FIRE_SPLASH * (fi.size || 1) / zt;
+      var R = TUNING.FIRE_SPLASH * (fi.size || 1) / zt;
       var tx = this.sx(fi.tx, zt), ty = this.sy(G, zt);
       g.fillStyle(COLOR_FIRE, 0.08 + 0.25 * uu);
       g.fillEllipse(tx, ty, R * 2 * uu, R * 0.6 * uu);
-      g.lineStyle(Math.max(1, 2 / zt), COLOR_FIRE, 0.35 + 0.55 * uu * (0.7 + 0.3 * Math.sin(t * 20)));
+      g.lineStyle(Math.max(1, 2 / zt), COLOR_FIRE, Math.min(1, uu * 4) * (0.35 + 0.55 * uu * (0.7 + 0.3 * Math.sin(t * 20))));
       g.strokeEllipse(tx, ty, R * 2, R * 0.6);
       // Its shadow on the street, under the ball itself.
       var zf = this.zOf(fi.d);
@@ -1667,6 +1670,14 @@
     }
     s.enemies.forEach(function (e) { if (!e.climb) shadow(e.x, e.d, e.r); });
     if (s.mode === 'walking' || (s.mode === 'intro' && s.emerge >= 1)) shadow(s.px, s.pd, PLAYER_R);
+  };
+
+  // How strongly a falling fireball's landing spot is marked: 0 until
+  // the last FIRE_WARNING of its fall, then up to 1 as it lands.
+  MainScene.prototype.fireMarked = function (f) {
+    var warn = TUNING.FIRE_WARNING;
+    if (f.stage !== 'fly' || warn <= 0) return 0;
+    return clamp((f.age / f.flight - (1 - warn)) / warn, 0, 1);
   };
 
   // A crater: the broken-glass shape, laid flat on the road in true
@@ -2087,6 +2098,7 @@
       ['FIRE_FLIGHT_START', 'Takes (start)', 1, 8, 0.1, ' s'],
       ['FIRE_FLIGHT_PEAK', 'Takes (full)', 0.8, 6, 0.1, ' s'],
       ['FIRE_SPLASH', 'Splash', 8, 60, 1, ' px'],
+      ['FIRE_WARNING', 'Landing spot shown', 0, 1, 0.05, ' of fall'],
       ['FIRE_VOLLEY_START', 'Volley (start)', 1, 6, 1, ''],
       ['FIRE_VOLLEY_PEAK', 'Volley (full)', 1, 8, 1, '']
     ] },
@@ -2224,7 +2236,7 @@
         enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r, climb: e.climb || 0 }; }),
         craters: s.craters.map(function (c) { return { x: c.x, d: c.d, r: c.r, burn: c.burn }; }),
         portals: s.portals.length,
-        fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size }; }),
+        fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size, u: f.stage === 'fly' ? f.age / f.flight : 0, marked: scene.fireMarked(f) }; }),
         buildings: s.buildings.length, banner: s.banner && s.banner.text,
         overlay: document.getElementById('overOverlay').classList.contains('visible'),
         input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y }

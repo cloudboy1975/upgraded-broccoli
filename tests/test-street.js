@@ -232,6 +232,24 @@ harness.run(async (page, check, ctx) => {
   s = await state(page);
   check('an extra life every ' + C.EXTRA_LIFE_EVERY + ' points', s.lives === T.LIVES + 1 && s.banner === 'EXTRA LIFE', s);
 
+  // ---- How much the landing spot is telegraphed ---------------------------
+  // Marked only for the last FIRE_WARNING of the fall (a lab setting).
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => window.__streetDebug.launchFire({ x: -230, y: -100, d: p.d + 500, flight: 2.5, charge: 0.05, target: { x: p.x + 100, d: p.d } }), { x: s.px, d: s.pd });
+  s = await until(page, (st) => st.fires.length && st.fires[0].stage === 'fly' && st.fires[0].u > 0.3, 4000);
+  check('early in the fall, the landing spot is not marked (default ' + T.FIRE_WARNING + ')',
+    s.fires[0].u < 1 - T.FIRE_WARNING && s.fires[0].marked === 0, s.fires[0]);
+  s = await until(page, (st) => !st.fires.length || st.fires[0].u > 1 - T.FIRE_WARNING / 2, 6000);
+  check('...near the end it is', s.fires.length === 0 || s.fires[0].marked > 0, s.fires[0]);
+  await D(page, () => window.__streetDebug.tune('FIRE_WARNING', 1));
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => window.__streetDebug.launchFire({ x: -230, y: -100, d: p.d + 500, flight: 2.5, charge: 0.05, target: { x: p.x + 100, d: p.d } }), { x: s.px, d: s.pd });
+  s = await until(page, (st) => st.fires.length && st.fires[0].stage === 'fly' && st.fires[0].u > 0.1, 4000);
+  check('set to 1, it is marked from the start of the fall', s.fires[0].marked > 0, s.fires[0]);
+  await D(page, (v) => window.__streetDebug.tune('FIRE_WARNING', v), T.FIRE_WARNING);
+
   // ---- The street takes damage -----------------------------------------
   await quietStreet(page);
   s = await state(page);
