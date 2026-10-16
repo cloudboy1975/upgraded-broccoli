@@ -1314,30 +1314,37 @@
   };
 
   // ---- The damaged street -----------------------------------------------
-  // The shape a hit breaks in the road: like a pane of glass struck at
-  // one point - an irregular star of sharp spikes and notches, straight
-  // edged, with fracture lines running out from the point of impact.
-  // In units of the crater's radius, flat on the ground.
+  // The shape a hit breaks in the road: an irregular closed polygon,
+  // like a broken-out piece of glass - straight edges, uneven corners,
+  // no two alike - with fracture lines running from the point of impact
+  // (a little off centre) to some of its corners. In units of the
+  // crater's radius, flat on the ground.
   function shatterShape() {
-    var n = 7 + Math.floor(Math.random() * 4), rim = [], cracks = [];
-    var a0 = rand(0, Math.PI * 2), step = Math.PI * 2 / (n * 2);
-    for (var i = 0; i < n * 2; i++) {
-      // Uneven: long shards and stubby ones, wide gaps and tight ones.
-      var a = a0 + i * step + rand(-0.35, 0.35) * step;
-      var r = i % 2 === 0 ? (Math.random() < 0.3 ? rand(0.75, 0.95) : rand(1.05, 1.55)) : rand(0.35, 0.8);
-      rim.push([Math.cos(a) * r, Math.sin(a) * r]);
+    var n = 6 + Math.floor(Math.random() * 4), rim = [], cracks = [], angles = [];
+    var a0 = rand(0, Math.PI * 2);
+    // Uneven gaps between corners, normalised to go once round.
+    var gaps = [], total = 0;
+    for (var i = 0; i < n; i++) { var gp = rand(0.5, 1.5); gaps.push(gp); total += gp; }
+    var a = a0;
+    for (var k = 0; k < n; k++) {
+      angles.push(a);
+      a += gaps[k] / total * Math.PI * 2;
     }
-    // Fractures: from the centre out to most spike tips, each with a kink.
-    for (var j = 0; j < rim.length; j += 2) {
-      if (Math.random() < 0.25) continue;
-      var tip = rim[j], k = rand(0.35, 0.6);
-      cracks.push([[0, 0], [tip[0] * k + rand(-0.08, 0.08), tip[1] * k + rand(-0.08, 0.08)], [tip[0] * 0.92, tip[1] * 0.92]]);
+    for (var m = 0; m < n; m++) {
+      var r = rand(0.72, 1.18);
+      rim.push([Math.cos(angles[m]) * r, Math.sin(angles[m]) * r]);
     }
-    // And a broken ring across them, the way glass crazes.
-    var ring = [], rr = rand(0.32, 0.42);
-    for (var q = 0; q < 7; q++) {
-      var qa = a0 + q / 7 * Math.PI * 2 + rand(-0.2, 0.2);
-      ring.push([Math.cos(qa) * rr * rand(0.85, 1.15), Math.sin(qa) * rr * rand(0.85, 1.15)]);
+    var hit = [rand(-0.2, 0.2), rand(-0.2, 0.2)];
+    for (var j = 0; j < n; j++) {
+      if (Math.random() < 0.4) continue;
+      var c = rim[j], t = rand(0.4, 0.6);
+      var mid = [hit[0] + (c[0] - hit[0]) * t + rand(-0.07, 0.07), hit[1] + (c[1] - hit[1]) * t + rand(-0.07, 0.07)];
+      cracks.push([hit, mid, [c[0] * 0.97, c[1] * 0.97]]);
+    }
+    var ring = [], rr = rand(0.25, 0.35);
+    for (var q = 0; q < 6; q++) {
+      var qa = a0 + q / 6 * Math.PI * 2 + rand(-0.25, 0.25);
+      ring.push([hit[0] + Math.cos(qa) * rr, hit[1] + Math.sin(qa) * rr]);
     }
     return { rim: rim, cracks: cracks, ring: ring };
   }

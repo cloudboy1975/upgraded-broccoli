@@ -408,8 +408,10 @@ itself, for practice.
   them. You watch them come down, and they're too big to shoot. What
   they leave is burning ground you have to walk around.
 - **The street takes damage.** Where fire lands it breaks the road open
-  into a crater shaped like struck glass: an irregular star of sharp
-  shards with fracture lines, laid flat on the road. While it burns it
+  into a crater shaped like a broken-out piece of glass: an irregular
+  closed polygon with straight edges, uneven corners and fracture lines
+  running from the point of impact, laid flat on the road. Its outline
+  is about the size of the area that kills. While it burns it
   is neon red, with a soft radiance around it, all pulsing slowly and
   evenly (every crater in step). It's a flat-world danger sign rather
   than cartoon fire. It burns for 9s. Walking into it kills you, and it burns aliens that walk into
