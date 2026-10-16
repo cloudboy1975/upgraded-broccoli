@@ -373,6 +373,16 @@
 
   // ---- The gun ------------------------------------------------------
   var AIM_DEADZONE = 0.3;      // the right stick fires once pushed this far
+  // Aim in 3D (a lab toggle, off by default). The right stick's circle
+  // becomes the half of the sky in front of you, seen from inside: the
+  // middle is dead ahead up the street at chest height, pushing up tilts
+  // the gun up, pushing left or right swings it round, and the rim of
+  // the circle is the rim of the hemisphere - straight up, or straight
+  // out to the side. Touching fires. The shots fly in 3D, so climbers
+  // high on the walls and fire still in the air can be hit.
+  var AIM_HEMISPHERE = 0;
+  var KEY_AIM_REACH = 0.7;     // the arrow keys tilt this far round the hemisphere
+  var AHEAD_HP = 4;            // shots to bring down a big fireball, in 3D aim
   var FIRE_INTERVAL = 0.16;    // seconds between shots while the stick is pushed
   var BULLET_SPEED = 600;      // px/s along the ground
   var BULLET_RANGE = 700;
@@ -483,6 +493,7 @@
   // ---- Tuning: the live values -------------------------------------
   var TUNING_KEY = 'street-tuning-v1';
   var TUNING_DEFAULTS = {
+    AIM_HEMISPHERE: AIM_HEMISPHERE,
     WALK_SPEED: WALK_SPEED, PLAYER_Z_PUSH: PLAYER_Z_PUSH, FIRE_INTERVAL: FIRE_INTERVAL, BULLET_SPEED: BULLET_SPEED, LIVES: LIVES,
     RAMP_M: RAMP_M, GROUP_EVERY_START: GROUP_EVERY_START, GROUP_EVERY_PEAK: GROUP_EVERY_PEAK,
     GROUP_SIZE_START: GROUP_SIZE_START, GROUP_SIZE_PEAK: GROUP_SIZE_PEAK,
@@ -613,7 +624,7 @@
       knobEl.classList.remove('visible');
       el.classList.remove('active');
       knobEl.style.transform = 'translate(0px, 0px)';
-      v.tx = 0; v.ty = 0;
+      v.tx = 0; v.ty = 0; v.held = false;
       compose(v);
     }
     el.addEventListener('pointerdown', function (e) {
@@ -631,7 +642,7 @@
       anchorEl.classList.add('visible');
       knobEl.classList.add('visible');
       el.classList.add('active');
-      v.tx = 0; v.ty = 0;
+      v.tx = 0; v.ty = 0; v.held = true;
       compose(v);
       watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
     });
@@ -668,14 +679,19 @@
     if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'over' && !e.repeat) {
       e.preventDefault();
       scene.restart();
+      return;
     }
+    // Space fires where the gun points (dead ahead, in 3D aim).
+    if (e.code === 'Space') { aim.space = true; e.preventDefault(); }
   });
   window.addEventListener('keyup', function (e) {
     if (MOVE_KEYS[e.code]) { kbMove[MOVE_KEYS[e.code]] = false; keyVector(move, kbMove); }
     if (AIM_KEYS[e.code]) { kbAim[AIM_KEYS[e.code]] = false; keyVector(aim, kbAim); }
+    if (e.code === 'Space') aim.space = false;
   });
   function releaseKeys() {
     ['up', 'down', 'left', 'right'].forEach(function (k) { kbMove[k] = false; kbAim[k] = false; });
+    aim.space = false;
     keyVector(move, kbMove); keyVector(aim, kbAim);
   }
   window.addEventListener('blur', releaseKeys);
@@ -746,7 +762,7 @@
       camD: 0, camX: 0,
       // You start inside the ship; the intro puts you on the ground.
       px: 0, pd: DEPTH_PX, vx: 0, vd: 0, elev: 0, emerge: 0,
-      aimX: 0, aimD: 1, firing: false, walkPhase: 0,
+      aimX: 0, aimD: 1, aimUp: 0, firing: false, walkPhase: 0,
       ship: { x: 0, d: DEPTH_PX },
       lives: Math.max(1, Math.round(TUNING.LIVES)),
       score: 0, nextLife: EXTRA_LIFE_EVERY,
@@ -878,11 +894,31 @@
     s.walkPhase += sp * dt * 0.09;
     // Aim: the right stick's direction, kept after it is let go so the
     // gun keeps pointing where you last fired.
+    if (TUNING.AIM_HEMISPHERE) {
+      var keys = aim.kx || aim.ky || aim.space;
+      s.firing = !!(aim.held || keys);
+      if (s.firing) {
+        var h = hemisphereAim(aim.tx + aim.kx * KEY_AIM_REACH, aim.ty + aim.ky * KEY_AIM_REACH);
+        s.aimX = h.x; s.aimUp = h.up; s.aimD = h.d;
+      } else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; s.aimUp = 0; }
+      return;
+    }
     var am = Math.hypot(aim.x, aim.y);
-    s.firing = am >= AIM_DEADZONE;
-    if (s.firing) { s.aimX = aim.x / am; s.aimD = -aim.y / am; }
-    else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; }
+    s.firing = am >= AIM_DEADZONE || !!aim.space;
+    s.aimUp = 0;
+    if (am >= AIM_DEADZONE) { s.aimX = aim.x / am; s.aimD = -aim.y / am; }
+    else if (!s.firing && sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; }
   };
+
+  // The stick's circle onto the hemisphere in front of you, as if seen
+  // from inside it: across is across, up is up, and what is left over
+  // is forward - so the middle is straight ahead and the rim is 90
+  // degrees round. Returns a unit vector (x across, up, d forward).
+  function hemisphereAim(x, y) {
+    var up = -y, m = Math.hypot(x, up);
+    if (m > 1) { x /= m; up /= m; }
+    return { x: x, up: up, d: Math.sqrt(Math.max(0, 1 - x * x - up * up)) };
+  }
 
   // The camera only ever moves forward, and only because you pushed it:
   // walk past PLAYER_Z_PUSH and it comes with you. That push is the
@@ -1159,53 +1195,68 @@
     if (!s.firing || s.fireCooldown > 0) return;
     s.fireCooldown = TUNING.FIRE_INTERVAL;
     var v = TUNING.BULLET_SPEED;
-    s.bullets.push({ kind: 'bullet', x: s.px + s.aimX * 12, d: s.pd + s.aimD * 12, vx: s.aimX * v, vd: s.aimD * v, travelled: 0 });
+    s.bullets.push({ kind: 'bullet', x: s.px + s.aimX * 12, y: BULLET_Y - s.aimUp * 12, d: s.pd + s.aimD * 12,
+      vx: s.aimX * v, vy: -s.aimUp * v, vd: s.aimD * v, travelled: 0 });
     s.shotsFired++;
     s.muzzle = 0.05;
     Sound.shot();
   };
 
+  // Shots fly in 3D: along the ground in the flat aim, anywhere in the
+  // hemisphere in 3D aim. Moved in short sub-steps so a quick shot can't
+  // skip clean through something thin on a slow frame.
   MainScene.prototype.stepBullets = function (dt) {
     var s = this.state;
     if (s.muzzle) s.muzzle = Math.max(0, s.muzzle - dt);
+    var steps = Math.max(1, Math.ceil(TUNING.BULLET_SPEED * dt / 10)), h = dt / steps;
     for (var i = s.bullets.length - 1; i >= 0; i--) {
-      var b = s.bullets[i];
-      b.x += b.vx * dt; b.d += b.vd * dt;
-      b.travelled += TUNING.BULLET_SPEED * dt;
-      var dead = b.travelled > BULLET_RANGE || b.d < s.camD + DEPTH_PX * Z_NEAR;
-      if (!dead && Math.abs(b.x) > FACADE_X + 45) {
-        // The building fronts stop them.
-        this.burst(b.x, BULLET_Y, b.d, COLOR_BULLET, true);
-        dead = true;
-      }
-      if (!dead) {
-        for (var j = 0; j < s.enemies.length; j++) {
-          var e = s.enemies[j];
-          // Up a wall, only the low ones are in reach.
-          if (e.climb && Math.abs(GROUND_Y - e.climb - e.h * 0.55 - BULLET_Y) > e.h * 0.5 + 4) continue;
-          if (Math.hypot(e.x - b.x, e.d - b.d) < e.r + BULLET_HIT) { this.hitEnemy(e, b); dead = true; break; }
-        }
-      }
-      if (!dead) {
-        // Fire coming down can be shot once it is low enough to reach.
-        for (var k = 0; k < s.fires.length; k++) {
-          var f = s.fires[k];
-          // The big ones thrown into the road ahead are too big to stop:
-          // they are there to be walked round, not shot down.
-          if (f.stage !== 'fly' || f.ahead) continue;
-          if (Math.abs(f.y - BULLET_Y) < 16 && Math.hypot(f.x - b.x, f.d - b.d) < FIRE_R * f.size + BULLET_HIT + 4) {
-            f.dead = true; dead = true;
-            s.firesShot++;
-            this.addScore(SCORE.fire);
-            this.burst(f.x, f.y, f.d, COLOR_FIRE);
-            Sound.pop();
-            break;
-          }
-        }
+      var b = s.bullets[i], dead = false;
+      for (var st = 0; st < steps && !dead; st++) {
+        b.x += b.vx * h; b.y += b.vy * h; b.d += b.vd * h;
+        b.travelled += TUNING.BULLET_SPEED * h;
+        dead = this.bulletStep(b);
       }
       if (dead) s.bullets.splice(i, 1);
     }
     s.fires = s.fires.filter(function (f) { return !f.dead; });
+  };
+
+  // One sub-step of one shot: true when it is spent.
+  MainScene.prototype.bulletStep = function (b) {
+    var s = this.state;
+    if (b.travelled > BULLET_RANGE || b.d < s.camD + DEPTH_PX * Z_NEAR) return true;
+    if (b.y > GROUND_Y) { this.burst(b.x, GROUND_Y, b.d, COLOR_BULLET, true); return true; }
+    if (Math.abs(b.x) > FACADE_X + 45) {
+      // The building fronts stop them.
+      this.burst(b.x, b.y, b.d, COLOR_BULLET, true);
+      return true;
+    }
+    for (var j = 0; j < s.enemies.length; j++) {
+      var e = s.enemies[j];
+      // Its body, at whatever height it is - on the street or up a wall.
+      if (Math.abs(GROUND_Y - (e.climb || 0) - e.h * 0.55 - b.y) > e.h * 0.5 + 4) continue;
+      if (Math.hypot(e.x - b.x, e.d - b.d) < e.r + BULLET_HIT) { this.hitEnemy(e, b); return true; }
+    }
+    for (var k = 0; k < s.fires.length; k++) {
+      var f = s.fires[k];
+      // The big ones thrown into the road ahead can't be stopped by the
+      // flat aim - they are there to be walked round. Aimed in 3D they
+      // can be brought down, but take several hits.
+      if (f.stage !== 'fly' || f.dead || (f.ahead && !TUNING.AIM_HEMISPHERE)) continue;
+      if (Math.hypot(f.x - b.x, f.y - b.y, f.d - b.d) < FIRE_R * f.size + BULLET_HIT + 4) {
+        if (f.ahead && (f.hp = (f.hp == null ? AHEAD_HP : f.hp) - 1) > 0) {
+          this.burst(b.x, b.y, b.d, COLOR_FIRE, true);
+          return true;
+        }
+        f.dead = true;
+        s.firesShot++;
+        this.addScore(SCORE.fire);
+        this.burst(f.x, f.y, f.d, COLOR_FIRE);
+        Sound.pop();
+        return true;
+      }
+    }
+    return false;
   };
 
   MainScene.prototype.hitEnemy = function (e, b) {
@@ -1503,6 +1554,7 @@
       else if (o.kind === 'player') this.drawPlayer(g, z);
     }
     this.drawFx();
+    this.drawAimSight();
     this.drawHud();
   };
 
@@ -1866,7 +1918,7 @@
     var shoulderX = x + side * w * 0.4;
     var gz = Math.max(Z_NEAR, this.zOf(s.pd + s.aimD * 16));
     var ax = this.sx(s.px + s.aimX * 16, gz) - x;
-    var ay = this.sy(GROUND_Y - s.elev - 21, gz) - this.sy(GROUND_Y - s.elev - 21, z);
+    var ay = this.sy(GROUND_Y - s.elev - 21 - (s.aimUp || 0) * 16, gz) - this.sy(GROUND_Y - s.elev - 21, z);
     if (ay > 0) ay = 0;                               // toward the camera: held level
     if (Math.abs(ax) < w * 0.15) ax = side * w * 0.15; // always out to its own side a little
     var len = Math.hypot(ax, ay) || 1;
@@ -1976,7 +2028,23 @@
     var z2 = this.zOf(b.d - b.vd * 0.03);
     if (z2 < Z_NEAR) z2 = Z_NEAR;
     g.lineStyle(Math.max(2, 3.5 / z), COLOR_BULLET, 1);
-    g.lineBetween(this.sx(b.x, z), this.sy(BULLET_Y, z), this.sx(b.x - b.vx * 0.03, z2), this.sy(BULLET_Y, z2));
+    g.lineBetween(this.sx(b.x, z), this.sy(b.y, z), this.sx(b.x - b.vx * 0.03, z2), this.sy(b.y - b.vy * 0.03, z2));
+  };
+
+  // In 3D aim, a sight where the gun points: four ticks on the aim line
+  // a little way out, so a tilt up the wall can be judged.
+  MainScene.prototype.drawAimSight = function () {
+    var s = this.state;
+    if (!TUNING.AIM_HEMISPHERE || s.mode !== 'walking') return;
+    var reach = 220, z = this.zOf(s.pd + s.aimD * reach);
+    if (z < Z_NEAR + 0.1) return;
+    var x = this.sx(s.px + s.aimX * reach, z), y = this.sy(BULLET_Y - s.aimUp * reach, z);
+    var g = this.gFx, gap = 4, len = 5;
+    g.lineStyle(1.5, s.firing ? COLOR_FLAME_INNER : COLOR_BULLET, s.firing ? 0.95 : 0.5);
+    g.lineBetween(x - gap - len, y, x - gap, y);
+    g.lineBetween(x + gap, y, x + gap + len, y);
+    g.lineBetween(x, y - gap - len, x, y - gap);
+    g.lineBetween(x, y + gap, x, y + gap + len);
   };
 
   // A ball of fire: an orange orb with a halo and a ragged tail back
@@ -2065,6 +2133,7 @@
   // ==================================================================
   var LAB_SPEC = [
     { title: 'You', rows: [
+      ['AIM_HEMISPHERE', 'Aim in 3D (hemisphere)', 'toggle'],
       ['WALK_SPEED', 'Walk speed', 60, 240, 5, ' px/s'],
       ['LIVES', 'Lives', 1, 9, 1, ''],
       ['FIRE_INTERVAL', 'Fire every', 0.03, 0.3, 0.005, ' s'],
@@ -2143,6 +2212,18 @@
         row.className = 'lab-row';
         var label = document.createElement('label');
         label.textContent = r[1];
+        if (r[2] === 'toggle') {
+          // On/off, stored as 1 or 0 like any other knob.
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.dataset.key = key;
+          var showT = function () { row.classList.toggle('changed', !!TUNING[key] !== !!TUNING_DEFAULTS[key]); };
+          cb.addEventListener('change', function () { TUNING[key] = cb.checked ? 1 : 0; showT(); saveTuning(); });
+          row.appendChild(label); row.appendChild(cb);
+          box.appendChild(row);
+          labSyncers.push(function () { cb.checked = !!TUNING[key]; showT(); });
+          return;
+        }
         var input = document.createElement('input');
         input.type = 'range';
         input.min = r[2]; input.max = r[3]; input.step = step;
@@ -2226,13 +2307,13 @@
       return {
         mode: s.mode, t: s.t, modeAge: s.modeAge, camD: s.camD, camX: s.camX,
         px: s.px, pd: s.pd, vx: s.vx, vd: s.vd, z: scene.zOf(s.pd), emerge: s.emerge, elev: s.elev,
-        aimX: s.aimX, aimD: s.aimD, firing: s.firing,
+        aimX: s.aimX, aimD: s.aimD, aimUp: s.aimUp, firing: s.firing,
         lives: s.lives, score: s.score, deaths: s.deaths, lastDeath: s.lastDeath || null, invuln: s.invuln,
         progressM: scene.progressM(), bestM: s.bestM, difficulty: scene.difficulty(), block: s.block,
         groupEvery: scene.groupEvery(), maxAlive: scene.maxAlive(),
         firesAhead: s.firesAhead,
         shotsFired: s.shotsFired, kills: s.kills, firesShot: s.firesShot, firesLaunched: s.firesLaunched, splashes: s.splashes || 0,
-        bullets: s.bullets.map(function (b) { return { x: b.x, d: b.d, vx: b.vx, vd: b.vd }; }),
+        bullets: s.bullets.map(function (b) { return { x: b.x, y: b.y, d: b.d, vx: b.vx, vy: b.vy, vd: b.vd }; }),
         enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r, climb: e.climb || 0 }; }),
         craters: s.craters.map(function (c) { return { x: c.x, d: c.d, r: c.r, burn: c.burn }; }),
         portals: s.portals.length,
@@ -2256,6 +2337,9 @@
     setInvincible: function (on) { scene.state.invincible = !!on; },
     setPlayer: function (x, d) { var s = scene.state; s.px = x; s.pd = d; s.vx = s.vd = 0; },
     tune: function (key, v) { TUNING[key] = v; return true; },
+    // The right stick as a thumb would hold it: deflection x, y (-1..1,
+    // y down), touching or not.
+    setAimStick: function (x, y, held) { aim.tx = x; aim.ty = y; aim.held = !!held; compose(aim); return true; },
     setLives: function (n) { scene.state.lives = n; },
     setScore: function (n) { scene.state.score = n; },
     addScore: function (n) { scene.addScore(n); },
