@@ -373,15 +373,22 @@
 
   // ---- The gun ------------------------------------------------------
   var AIM_DEADZONE = 0.3;      // the right stick fires once pushed this far
-  // Aim in 3D (a lab toggle, off by default). The right stick's circle
-  // becomes the half of the sky in front of you, seen from inside: the
-  // middle is dead ahead up the street at chest height, pushing up tilts
-  // the gun up, pushing left or right swings it round, and the rim of
-  // the circle is the rim of the hemisphere - straight up, or straight
-  // out to the side. Touching fires. The shots fly in 3D, so climbers
-  // high on the walls and fire still in the air can be hit.
-  var AIM_HEMISPHERE = 0;
-  var KEY_AIM_REACH = 0.7;     // the arrow keys tilt this far round the hemisphere
+  // How the right stick aims (a lab choice):
+  //   0 flat     - along the ground, in the direction pushed (the default).
+  //   1 ahead    - the half of the sky in front of you, seen from inside:
+  //                the middle is dead ahead and level, up tilts the gun
+  //                up, sideways swings it round, the rim is 90 degrees
+  //                round (straight up, or straight out to the side).
+  //   2 overhead - the dome over your head, seen from above: the way
+  //                the stick is pushed is the way you shoot, as in flat,
+  //                and how far is how low - full push is along the
+  //                ground, easing off lifts the gun, the middle is
+  //                straight up.
+  // In 1 and 2 touching fires, and shots fly in 3D, so climbers high on
+  // the walls and fire still in the air can be hit.
+  var AIM_MODE = 0;
+  var AIM_FLAT = 0, AIM_AHEAD = 1, AIM_OVERHEAD = 2;
+  var KEY_AIM_REACH = 0.7;     // in 'ahead', the arrow keys tilt this far round
   var AHEAD_HP = 4;            // shots to bring down a big fireball, in 3D aim
   var FIRE_INTERVAL = 0.16;    // seconds between shots while the stick is pushed
   var BULLET_SPEED = 600;      // px/s along the ground
@@ -493,7 +500,7 @@
   // ---- Tuning: the live values -------------------------------------
   var TUNING_KEY = 'street-tuning-v1';
   var TUNING_DEFAULTS = {
-    AIM_HEMISPHERE: AIM_HEMISPHERE,
+    AIM_MODE: AIM_MODE,
     WALK_SPEED: WALK_SPEED, PLAYER_Z_PUSH: PLAYER_Z_PUSH, FIRE_INTERVAL: FIRE_INTERVAL, BULLET_SPEED: BULLET_SPEED, LIVES: LIVES,
     RAMP_M: RAMP_M, GROUP_EVERY_START: GROUP_EVERY_START, GROUP_EVERY_PEAK: GROUP_EVERY_PEAK,
     GROUP_SIZE_START: GROUP_SIZE_START, GROUP_SIZE_PEAK: GROUP_SIZE_PEAK,
@@ -894,11 +901,15 @@
     s.walkPhase += sp * dt * 0.09;
     // Aim: the right stick's direction, kept after it is let go so the
     // gun keeps pointing where you last fired.
-    if (TUNING.AIM_HEMISPHERE) {
+    var mode = Math.round(TUNING.AIM_MODE);
+    if (mode === AIM_AHEAD || mode === AIM_OVERHEAD) {
       var keys = aim.kx || aim.ky || aim.space;
       s.firing = !!(aim.held || keys);
       if (s.firing) {
-        var h = hemisphereAim(aim.tx + aim.kx * KEY_AIM_REACH, aim.ty + aim.ky * KEY_AIM_REACH);
+        // Keys: in 'ahead' part of the way round; overhead, full out
+        // (along the ground) - Space alone is the middle either way.
+        var kr = mode === AIM_AHEAD ? KEY_AIM_REACH : 1;
+        var h = (mode === AIM_AHEAD ? hemisphereAim : domeAim)(aim.tx + aim.kx * kr, aim.ty + aim.ky * kr);
         s.aimX = h.x; s.aimUp = h.up; s.aimD = h.d;
       } else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; s.aimUp = 0; }
       return;
@@ -910,6 +921,8 @@
     else if (!s.firing && sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; }
   };
 
+  function aim3d() { return Math.round(TUNING.AIM_MODE) !== AIM_FLAT; }
+
   // The stick's circle onto the hemisphere in front of you, as if seen
   // from inside it: across is across, up is up, and what is left over
   // is forward - so the middle is straight ahead and the rim is 90
@@ -918,6 +931,16 @@
     var up = -y, m = Math.hypot(x, up);
     if (m > 1) { x /= m; up /= m; }
     return { x: x, up: up, d: Math.sqrt(Math.max(0, 1 - x * x - up * up)) };
+  }
+
+  // The stick's circle onto the dome over your head, seen from above:
+  // direction is the direction on the ground (up the street is up, as
+  // in flat aim) and distance from the middle is how far down the dome
+  // - the rim is level with the ground, the middle straight up.
+  function domeAim(x, y) {
+    var fwd = -y, m = Math.hypot(x, fwd);
+    if (m > 1) { x /= m; fwd /= m; m = 1; }
+    return { x: x, up: Math.sqrt(Math.max(0, 1 - m * m)), d: fwd };
   }
 
   // The camera only ever moves forward, and only because you pushed it:
@@ -1242,7 +1265,7 @@
       // The big ones thrown into the road ahead can't be stopped by the
       // flat aim - they are there to be walked round. Aimed in 3D they
       // can be brought down, but take several hits.
-      if (f.stage !== 'fly' || f.dead || (f.ahead && !TUNING.AIM_HEMISPHERE)) continue;
+      if (f.stage !== 'fly' || f.dead || (f.ahead && !aim3d())) continue;
       if (Math.hypot(f.x - b.x, f.y - b.y, f.d - b.d) < FIRE_R * f.size + BULLET_HIT + 4) {
         if (f.ahead && (f.hp = (f.hp == null ? AHEAD_HP : f.hp) - 1) > 0) {
           this.burst(b.x, b.y, b.d, COLOR_FIRE, true);
@@ -2035,7 +2058,7 @@
   // a little way out, so a tilt up the wall can be judged.
   MainScene.prototype.drawAimSight = function () {
     var s = this.state;
-    if (!TUNING.AIM_HEMISPHERE || s.mode !== 'walking') return;
+    if (!aim3d() || s.mode !== 'walking') return;
     var reach = 220, z = this.zOf(s.pd + s.aimD * reach);
     if (z < Z_NEAR + 0.1) return;
     var x = this.sx(s.px + s.aimX * reach, z), y = this.sy(BULLET_Y - s.aimUp * reach, z);
@@ -2133,7 +2156,7 @@
   // ==================================================================
   var LAB_SPEC = [
     { title: 'You', rows: [
-      ['AIM_HEMISPHERE', 'Aim in 3D (hemisphere)', 'toggle'],
+      ['AIM_MODE', 'Right stick aims', 'choice', ['Flat, along the ground', 'Half sphere in front', 'Half sphere overhead']],
       ['WALK_SPEED', 'Walk speed', 60, 240, 5, ' px/s'],
       ['LIVES', 'Lives', 1, 9, 1, ''],
       ['FIRE_INTERVAL', 'Fire every', 0.03, 0.3, 0.005, ' s'],
@@ -2212,6 +2235,23 @@
         row.className = 'lab-row';
         var label = document.createElement('label');
         label.textContent = r[1];
+        if (r[2] === 'choice') {
+          // One of a few named settings, stored as its index.
+          var sel = document.createElement('select');
+          sel.className = 'lab-btn';
+          sel.style.flex = '1 1 auto';
+          r[3].forEach(function (name, i) {
+            var opt = document.createElement('option');
+            opt.value = i; opt.textContent = name;
+            sel.appendChild(opt);
+          });
+          var showC = function () { row.classList.toggle('changed', TUNING[key] !== TUNING_DEFAULTS[key]); };
+          sel.addEventListener('change', function () { TUNING[key] = parseInt(sel.value, 10); showC(); saveTuning(); });
+          row.appendChild(label); row.appendChild(sel);
+          box.appendChild(row);
+          labSyncers.push(function () { sel.value = String(Math.round(TUNING[key])); showC(); });
+          return;
+        }
         if (r[2] === 'toggle') {
           // On/off, stored as 1 or 0 like any other knob.
           var cb = document.createElement('input');

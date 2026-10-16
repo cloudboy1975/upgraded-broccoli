@@ -350,7 +350,7 @@ harness.run(async (page, check, ctx) => {
   check('well down the street, several balls of fire are in the air at once', s.fires.length >= 3, s.fires.length);
 
   // ---- Aim in 3D (lab toggle) ---------------------------------------------
-  check('3D aim is off by default', T.AIM_HEMISPHERE === 0, T.AIM_HEMISPHERE);
+  check('flat aim is the default', T.AIM_MODE === 0, T.AIM_MODE);
   // A climber high on a wall, straight up the street from you: aiming
   // up at about 33 degrees puts the shots through it.
   // Held still on the wall (no climbing down) so the height it is hit
@@ -370,7 +370,7 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__streetDebug.setAimStick(0, 0, false));
   check('flat aim: a climber high on the wall is out of reach', s.kills === 0 && s.shotsFired > 0 && s.bullets.every(b => b.vy === 0), { kills: s.kills, shots: s.shotsFired });
 
-  await D(page, () => window.__streetDebug.tune('AIM_HEMISPHERE', 1));
+  await D(page, () => window.__streetDebug.tune('AIM_MODE', 1));
   await climberUpAhead();
   await D(page, () => window.__streetDebug.setAimStick(0, 0, true));
   await page.waitForTimeout(150);
@@ -402,7 +402,27 @@ harness.run(async (page, check, ctx) => {
   s = await until(page, (st) => st.firesShot > 0, 6000);
   await D(page, () => window.__streetDebug.setAimStick(0, 0, false));
   check('3D aim: a fireball shot down while still in the air', s.firesShot === 1 && s.splashes === 0, s);
-  await D(page, (v) => window.__streetDebug.tune('AIM_HEMISPHERE', v), T.AIM_HEMISPHERE);
+  // ---- Overhead: the dome over you ----
+  await D(page, () => window.__streetDebug.tune('AIM_MODE', 2));
+  await climberUpAhead();
+  await D(page, () => window.__streetDebug.setAimStick(0, 0, true));
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('overhead aim: the middle of the stick is straight up', s.firing && s.aimUp > 0.999, s);
+  await D(page, () => window.__streetDebug.setAimStick(0, -1, true));
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('...full push up the street is along the ground, as in flat aim', Math.abs(s.aimD - 1) < 1e-6 && s.aimUp < 1e-6, s);
+  await D(page, () => window.__streetDebug.setAimStick(-0.75, 0.75, true));
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('...full push down-left is along the ground, back and left', s.aimX < -0.7 && s.aimD < -0.7 && s.aimUp < 1e-3, s);
+  // Eased off to 0.835 of the way out: up at about 33 degrees, up the street.
+  await D(page, () => window.__streetDebug.setAimStick(0, -0.835, true));
+  s = await until(page, (st) => st.kills > 0, 4000);
+  await D(page, () => window.__streetDebug.setAimStick(0, 0, false));
+  check('...easing off lifts the gun: a climber high on the wall comes down', s.kills === 1, { kills: s.kills, aimUp: s.aimUp });
+  await D(page, (v) => window.__streetDebug.tune('AIM_MODE', v), T.AIM_MODE);
   await D(page, (v) => window.__streetDebug.tune('CLIMB_SPEED', v), T.CLIMB_SPEED);
 
   // ---- On from the descent ---------------------------------------------

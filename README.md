@@ -437,17 +437,27 @@ itself, for practice.
   to land. Standing still only brings the odd straggler, at the rate
   your distance has already set. A **BLOCK n** banner marks every
   100 m.
-- **Aim in 3D (lab toggle, off by default).** The right stick's circle
-  becomes the half of the sky in front of you, seen from inside. The
-  middle fires dead ahead up the street at chest height. Pushing up tilts
-  the gun upward, pushing sideways swings it left or right, and the
-  edge of the circle is the edge of the half-sphere, so straight up or
-  straight out to the side. Touching fires. Shots fly in 3D, so you can
-  bring down climbers high on the walls and fireballs still in the air.
-  The big fireballs thrown into the road ahead take 4 hits. A small
-  sight on the aim line shows where you're pointing. On a keyboard, the
-  arrows tilt the gun part of the way round and Space fires straight
-  ahead.
+- **Aiming in 3D (a lab choice, "Right stick aims").** There are three
+  modes:
+  - **Flat, along the ground** (the default): twin-stick as described
+    above.
+  - **Half sphere in front:** the stick's circle is the half of the sky
+    in front of you, seen from inside. The middle fires dead ahead at
+    chest height. Pushing up tilts the gun up and pushing sideways
+    swings it round. The edge of the circle is straight up, or straight
+    out to the side.
+  - **Half sphere overhead:** the circle is the dome over your head,
+    seen from above. The direction you push is the direction you shoot,
+    as in flat aim, and how far you push sets how low. Full push is
+    along the ground, easing off lifts the gun, and the middle is
+    straight up. So the flat twin-stick habit still works at full
+    push.
+
+  In both sphere modes, touching fires and shots fly in 3D, so climbers
+  high on the walls and fireballs still in the air can be hit. The big
+  fireballs thrown into the road ahead take 4 hits. A small sight on
+  the aim line shows where you're pointing. On a keyboard, Space fires
+  at the middle of the stick.
 - **Settings lab.** Backquote, or triple-tap the "Main Street" tag.
   Every ramp has a start and a full value, plus jumps to 25%, 50% and
   full difficulty, and **No death**. **Scroll point (depth)** sets how
