@@ -408,10 +408,13 @@ itself, for practice.
   them. You watch them come down, and they're too big to shoot. What
   they leave is burning ground you have to walk around.
 - **The street takes damage.** Where fire lands it breaks the road open
-  into a crater: a flat red glow, pulsing, with its cracks lit. It burns
-  for 9s. Walking into it kills you, and it burns aliens that walk into
+  into a crater shaped like struck glass: an irregular star of sharp
+  shards with fracture lines, laid flat on the road. While it burns it
+  is neon red, with a soft radiance around it, all pulsing slowly and
+  evenly (every crater in step). It's a flat-world danger sign rather
+  than cartoon fire. It burns for 9s. Walking into it kills you, and it burns aliens that walk into
   it too, with no points for those. Once burnt out, the crater stays as
-  a dark scar of rubble that slows you to about half speed. A new life
+  a dark, dim-edged scar of rubble that slows you to about half speed. A new life
   puts out any fire near where you fell.
 - **Lives, not a shield.** You start with 3 every time (nothing carries
   over from the descent), and get an extra one every 10,000 points.
