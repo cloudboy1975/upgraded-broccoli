@@ -422,6 +422,48 @@ harness.run(async (page, check, ctx) => {
   s = await until(page, (st) => st.kills > 0, 4000);
   await D(page, () => window.__streetDebug.setAimStick(0, 0, false));
   check('...easing off lifts the gun: a climber high on the wall comes down', s.kills === 1, { kills: s.kills, aimUp: s.aimUp });
+  // ---- Lift: flat, then push past the rim to lift ----
+  await D(page, () => window.__streetDebug.tune('AIM_MODE', 3));
+  await climberUpAhead();
+  await D(page, () => window.__streetDebug.setAimStick(0, -0.6, true));
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('lift aim: an ordinary push fires flat, as in twin-stick', s.firing && Math.abs(s.aimD - 1) < 1e-6 && s.aimUp === 0, s);
+  await D(page, () => window.__streetDebug.setAimStick(0, -1, true));
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('...still flat right up to the usual rim', s.aimUp === 0, s.aimUp);
+  await D(page, (T) => window.__streetDebug.setAimStick(0, -T.LIFT_TRAVEL, true), T);
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('...at the far end of the extra travel it is ' + T.LIFT_MAX + ' degrees up',
+    Math.abs(Math.asin(s.aimUp) * 180 / Math.PI - T.LIFT_MAX) < 0.01, s.aimUp);
+  // Part way past the rim: about 33 degrees, through the climber.
+  const past = 1 + (T.LIFT_TRAVEL - 1) * 33.4 / T.LIFT_MAX;
+  await D(page, (v) => window.__streetDebug.setAimStick(0, -v, true), past);
+  s = await until(page, (st) => st.kills > 0, 4000);
+  await D(page, () => window.__streetDebug.setAimStick(0, 0, false));
+  check('...pushing past the rim lifts the gun into a climber high on the wall', s.kills === 1, { kills: s.kills, aimUp: s.aimUp });
+
+  // The real stick: a thumb dragged 60px up the right half. In lift aim
+  // it gets past the usual 44px; in flat aim it stops there.
+  async function drag(px) {
+    const box = await page.locator('#aimZone').boundingBox();
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y - px / 2);
+    await page.mouse.move(x, y - px);
+    const st = await state(page);
+    const ring = await D(page, () => document.getElementById('aimLimit').classList.contains('visible'));
+    await page.mouse.up();
+    return { aty: st.input.aty, ring };
+  }
+  let dr = await drag(60);
+  check('lift aim: the real stick reaches past its usual rim, and shows where that rim is', dr.aty < -1.3 && dr.ring, dr);
+  await D(page, () => window.__streetDebug.tune('AIM_MODE', 0));
+  dr = await drag(60);
+  check('flat aim: the same drag stops at the rim, no ring', Math.abs(dr.aty + 1) < 1e-6 && !dr.ring, dr);
   await D(page, (v) => window.__streetDebug.tune('AIM_MODE', v), T.AIM_MODE);
   await D(page, (v) => window.__streetDebug.tune('CLIMB_SPEED', v), T.CLIMB_SPEED);
 

@@ -179,6 +179,21 @@
     transition: opacity 0.12s;
   }
   .aim-pad .stick-knob { border-color: rgba(134, 239, 172, 0.7); background: rgba(34, 197, 94, 0.2); }
+  /* In the "push past the rim to lift" aim: the ordinary limit of the
+     stick, drawn round where the thumb landed. Inside it the gun fires
+     flat; push beyond it and the gun lifts. */
+  .stick-limit {
+    position: absolute;
+    top: 0; left: 0;
+    width: 88px; height: 88px;
+    margin-left: -44px; margin-top: -44px;
+    border-radius: 50%;
+    border: 1px dashed rgba(253, 230, 138, 0.55);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .stick-limit.visible { opacity: 1; }
   .stick-anchor.visible, .stick-knob.visible { opacity: 1; }
 
   /* ---- Settings lab: descent.html's, for this file's knobs. ---- */
@@ -269,6 +284,7 @@
     <div class="pad aim-pad" id="aimZone" aria-label="Fire: press anywhere on the right half and drag the way to shoot">
       <span class="stick-ring" aria-hidden="true"></span>
       <span class="stick-anchor" id="aimAnchor" aria-hidden="true"></span>
+      <span class="stick-limit" id="aimLimit" aria-hidden="true"></span>
       <span class="stick-knob" id="aimKnob" aria-hidden="true"></span>
     </div>
   </div>
@@ -386,8 +402,15 @@
   //                straight up.
   // In 1 and 2 touching fires, and shots fly in 3D, so climbers high on
   // the walls and fire still in the air can be hit.
+  //   3 lift     - flat, as 0, as far as the stick normally goes; it
+  //                then reaches further (LIFT_TRAVEL x), and pushing on
+  //                past the usual rim lifts the gun, up to LIFT_MAX
+  //                degrees at the far end. Ordinary pushes stay pure
+  //                twin-stick; lifting is a deliberate extra push.
   var AIM_MODE = 0;
-  var AIM_FLAT = 0, AIM_AHEAD = 1, AIM_OVERHEAD = 2;
+  var AIM_FLAT = 0, AIM_AHEAD = 1, AIM_OVERHEAD = 2, AIM_LIFT = 3;
+  var LIFT_TRAVEL = 1.5;       // how far past its usual reach the stick goes, in 'lift'
+  var LIFT_MAX = 70;           // degrees up, at the far end of that
   var KEY_AIM_REACH = 0.7;     // in 'ahead', the arrow keys tilt this far round
   var AHEAD_HP = 4;            // shots to bring down a big fireball, in 3D aim
   var FIRE_INTERVAL = 0.16;    // seconds between shots while the stick is pushed
@@ -500,7 +523,7 @@
   // ---- Tuning: the live values -------------------------------------
   var TUNING_KEY = 'street-tuning-v1';
   var TUNING_DEFAULTS = {
-    AIM_MODE: AIM_MODE,
+    AIM_MODE: AIM_MODE, LIFT_TRAVEL: LIFT_TRAVEL, LIFT_MAX: LIFT_MAX,
     WALK_SPEED: WALK_SPEED, PLAYER_Z_PUSH: PLAYER_Z_PUSH, FIRE_INTERVAL: FIRE_INTERVAL, BULLET_SPEED: BULLET_SPEED, LIVES: LIVES,
     RAMP_M: RAMP_M, GROUP_EVERY_START: GROUP_EVERY_START, GROUP_EVERY_PEAK: GROUP_EVERY_PEAK,
     GROUP_SIZE_START: GROUP_SIZE_START, GROUP_SIZE_PEAK: GROUP_SIZE_PEAK,
@@ -620,7 +643,9 @@
     compose(v);
   }
 
-  function bindStick(el, anchorEl, knobEl, v) {
+  // v.extend(), if given, lets the knob travel that many times its usual
+  // reach (the values then run past 1); limitEl marks the usual reach.
+  function bindStick(el, anchorEl, knobEl, v, limitEl) {
     var activeId = null, watchdogTimer = null, anchorX = 0, anchorY = 0;
     el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
     function release() {
@@ -629,6 +654,7 @@
       clearTimeout(watchdogTimer);
       anchorEl.classList.remove('visible');
       knobEl.classList.remove('visible');
+      if (limitEl) limitEl.classList.remove('visible');
       el.classList.remove('active');
       knobEl.style.transform = 'translate(0px, 0px)';
       v.tx = 0; v.ty = 0; v.held = false;
@@ -648,6 +674,10 @@
       knobEl.style.transform = 'translate(0px, 0px)';
       anchorEl.classList.add('visible');
       knobEl.classList.add('visible');
+      if (limitEl) {
+        limitEl.style.left = lx + 'px'; limitEl.style.top = ly + 'px';
+        limitEl.classList.toggle('visible', !!v.extend && v.extend() > 1);
+      }
       el.classList.add('active');
       v.tx = 0; v.ty = 0; v.held = true;
       compose(v);
@@ -656,7 +686,7 @@
     el.addEventListener('pointermove', function (e) {
       if (e.pointerId !== activeId) return;
       var dx = e.clientX - anchorX, dy = e.clientY - anchorY, dist = Math.hypot(dx, dy);
-      var c = Math.min(dist, STICK_MAX_RADIUS_PX);
+      var c = Math.min(dist, STICK_MAX_RADIUS_PX * (v.extend ? v.extend() : 1));
       var kx = dist > 0 ? dx / dist * c : 0, ky = dist > 0 ? dy / dist * c : 0;
       knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
       v.tx = kx / STICK_MAX_RADIUS_PX; v.ty = ky / STICK_MAX_RADIUS_PX;
@@ -673,7 +703,9 @@
     return release;
   }
   var releaseMove = bindStick(document.getElementById('moveZone'), document.getElementById('moveAnchor'), document.getElementById('moveKnob'), move);
-  var releaseAim = bindStick(document.getElementById('aimZone'), document.getElementById('aimAnchor'), document.getElementById('aimKnob'), aim);
+  // The aim stick reaches further in the push-past-the-rim mode.
+  aim.extend = function () { return Math.round(TUNING.AIM_MODE) === AIM_LIFT ? TUNING.LIFT_TRAVEL : 1; };
+  var releaseAim = bindStick(document.getElementById('aimZone'), document.getElementById('aimAnchor'), document.getElementById('aimKnob'), aim, document.getElementById('aimLimit'));
 
   var MOVE_KEYS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
   var AIM_KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyI: 'up', KeyK: 'down', KeyJ: 'left', KeyL: 'right' };
@@ -914,6 +946,16 @@
       } else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; s.aimUp = 0; }
       return;
     }
+    if (mode === AIM_LIFT) {
+      // The touch's own reach (it runs past 1); the keys stay flat.
+      var lx = aim.tx + aim.kx, ly = aim.ty + aim.ky, lm = Math.hypot(lx, ly);
+      s.firing = lm >= AIM_DEADZONE || !!aim.space;
+      if (lm >= AIM_DEADZONE) {
+        var l = liftAim(lx, ly);
+        s.aimX = l.x; s.aimUp = l.up; s.aimD = l.d;
+      } else if (!s.firing && sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; s.aimUp = 0; }
+      return;
+    }
     var am = Math.hypot(aim.x, aim.y);
     s.firing = am >= AIM_DEADZONE || !!aim.space;
     s.aimUp = 0;
@@ -931,6 +973,14 @@
     var up = -y, m = Math.hypot(x, up);
     if (m > 1) { x /= m; up /= m; }
     return { x: x, up: up, d: Math.sqrt(Math.max(0, 1 - x * x - up * up)) };
+  }
+
+  // Flat up to the stick's usual reach (1), lifting beyond it: at the
+  // far end of the extra travel the gun is LIFT_MAX degrees up.
+  function liftAim(x, y) {
+    var m = Math.hypot(x, y) || 1, past = Math.max(0, m - 1) / Math.max(0.01, TUNING.LIFT_TRAVEL - 1);
+    var el = clamp(past, 0, 1) * TUNING.LIFT_MAX * Math.PI / 180, c = Math.cos(el);
+    return { x: x / m * c, up: Math.sin(el), d: -y / m * c };
   }
 
   // The stick's circle onto the dome over your head, seen from above:
@@ -2156,7 +2206,9 @@
   // ==================================================================
   var LAB_SPEC = [
     { title: 'You', rows: [
-      ['AIM_MODE', 'Right stick aims', 'choice', ['Flat, along the ground', 'Half sphere in front', 'Half sphere overhead']],
+      ['AIM_MODE', 'Right stick aims', 'choice', ['Flat, along the ground', 'Half sphere in front', 'Half sphere overhead', 'Flat; push past the rim to lift']],
+      ['LIFT_TRAVEL', 'Lift: extra stick travel', 1.1, 2.5, 0.05, '\u00d7'],
+      ['LIFT_MAX', 'Lift: most it tilts up', 15, 90, 1, '\u00b0'],
       ['WALK_SPEED', 'Walk speed', 60, 240, 5, ' px/s'],
       ['LIVES', 'Lives', 1, 9, 1, ''],
       ['FIRE_INTERVAL', 'Fire every', 0.03, 0.3, 0.005, ' s'],
@@ -2360,7 +2412,7 @@
         fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size, u: f.stage === 'fly' ? f.age / f.flight : 0, marked: scene.fireMarked(f) }; }),
         buildings: s.buildings.length, banner: s.banner && s.banner.text,
         overlay: document.getElementById('overOverlay').classList.contains('visible'),
-        input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y }
+        input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y, atx: aim.tx, aty: aim.ty }
       };
     },
     constants: function () {

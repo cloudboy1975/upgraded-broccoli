@@ -452,8 +452,16 @@ itself, for practice.
     along the ground, easing off lifts the gun, and the middle is
     straight up. So the flat twin-stick habit still works at full
     push.
+  - **Flat; push past the rim to lift:** exactly the flat twin-stick
+    as far as the stick normally goes. In this mode it can travel
+    further (1.5x by default), and a dashed ring around your thumb
+    marks the usual limit. Pushing on past that ring lifts the gun, up
+    to 70 degrees at the far end. Ordinary pushes stay pure Robotron,
+    and lifting is a deliberate extra push. **Lift: extra stick travel**
+    and **Lift: most it tilts up** are lab sliders. Keys stay flat.
 
-  In both sphere modes, touching fires and shots fly in 3D, so climbers
+  In both sphere modes touching fires, and in all three non-flat modes
+  shots fly in 3D, so climbers
   high on the walls and fireballs still in the air can be hit. The big
   fireballs thrown into the road ahead take 4 hits. A small sight on
   the aim line shows where you're pointing. On a keyboard, Space fires
