@@ -460,6 +460,17 @@ itself, for practice.
     and lifting is a deliberate extra push. **Lift: extra stick travel**
     and **Lift: most it tilts up** are lab sliders. Keys stay flat.
 
+  - **Flat + tilt slider (left thumb):** the right stick is plain
+    flat twin-stick, for direction only. A third control sits in the
+    strip of the left half to the right of the walking circle. A left
+    thumb that lands there works a slider instead of walking. Its
+    centre is wherever the thumb lands, like the sticks. Sliding up
+    tilts the gun from level up to 45 degrees (**Tilt: most it tilts
+    up** in the lab), sliding down stays level, and letting go puts it
+    level again. So the left thumb either walks or tilts. In the other
+    modes the strip isn't there and the whole left half walks. Shift
+    gives full tilt on a keyboard.
+
   In both sphere modes touching fires, and in all three non-flat modes
   shots fly in 3D, so climbers
   high on the walls and fireballs still in the air can be hit. The big

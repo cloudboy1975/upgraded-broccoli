@@ -464,6 +464,46 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__streetDebug.tune('AIM_MODE', 0));
   dr = await drag(60);
   check('flat aim: the same drag stops at the rim, no ring', Math.abs(dr.aty + 1) < 1e-6 && !dr.ring, dr);
+  // ---- Tilt: flat direction, a slider under the left thumb for height ----
+  await D(page, () => window.__streetDebug.tune('AIM_MODE', 4));
+  await climberUpAhead();
+  await page.waitForTimeout(100);
+  // A left thumb landing right of the walking circle, sliding up.
+  async function leftThumb(fx, dy) {
+    const box = await page.locator('#moveZone').boundingBox();
+    const x = box.x + box.width * fx, y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + dy / 2);
+    await page.mouse.move(x, y + dy);
+    const st = await state(page);
+    await page.mouse.up();
+    return st.input;
+  }
+  let inp = await leftThumb(0.93, -56);
+  check('tilt aim: a left thumb right of the walking circle works the slider, full up at the top', Math.abs(inp.tilt - 1) < 1e-6 && inp.mx === 0 && inp.my === 0, inp);
+  inp = await leftThumb(0.93, -28);
+  check('...half way up is half tilt', Math.abs(inp.tilt - 0.5) < 0.02, inp.tilt);
+  inp = await leftThumb(0.93, 40);
+  check('...sliding down stays level', inp.tilt === 0, inp.tilt);
+  inp = await leftThumb(0.35, -40);
+  check('...on the walking circle it still walks', inp.my < -0.5 && inp.tilt === 0, inp);
+  s = await state(page);
+  check('...and letting go of the slider puts the gun level again', s.input.tilt === 0, s.input.tilt);
+  await D(page, () => { const d = window.__streetDebug; d.setTilt(1); d.setAimStick(0, -1, true); });
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('...full tilt is ' + T.TILT_MAX + ' degrees, in the right stick\'s direction',
+    Math.abs(Math.asin(s.aimUp) * 180 / Math.PI - T.TILT_MAX) < 0.01 && s.aimD > 0 && Math.abs(s.aimX) < 1e-6, s);
+  // About 33 degrees: through the climber up ahead.
+  await D(page, (v) => { const d = window.__streetDebug; d.setTilt(v); d.setAimStick(0, -1, true); }, 33.4 / T.TILT_MAX);
+  s = await until(page, (st) => st.kills > 0, 4000);
+  await D(page, () => { const d = window.__streetDebug; d.setTilt(0); d.setAimStick(0, 0, false); });
+  check('...tilted, the flat stick brings down a climber high on the wall', s.kills === 1, { kills: s.kills, aimUp: s.aimUp });
+  await D(page, () => window.__streetDebug.tune('AIM_MODE', 0));
+  await page.waitForTimeout(100);
+  inp = await leftThumb(0.93, -40);
+  check('flat aim: no slider - the whole left half walks', inp.my < -0.5 && inp.tilt === 0, inp);
   await D(page, (v) => window.__streetDebug.tune('AIM_MODE', v), T.AIM_MODE);
   await D(page, (v) => window.__streetDebug.tune('CLIMB_SPEED', v), T.CLIMB_SPEED);
 
