@@ -500,12 +500,38 @@ harness.run(async (page, check, ctx) => {
   s = await until(page, (st) => st.kills > 0, 4000);
   await D(page, () => { const d = window.__streetDebug; d.setTilt(0); d.setAimStick(0, 0, false); });
   check('...tilted, the flat stick brings down a climber high on the wall', s.kills === 1, { kills: s.kills, aimUp: s.aimUp });
+  // The sight: only while tilting.
+  await D(page, () => { const d = window.__streetDebug; d.setTilt(0); d.setAimStick(0, -1, true); });
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('tilt aim: no crosshair while firing level', !s.sight, s.sight);
+  await D(page, () => window.__streetDebug.setTilt(0.5));
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('...the crosshair shows while tilted', s.sight, s.sight);
+  await D(page, () => { const d = window.__streetDebug; d.setTilt(0); d.setAimStick(0, 0, false); });
   await D(page, () => window.__streetDebug.tune('AIM_MODE', 0));
   await page.waitForTimeout(100);
   inp = await leftThumb(0.93, -40);
   check('flat aim: no slider - the whole left half walks', inp.my < -0.5 && inp.tilt === 0, inp);
   await D(page, (v) => window.__streetDebug.tune('AIM_MODE', v), T.AIM_MODE);
   await D(page, (v) => window.__streetDebug.tune('CLIMB_SPEED', v), T.CLIMB_SPEED);
+
+  // ---- Fitting the screen ------------------------------------------------
+  // The page is sized to the visible height, measured; the controls end
+  // exactly at the bottom of the screen at any size, and follow a resize.
+  for (const [w, h] of [[390, 844], [375, 553], [844, 390], [390, 664]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.waitForTimeout(400);
+    const fit = await D(page, () => {
+      const bar = document.querySelector('.control-bar').getBoundingClientRect();
+      return { barBottom: Math.round(bar.bottom), inner: innerHeight, fitted: window.__streetDebug.fittedHeight(),
+        canvasBottom: Math.round(document.querySelector('canvas').getBoundingClientRect().bottom), barTop: Math.round(bar.top) };
+    });
+    check('at ' + w + 'x' + h + ' the controls end at the bottom of the screen, the picture above them',
+      fit.fitted === h && fit.barBottom === h && fit.canvasBottom <= fit.barTop + 1, fit);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
 
   // ---- On from the descent ---------------------------------------------
   await page.goto(ctx.url('descent.html?from=head-on&score=4321'));
