@@ -412,12 +412,13 @@ itself, for practice.
   they leave is burning ground you have to walk around.
 - **The street takes damage.** Where fire lands it breaks the road open
   into a crater shaped like a broken-out piece of glass: an irregular
-  closed polygon with straight edges, uneven corners and fracture lines
-  running from the point of impact, laid flat on the road. Its outline
-  is about the size of the area that kills. While it burns it
-  is neon red, with a soft radiance around it, all pulsing slowly and
-  evenly (every crater in step). It's a flat-world danger sign rather
-  than cartoon fire. It burns for 9s. Walking into it kills you, and it burns aliens that walk into
+  closed polygon with straight edges and uneven corners, laid flat on
+  the road. Its outline is about the size of the area that kills. While
+  it burns it's neon red: a dark red body, a crisp neon edge and a soft
+  radiance around it, all pulsing together (every crater in step).
+  Overlapping craters merge into one shape with a single outline.
+  **Glow pulse depth** and **Glow pulse every** in the lab tune the
+  pulse. It burns for 9s. Walking into it kills you, and it burns aliens that walk into
   it too, with no points for those. Once burnt out, the crater stays as
   a dark, dim-edged scar of rubble that slows you to about half speed. A new life
   puts out any fire near where you fell.

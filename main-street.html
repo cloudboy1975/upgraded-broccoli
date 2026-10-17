@@ -439,6 +439,8 @@
   var CRATER_BURN = 9;         // seconds a crater burns
   var CRATER_SLOW = 0.55;      // your speed across rubble
   var CRATER_SCALE = 0.85;     // crater radius, as a share of the splash
+  var CRATER_PULSE = 0.8;      // how deep the glow's pulse goes (0 steady, 1 down to nothing)
+  var CRATER_PULSE_RATE = 1.4; // seconds per pulse
 
   // Aliens coming down the buildings. They crawl head-first down the
   // fronts of the towers, near and far up the street, drop into the
@@ -493,7 +495,7 @@
     FIRE_MAX_START: FIRE_MAX_START, FIRE_MAX_PEAK: FIRE_MAX_PEAK,
     FIRE_FLIGHT_START: FIRE_FLIGHT_START, FIRE_FLIGHT_PEAK: FIRE_FLIGHT_PEAK, FIRE_SPLASH: FIRE_SPLASH, FIRE_WARNING: FIRE_WARNING,
     FIRE_VOLLEY_START: FIRE_VOLLEY_START, FIRE_VOLLEY_PEAK: FIRE_VOLLEY_PEAK,
-    CRATER_BURN: CRATER_BURN, CRATER_SLOW: CRATER_SLOW,
+    CRATER_BURN: CRATER_BURN, CRATER_SLOW: CRATER_SLOW, CRATER_PULSE: CRATER_PULSE, CRATER_PULSE_RATE: CRATER_PULSE_RATE,
     AHEAD_START_M: AHEAD_START_M, AHEAD_EVERY_START: AHEAD_EVERY_START, AHEAD_EVERY_PEAK: AHEAD_EVERY_PEAK,
     AHEAD_MAX_START: AHEAD_MAX_START, AHEAD_MAX_PEAK: AHEAD_MAX_PEAK, AHEAD_SIZE: AHEAD_SIZE,
     CLIMB_EVERY_START: CLIMB_EVERY_START, CLIMB_EVERY_PEAK: CLIMB_EVERY_PEAK,
@@ -1379,37 +1381,17 @@
   // ---- The damaged street -----------------------------------------------
   // The shape a hit breaks in the road: an irregular closed polygon,
   // like a broken-out piece of glass - straight edges, uneven corners,
-  // no two alike - with fracture lines running from the point of impact
-  // (a little off centre) to some of its corners. In units of the
-  // crater's radius, flat on the ground.
+  // no two alike. In units of the crater's radius, flat on the ground.
   function shatterShape() {
-    var n = 6 + Math.floor(Math.random() * 4), rim = [], cracks = [], angles = [];
-    var a0 = rand(0, Math.PI * 2);
-    // Uneven gaps between corners, normalised to go once round.
-    var gaps = [], total = 0;
+    var n = 6 + Math.floor(Math.random() * 4), rim = [], gaps = [], total = 0;
     for (var i = 0; i < n; i++) { var gp = rand(0.5, 1.5); gaps.push(gp); total += gp; }
-    var a = a0;
+    var a = rand(0, Math.PI * 2);
     for (var k = 0; k < n; k++) {
-      angles.push(a);
+      var r = rand(0.72, 1.18);
+      rim.push([Math.cos(a) * r, Math.sin(a) * r]);
       a += gaps[k] / total * Math.PI * 2;
     }
-    for (var m = 0; m < n; m++) {
-      var r = rand(0.72, 1.18);
-      rim.push([Math.cos(angles[m]) * r, Math.sin(angles[m]) * r]);
-    }
-    var hit = [rand(-0.2, 0.2), rand(-0.2, 0.2)];
-    for (var j = 0; j < n; j++) {
-      if (Math.random() < 0.4) continue;
-      var c = rim[j], t = rand(0.4, 0.6);
-      var mid = [hit[0] + (c[0] - hit[0]) * t + rand(-0.07, 0.07), hit[1] + (c[1] - hit[1]) * t + rand(-0.07, 0.07)];
-      cracks.push([hit, mid, [c[0] * 0.97, c[1] * 0.97]]);
-    }
-    var ring = [], rr = rand(0.25, 0.35);
-    for (var q = 0; q < 6; q++) {
-      var qa = a0 + q / 6 * Math.PI * 2 + rand(-0.25, 0.25);
-      ring.push([hit[0] + Math.cos(qa) * rr, hit[1] + Math.sin(qa) * rr]);
-    }
-    return { rim: rim, cracks: cracks, ring: ring };
+    return { rim: rim };
   }
 
   // A hit on an old crater sets it burning again rather than piling a
@@ -1687,7 +1669,7 @@
       g.fillEllipse(cx, cy, w * 0.5, h * 0.5);
     }
     // Craters: the road broken open, burning or burnt out.
-    for (var cr = 0; cr < s.craters.length; cr++) this.drawCrater(g, s.craters[cr]);
+    this.drawCraters(g);
     // Portals: a ring opening on the ground in the alien's colour.
     for (var p = 0; p < s.portals.length; p++) {
       var po = s.portals[p], zz = this.zOf(po.d);
@@ -1742,71 +1724,69 @@
     return clamp((f.age / f.flight - (1 - warn)) / warn, 0, 1);
   };
 
-  // A crater: the broken-glass shape, laid flat on the road in true
-  // perspective. Burning, it is a neon-red danger: a dark red core, a
-  // crisp neon edge and fracture lines, and a soft radiance round it -
-  // all breathing together in one slow, even pulse. Not fire: a sign
-  // in a flat world that this ground will kill you. Burnt out, it is a
-  // dark scar with a dim edge.
-  MainScene.prototype.drawCrater = function (g, c) {
-    var zc = this.zOf(c.d);
-    if (zc < Z_NEAR + 0.05 || zc > Z_FAR) return;
-    var self = this, G = GROUND_Y, sh = c.shape, R = c.r;
-    function P(p, k) {
-      var z = Math.max(Z_NEAR, self.zOf(c.d + p[1] * R * k));
-      return [self.sx(c.x + p[0] * R * k, z), self.sy(G, z)];
-    }
-    function poly(k) {
+  // The craters, all together, flat on the road in true perspective.
+  // Burning, each is a neon-red danger: a soft radiance, a crisp neon
+  // edge and a dark red body, all pulsing together. Burnt out, a dark
+  // scar with a dim edge.
+  //
+  // Drawn in passes across every crater - all the glow, then all the
+  // edges, then all the bodies - so where craters overlap, each body
+  // covers the others' edges and they read as one merged shape with a
+  // single outline. (Each body also covers the inner half of its own
+  // edge, so the edges are drawn twice as wide to show the same.)
+  MainScene.prototype.drawCraters = function (g) {
+    var self = this, G = GROUND_Y, t = this.state.t, list = [];
+    // One pulse for every crater on the street.
+    var beat = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / Math.max(0.2, TUNING.CRATER_PULSE_RATE));
+    var pulse = 1 - TUNING.CRATER_PULSE * (1 - beat); // 1 at the peak, down to 1 - strength at the trough
+    this.state.craters.forEach(function (c) {
+      var zc = self.zOf(c.d);
+      if (zc < Z_NEAR + 0.05 || zc > Z_FAR) return;
+      var pts = c.shape.rim.map(function (p) {
+        var z = Math.max(Z_NEAR, self.zOf(c.d + p[1] * c.r));
+        return [self.sx(c.x + p[0] * c.r, z), self.sy(G, z)];
+      });
+      var z0 = Math.max(Z_NEAR, self.zOf(c.d));
+      list.push({ pts: pts, ctr: [self.sx(c.x, z0), self.sy(G, z0)], w: Math.max(1, 1.6 / zc), heat: clamp(c.burn / 1.5, 0, 1) });
+    });
+    function poly(item, k) {
       g.beginPath();
-      for (var i = 0; i < sh.rim.length; i++) {
-        var q = P(sh.rim[i], k);
-        if (i === 0) g.moveTo(q[0], q[1]); else g.lineTo(q[0], q[1]);
+      for (var i = 0; i < item.pts.length; i++) {
+        var x = item.ctr[0] + (item.pts[i][0] - item.ctr[0]) * k, y = item.ctr[1] + (item.pts[i][1] - item.ctr[1]) * k;
+        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
       }
       g.closePath();
     }
-    function lines(list, k) {
-      for (var i = 0; i < list.length; i++) {
-        var a = P(list[i][0], k);
-        for (var j = 1; j < list[i].length; j++) {
-          var b = P(list[i][j], k);
-          g.lineBetween(a[0], a[1], b[0], b[1]);
-          a = b;
-        }
+    // 1. The radiance: the shape grown on screen round its centre (so it
+    //    spreads evenly rather than stretching toward the camera), in
+    //    layers, swelling and brightening with the pulse.
+    var halo = [[1.75, 0.06], [1.5, 0.09], [1.28, 0.13], [1.12, 0.18]];
+    list.forEach(function (it) {
+      if (it.heat <= 0) return;
+      for (var h = 0; h < halo.length; h++) {
+        g.fillStyle(COLOR_GLOW_RED, halo[h][1] * it.heat * pulse);
+        poly(it, 1 + (halo[h][0] - 1) * (0.6 + 0.4 * pulse)); g.fillPath();
       }
-    }
-    var ringSegs = [];
-    for (var r = 0; r < sh.ring.length; r += 2) ringSegs.push([sh.ring[r], sh.ring[(r + 1) % sh.ring.length]]);
-    var w = Math.max(1, 1.6 / zc);
-    var heat = clamp(c.burn / 1.5, 0, 1);
-    if (heat <= 0) {
-      g.fillStyle(0x0b0710, 1); poly(1); g.fillPath();
-      g.lineStyle(w, 0x3a2236, 0.9); poly(1); g.strokePath();
-      g.lineStyle(Math.max(1, w * 0.6), 0x2a1a2c, 0.9); lines(sh.cracks, 1); lines(ringSegs, 1);
-      return;
-    }
-    // One pulse for every crater on the street, smooth and even.
-    var pulse = 0.5 + 0.5 * Math.sin(this.state.t * 3.2);
-    var glow = heat * (0.65 + 0.35 * pulse);
-    // The radiance: the same shape, larger and fainter, layered.
-    // Grown on screen round its centre, not on the ground, so the glow
-    // spreads evenly instead of stretching toward the camera.
-    var ctr = P([0, 0], 1), pts = sh.rim.map(function (q) { return P(q, 1); });
-    var halo = [[1.7, 0.05], [1.45, 0.08], [1.25, 0.11], [1.1, 0.15]];
-    for (var hI = 0; hI < halo.length; hI++) {
-      var k = halo[hI][0];
-      g.fillStyle(COLOR_GLOW_RED, halo[hI][1] * glow);
-      g.beginPath();
-      for (var pi = 0; pi < pts.length; pi++) {
-        var hx = ctr[0] + (pts[pi][0] - ctr[0]) * k, hy = ctr[1] + (pts[pi][1] - ctr[1]) * k;
-        if (pi === 0) g.moveTo(hx, hy); else g.lineTo(hx, hy);
+    });
+    // 2. The edges.
+    list.forEach(function (it) {
+      if (it.heat <= 0) {
+        g.lineStyle(it.w * 2, 0x3a2236, 0.9); poly(it, 1); g.strokePath();
+        return;
       }
-      g.closePath(); g.fillPath();
-    }
-    g.fillStyle(mixColor(0x14030a, 0x5c0714, heat), 0.95); poly(1); g.fillPath();
-    g.lineStyle(Math.max(1, w * 0.7), mixColor(COLOR_GLOW_RED, 0xffb3bb, 0.25), 0.55 + 0.4 * glow);
-    lines(sh.cracks, 1); lines(ringSegs, 1);
-    g.lineStyle(w * 2.6, COLOR_GLOW_RED, 0.22 * glow); poly(1); g.strokePath();
-    g.lineStyle(w, mixColor(COLOR_GLOW_RED, 0xffd6da, 0.35 * pulse), 0.7 + 0.3 * glow); poly(1); g.strokePath();
+      g.lineStyle(it.w * 5, COLOR_GLOW_RED, 0.25 * it.heat * pulse); poly(it, 1); g.strokePath();
+      g.lineStyle(it.w * 2, mixColor(COLOR_GLOW_RED, 0xffd6da, 0.45 * pulse), 0.6 + 0.4 * it.heat * pulse); poly(it, 1); g.strokePath();
+    });
+    // 3. The bodies, opaque, burnt-out ones first so a burning one over a
+    //    scar shows whole.
+    list.forEach(function (it) {
+      if (it.heat > 0) return;
+      g.fillStyle(0x0b0710, 1); poly(it, 1); g.fillPath();
+    });
+    list.forEach(function (it) {
+      if (it.heat <= 0) return;
+      g.fillStyle(mixColor(0x14030a, mixColor(0x4a0612, 0x8a0c1e, pulse), it.heat), 1); poly(it, 1); g.fillPath();
+    });
   };
 
   MainScene.prototype.drawTower = function (g, o, z) {
@@ -2174,7 +2154,9 @@
     ] },
     { title: 'Damaged street', rows: [
       ['CRATER_BURN', 'Craters burn for', 0, 30, 0.5, ' s'],
-      ['CRATER_SLOW', 'Speed over rubble', 0.2, 1, 0.05, '\u00d7']
+      ['CRATER_SLOW', 'Speed over rubble', 0.2, 1, 0.05, '\u00d7'],
+      ['CRATER_PULSE', 'Glow pulse depth', 0, 1, 0.05, ''],
+      ['CRATER_PULSE_RATE', 'Glow pulse every', 0.3, 4, 0.1, ' s']
     ] },
     { title: 'Climbers', rows: [
       ['CLIMB_EVERY_START', 'One every (start)', 0.5, 15, 0.5, ' s'],
@@ -2333,6 +2315,7 @@
     projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z), y: scene.sy(GROUND_Y, z), z: z }; },
     difficultyAt: difficultyAt,
     fittedHeight: function () { return fittedH; },
+    setT: function (t) { scene.state.t = t; return true; },
     lab: { isOpen: function () { return labOpen; }, setOpen: function (o) { setLabOpen(!!o); }, storageKey: TUNING_KEY }
   };
 
