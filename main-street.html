@@ -129,47 +129,6 @@
     cursor: pointer;
   }
   .move-pad { justify-content: flex-start; padding-left: max(14px, env(safe-area-inset-left)); }
-  /* The tilt slider (one of the aim modes): the strip of the left half
-     to the right of the walking circle. A left thumb that lands here
-     tilts the gun instead of walking. Hidden in every other mode, so the
-     whole left half walks as usual. It reaches up into the hit slop
-     like the pads do. */
-  .tilt-zone {
-    position: absolute;
-    top: -56px; bottom: 0; right: 0;
-    left: calc(max(14px, env(safe-area-inset-left)) + 138px);
-    display: none;
-    touch-action: none;
-    cursor: ns-resize;
-  }
-  .tilt-zone.on { display: block; }
-  .tilt-zone.active .tilt-hint { opacity: 0; }
-  .tilt-hint {
-    position: absolute;
-    left: 50%; top: calc(56px + 50%);
-    width: 22px; height: 92px;
-    margin-left: -11px; margin-top: -46px;
-    border-radius: 11px;
-    border: 1px solid rgba(253, 230, 138, 0.35);
-    background: linear-gradient(to top, rgba(253, 230, 138, 0.04), rgba(253, 230, 138, 0.16));
-    pointer-events: none;
-  }
-  .tilt-hint::before {
-    content: ''; position: absolute; left: 50%; top: 8px; margin-left: -5px;
-    border: 5px solid transparent; border-bottom: 7px solid rgba(253, 230, 138, 0.55); border-top: 0;
-  }
-  .tilt-track, .tilt-knob {
-    position: absolute; top: 0; left: 0; pointer-events: none; opacity: 0; transition: opacity 0.12s;
-  }
-  .tilt-track {
-    width: 14px; margin-left: -7px; border-radius: 7px;
-    background: rgba(253, 230, 138, 0.12); border: 1px solid rgba(253, 230, 138, 0.4);
-  }
-  .tilt-knob {
-    width: 34px; height: 34px; margin-left: -17px; margin-top: -17px; border-radius: 50%;
-    border: 2px solid rgba(253, 230, 138, 0.8); background: rgba(253, 230, 138, 0.18);
-  }
-  .tilt-track.visible, .tilt-knob.visible { opacity: 1; }
   .aim-pad { justify-content: flex-end; padding-right: max(14px, env(safe-area-inset-right)); }
   /* Hit slop above the bar, as in descent.html. */
   .pad::before {
@@ -220,21 +179,6 @@
     transition: opacity 0.12s;
   }
   .aim-pad .stick-knob { border-color: rgba(134, 239, 172, 0.7); background: rgba(34, 197, 94, 0.2); }
-  /* In the "push past the rim to lift" aim: the ordinary limit of the
-     stick, drawn round where the thumb landed. Inside it the gun fires
-     flat; push beyond it and the gun lifts. */
-  .stick-limit {
-    position: absolute;
-    top: 0; left: 0;
-    width: 88px; height: 88px;
-    margin-left: -44px; margin-top: -44px;
-    border-radius: 50%;
-    border: 1px dashed rgba(253, 230, 138, 0.55);
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.12s;
-  }
-  .stick-limit.visible { opacity: 1; }
   .stick-anchor.visible, .stick-knob.visible { opacity: 1; }
 
   /* ---- Settings lab: descent.html's, for this file's knobs. ---- */
@@ -321,16 +265,10 @@
       <span class="stick-ring" aria-hidden="true"></span>
       <span class="stick-anchor" id="moveAnchor" aria-hidden="true"></span>
       <span class="stick-knob" id="moveKnob" aria-hidden="true"></span>
-      <div class="tilt-zone" id="tiltZone" aria-label="Tilt the gun: press here and slide up">
-        <span class="tilt-hint" aria-hidden="true"></span>
-        <span class="tilt-track" id="tiltTrack" aria-hidden="true"></span>
-        <span class="tilt-knob" id="tiltKnob" aria-hidden="true"></span>
-      </div>
     </div>
     <div class="pad aim-pad" id="aimZone" aria-label="Fire: press anywhere on the right half and drag the way to shoot">
       <span class="stick-ring" aria-hidden="true"></span>
       <span class="stick-anchor" id="aimAnchor" aria-hidden="true"></span>
-      <span class="stick-limit" id="aimLimit" aria-hidden="true"></span>
       <span class="stick-knob" id="aimKnob" aria-hidden="true"></span>
     </div>
   </div>
@@ -435,38 +373,6 @@
 
   // ---- The gun ------------------------------------------------------
   var AIM_DEADZONE = 0.3;      // the right stick fires once pushed this far
-  // How the right stick aims (a lab choice):
-  //   0 flat     - along the ground, in the direction pushed (the default).
-  //   1 ahead    - the half of the sky in front of you, seen from inside:
-  //                the middle is dead ahead and level, up tilts the gun
-  //                up, sideways swings it round, the rim is 90 degrees
-  //                round (straight up, or straight out to the side).
-  //   2 overhead - the dome over your head, seen from above: the way
-  //                the stick is pushed is the way you shoot, as in flat,
-  //                and how far is how low - full push is along the
-  //                ground, easing off lifts the gun, the middle is
-  //                straight up.
-  // In 1 and 2 touching fires, and shots fly in 3D, so climbers high on
-  // the walls and fire still in the air can be hit.
-  //   3 lift     - flat, as 0, as far as the stick normally goes; it
-  //                then reaches further (LIFT_TRAVEL x), and pushing on
-  //                past the usual rim lifts the gun, up to LIFT_MAX
-  //                degrees at the far end. Ordinary pushes stay pure
-  //                twin-stick; lifting is a deliberate extra push.
-  var AIM_MODE = 0;
-  var AIM_FLAT = 0, AIM_AHEAD = 1, AIM_OVERHEAD = 2, AIM_LIFT = 3;
-  //   4 tilt     - flat, as 0, for direction; a third control, a slider
-  //                for the left thumb to the right of the walking circle,
-  //                tilts the gun from level up to TILT_MAX. Its centre is
-  //                where the thumb lands; slide up to tilt, let go and
-  //                it is level again.
-  var AIM_TILT = 4;
-  var TILT_MAX = 45;           // degrees, at the top of the slide - practical, not straight up
-  var TILT_TRAVEL_PX = 56;     // how far up the thumb slides for the full tilt
-  var LIFT_TRAVEL = 1.5;       // how far past its usual reach the stick goes, in 'lift'
-  var LIFT_MAX = 70;           // degrees up, at the far end of that
-  var KEY_AIM_REACH = 0.7;     // in 'ahead', the arrow keys tilt this far round
-  var AHEAD_HP = 4;            // shots to bring down a big fireball, in 3D aim
   var FIRE_INTERVAL = 0.16;    // seconds between shots while the stick is pushed
   var BULLET_SPEED = 600;      // px/s along the ground
   var BULLET_RANGE = 700;
@@ -577,7 +483,6 @@
   // ---- Tuning: the live values -------------------------------------
   var TUNING_KEY = 'street-tuning-v1';
   var TUNING_DEFAULTS = {
-    AIM_MODE: AIM_MODE, LIFT_TRAVEL: LIFT_TRAVEL, LIFT_MAX: LIFT_MAX, TILT_MAX: TILT_MAX,
     WALK_SPEED: WALK_SPEED, PLAYER_Z_PUSH: PLAYER_Z_PUSH, FIRE_INTERVAL: FIRE_INTERVAL, BULLET_SPEED: BULLET_SPEED, LIVES: LIVES,
     RAMP_M: RAMP_M, GROUP_EVERY_START: GROUP_EVERY_START, GROUP_EVERY_PEAK: GROUP_EVERY_PEAK,
     GROUP_SIZE_START: GROUP_SIZE_START, GROUP_SIZE_PEAK: GROUP_SIZE_PEAK,
@@ -697,9 +602,7 @@
     compose(v);
   }
 
-  // v.extend(), if given, lets the knob travel that many times its usual
-  // reach (the values then run past 1); limitEl marks the usual reach.
-  function bindStick(el, anchorEl, knobEl, v, limitEl) {
+  function bindStick(el, anchorEl, knobEl, v) {
     var activeId = null, watchdogTimer = null, anchorX = 0, anchorY = 0;
     el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
     function release() {
@@ -708,10 +611,9 @@
       clearTimeout(watchdogTimer);
       anchorEl.classList.remove('visible');
       knobEl.classList.remove('visible');
-      if (limitEl) limitEl.classList.remove('visible');
       el.classList.remove('active');
       knobEl.style.transform = 'translate(0px, 0px)';
-      v.tx = 0; v.ty = 0; v.held = false;
+      v.tx = 0; v.ty = 0;
       compose(v);
     }
     el.addEventListener('pointerdown', function (e) {
@@ -728,19 +630,15 @@
       knobEl.style.transform = 'translate(0px, 0px)';
       anchorEl.classList.add('visible');
       knobEl.classList.add('visible');
-      if (limitEl) {
-        limitEl.style.left = lx + 'px'; limitEl.style.top = ly + 'px';
-        limitEl.classList.toggle('visible', !!v.extend && v.extend() > 1);
-      }
       el.classList.add('active');
-      v.tx = 0; v.ty = 0; v.held = true;
+      v.tx = 0; v.ty = 0;
       compose(v);
       watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
     });
     el.addEventListener('pointermove', function (e) {
       if (e.pointerId !== activeId) return;
       var dx = e.clientX - anchorX, dy = e.clientY - anchorY, dist = Math.hypot(dx, dy);
-      var c = Math.min(dist, STICK_MAX_RADIUS_PX * (v.extend ? v.extend() : 1));
+      var c = Math.min(dist, STICK_MAX_RADIUS_PX);
       var kx = dist > 0 ? dx / dist * c : 0, ky = dist > 0 ? dy / dist * c : 0;
       knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
       v.tx = kx / STICK_MAX_RADIUS_PX; v.ty = ky / STICK_MAX_RADIUS_PX;
@@ -757,66 +655,7 @@
     return release;
   }
   var releaseMove = bindStick(document.getElementById('moveZone'), document.getElementById('moveAnchor'), document.getElementById('moveKnob'), move);
-
-  // The tilt slider: 0 level .. 1 full tilt. Its own touch, so it never
-  // reaches the walking stick underneath it.
-  var tilt = { value: 0, kb: false };
-  var tiltZone = document.getElementById('tiltZone');
-  var releaseTilt = (function bindTilt(el, trackEl, knobEl) {
-    var activeId = null, anchorY = 0, watchdogTimer = null;
-    el.addEventListener('touchstart', function (e) { e.preventDefault(); e.stopPropagation(); }, { passive: false });
-    function release() {
-      if (activeId === null) return;
-      activeId = null;
-      clearTimeout(watchdogTimer);
-      trackEl.classList.remove('visible'); knobEl.classList.remove('visible');
-      el.classList.remove('active');
-      tilt.value = 0;
-    }
-    function place(y) {
-      var up = clamp(anchorY - y, 0, TILT_TRAVEL_PX);
-      tilt.value = up / TILT_TRAVEL_PX;
-      knobEl.style.transform = 'translateY(' + (-up) + 'px)';
-    }
-    el.addEventListener('pointerdown', function (e) {
-      e.preventDefault(); e.stopPropagation();
-      Sound.ensureAudio();
-      release();
-      activeId = e.pointerId;
-      try { el.setPointerCapture(activeId); } catch (err) {}
-      var rect = el.getBoundingClientRect();
-      anchorY = e.clientY;
-      var lx = e.clientX - rect.left, ly = e.clientY - rect.top;
-      knobEl.style.left = lx + 'px'; knobEl.style.top = ly + 'px';
-      trackEl.style.left = lx + 'px'; trackEl.style.top = (ly - TILT_TRAVEL_PX - 10) + 'px';
-      trackEl.style.height = (TILT_TRAVEL_PX + 20) + 'px';
-      trackEl.classList.add('visible'); knobEl.classList.add('visible');
-      el.classList.add('active');
-      place(e.clientY);
-      watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
-    });
-    el.addEventListener('pointermove', function (e) {
-      if (e.pointerId !== activeId) return;
-      e.stopPropagation();
-      place(e.clientY);
-      clearTimeout(watchdogTimer);
-      watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
-    });
-    function up(e) { if (e.pointerId === activeId) { e.stopPropagation(); release(); } }
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointercancel', up);
-    el.addEventListener('lostpointercapture', up);
-    window.addEventListener('blur', release);
-    return release;
-  })(tiltZone, document.getElementById('tiltTrack'), document.getElementById('tiltKnob'));
-  // Shown only in the tilt aim; anywhere else the whole left half walks.
-  function syncTiltZone() {
-    var on = Math.round(TUNING.AIM_MODE) === AIM_TILT;
-    if (tiltZone.classList.contains('on') !== on) { tiltZone.classList.toggle('on', on); if (!on) releaseTilt(); }
-  }
-  // The aim stick reaches further in the push-past-the-rim mode.
-  aim.extend = function () { return Math.round(TUNING.AIM_MODE) === AIM_LIFT ? TUNING.LIFT_TRAVEL : 1; };
-  var releaseAim = bindStick(document.getElementById('aimZone'), document.getElementById('aimAnchor'), document.getElementById('aimKnob'), aim, document.getElementById('aimLimit'));
+  var releaseAim = bindStick(document.getElementById('aimZone'), document.getElementById('aimAnchor'), document.getElementById('aimKnob'), aim);
 
   var MOVE_KEYS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
   var AIM_KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyI: 'up', KeyK: 'down', KeyJ: 'left', KeyL: 'right' };
@@ -829,91 +668,20 @@
     if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'over' && !e.repeat) {
       e.preventDefault();
       scene.restart();
-      return;
     }
-    // Space fires where the gun points (dead ahead, in 3D aim).
-    if (e.code === 'Space') { aim.space = true; e.preventDefault(); }
-    // Shift: full tilt, in the tilt aim.
-    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') tilt.kb = true;
   });
   window.addEventListener('keyup', function (e) {
     if (MOVE_KEYS[e.code]) { kbMove[MOVE_KEYS[e.code]] = false; keyVector(move, kbMove); }
     if (AIM_KEYS[e.code]) { kbAim[AIM_KEYS[e.code]] = false; keyVector(aim, kbAim); }
-    if (e.code === 'Space') aim.space = false;
-    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') tilt.kb = false;
   });
   function releaseKeys() {
     ['up', 'down', 'left', 'right'].forEach(function (k) { kbMove[k] = false; kbAim[k] = false; });
-    aim.space = false;
-    if (typeof tilt !== 'undefined') tilt.kb = false;
     keyVector(move, kbMove); keyVector(aim, kbAim);
   }
   window.addEventListener('blur', releaseKeys);
   document.addEventListener('touchmove', function (e) {
     if (e.touches && e.touches.length > 1) e.preventDefault();
   }, { passive: false });
-
-  // ---- Fitting the screen ---------------------------------------------
-  // The page is sized to the part of the screen you can actually see,
-  // measured, not taken on trust from CSS. 100dvh is right in most
-  // browsers, but some (in-app web views especially) count the space
-  // under a toolbar or the home bar as visible, and then the bottom of
-  // the controls is cut off. So the visible height is read from the
-  // browser and set on the page directly, again whenever it changes (a
-  // toolbar sliding away, a rotation), and the game's canvas is refitted
-  // into what is left.
-  var game = null;
-  function visibleHeight() {
-    var vv = window.visualViewport;
-    // Zoomed in, the visual viewport is only part of the page; the
-    // window's own height is the one to fit then.
-    return Math.round(vv && vv.scale <= 1.01 ? vv.height : window.innerHeight);
-  }
-  var fittedH = 0, refitTimer = null;
-  function fitToScreen() {
-    var h = visibleHeight();
-    if (h && h !== fittedH) {
-      fittedH = h;
-      document.body.style.height = h + 'px';
-      window.scrollTo(0, 0);
-    }
-    // Phaser's own resize handling notices the new space but leaves the
-    // canvas at its old size (re-centred, overhanging the controls when
-    // the space shrinks). Refitting once layout has settled - next frame,
-    // and again a moment later for toolbars that slide - puts it right.
-    if (!game || !game.scale) return;
-    requestAnimationFrame(function () { game.scale.refresh(); });
-    clearTimeout(refitTimer);
-    refitTimer = setTimeout(function () { game.scale.refresh(); }, 300);
-  }
-  fitToScreen();
-  window.addEventListener('resize', fitToScreen);
-  window.addEventListener('orientationchange', function () { setTimeout(fitToScreen, 250); });
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', fitToScreen);
-    window.visualViewport.addEventListener('scroll', function () { if (window.visualViewport.scale <= 1.01) window.scrollTo(0, 0); });
-  }
-  // A page left zoomed in also pushes the controls off the bottom: the
-  // same pinch-zoom safety net as the other games in this collection.
-  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
-  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
-  (function () {
-    var viewportMeta = document.querySelector('meta[name="viewport"]');
-    var zoomResetTimer = null;
-    function forceResetZoom() {
-      if (!viewportMeta) return;
-      var original = viewportMeta.getAttribute('content');
-      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
-      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
-    }
-    function scheduleZoomCheck() {
-      clearTimeout(zoomResetTimer);
-      zoomResetTimer = setTimeout(function () {
-        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
-      }, 250);
-    }
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
-  })();
 
   // The city on the horizon - descent.html's skyline, the spire you were
   // flying toward still standing at the end of the street.
@@ -978,7 +746,7 @@
       camD: 0, camX: 0,
       // You start inside the ship; the intro puts you on the ground.
       px: 0, pd: DEPTH_PX, vx: 0, vd: 0, elev: 0, emerge: 0,
-      aimX: 0, aimD: 1, aimUp: 0, firing: false, walkPhase: 0,
+      aimX: 0, aimD: 1, firing: false, walkPhase: 0,
       ship: { x: 0, d: DEPTH_PX },
       lives: Math.max(1, Math.round(TUNING.LIVES)),
       score: 0, nextLife: EXTRA_LIFE_EVERY,
@@ -1018,7 +786,6 @@
 
   // ---- Update --------------------------------------------------------
   MainScene.prototype.update = function (time, deltaMs) {
-    syncTiltZone();
     if (labOpen) return;
     try {
       var dt = Math.min(deltaMs / 1000, 0.05) * debug.timeScale;
@@ -1111,81 +878,11 @@
     s.walkPhase += sp * dt * 0.09;
     // Aim: the right stick's direction, kept after it is let go so the
     // gun keeps pointing where you last fired.
-    var mode = Math.round(TUNING.AIM_MODE);
-    if (mode === AIM_AHEAD || mode === AIM_OVERHEAD) {
-      var keys = aim.kx || aim.ky || aim.space;
-      s.firing = !!(aim.held || keys);
-      if (s.firing) {
-        // Keys: in 'ahead' part of the way round; overhead, full out
-        // (along the ground) - Space alone is the middle either way.
-        var kr = mode === AIM_AHEAD ? KEY_AIM_REACH : 1;
-        var h = (mode === AIM_AHEAD ? hemisphereAim : domeAim)(aim.tx + aim.kx * kr, aim.ty + aim.ky * kr);
-        s.aimX = h.x; s.aimUp = h.up; s.aimD = h.d;
-      } else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; s.aimUp = 0; }
-      return;
-    }
-    if (mode === AIM_TILT) {
-      // Direction from the right stick, exactly as flat; height from the
-      // slider under the left thumb.
-      var tm = Math.hypot(aim.x, aim.y);
-      s.firing = tm >= AIM_DEADZONE || !!aim.space;
-      s.tilt = tilt.kb ? 1 : tilt.value;
-      var tel = s.tilt * TUNING.TILT_MAX * Math.PI / 180, tc = Math.cos(tel);
-      if (tm >= AIM_DEADZONE) { s.aimX = aim.x / tm * tc; s.aimD = -aim.y / tm * tc; s.aimUp = Math.sin(tel); }
-      else {
-        // Not firing: keep the last direction, but show the tilt.
-        var hm = Math.hypot(s.aimX, s.aimD) || 1;
-        if (!s.firing && sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; hm = 1; }
-        s.aimX = s.aimX / hm * tc; s.aimD = s.aimD / hm * tc; s.aimUp = Math.sin(tel);
-      }
-      return;
-    }
-    if (mode === AIM_LIFT) {
-      // The touch's own reach (it runs past 1); the keys stay flat.
-      var lx = aim.tx + aim.kx, ly = aim.ty + aim.ky, lm = Math.hypot(lx, ly);
-      s.firing = lm >= AIM_DEADZONE || !!aim.space;
-      if (lm >= AIM_DEADZONE) {
-        var l = liftAim(lx, ly);
-        s.aimX = l.x; s.aimUp = l.up; s.aimD = l.d;
-      } else if (!s.firing && sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; s.aimUp = 0; }
-      return;
-    }
     var am = Math.hypot(aim.x, aim.y);
-    s.firing = am >= AIM_DEADZONE || !!aim.space;
-    s.aimUp = 0;
-    if (am >= AIM_DEADZONE) { s.aimX = aim.x / am; s.aimD = -aim.y / am; }
-    else if (!s.firing && sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; }
+    s.firing = am >= AIM_DEADZONE;
+    if (s.firing) { s.aimX = aim.x / am; s.aimD = -aim.y / am; }
+    else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; }
   };
-
-  function aim3d() { return Math.round(TUNING.AIM_MODE) !== AIM_FLAT; }
-
-  // The stick's circle onto the hemisphere in front of you, as if seen
-  // from inside it: across is across, up is up, and what is left over
-  // is forward - so the middle is straight ahead and the rim is 90
-  // degrees round. Returns a unit vector (x across, up, d forward).
-  function hemisphereAim(x, y) {
-    var up = -y, m = Math.hypot(x, up);
-    if (m > 1) { x /= m; up /= m; }
-    return { x: x, up: up, d: Math.sqrt(Math.max(0, 1 - x * x - up * up)) };
-  }
-
-  // Flat up to the stick's usual reach (1), lifting beyond it: at the
-  // far end of the extra travel the gun is LIFT_MAX degrees up.
-  function liftAim(x, y) {
-    var m = Math.hypot(x, y) || 1, past = Math.max(0, m - 1) / Math.max(0.01, TUNING.LIFT_TRAVEL - 1);
-    var el = clamp(past, 0, 1) * TUNING.LIFT_MAX * Math.PI / 180, c = Math.cos(el);
-    return { x: x / m * c, up: Math.sin(el), d: -y / m * c };
-  }
-
-  // The stick's circle onto the dome over your head, seen from above:
-  // direction is the direction on the ground (up the street is up, as
-  // in flat aim) and distance from the middle is how far down the dome
-  // - the rim is level with the ground, the middle straight up.
-  function domeAim(x, y) {
-    var fwd = -y, m = Math.hypot(x, fwd);
-    if (m > 1) { x /= m; fwd /= m; m = 1; }
-    return { x: x, up: Math.sqrt(Math.max(0, 1 - m * m)), d: fwd };
-  }
 
   // The camera only ever moves forward, and only because you pushed it:
   // walk past PLAYER_Z_PUSH and it comes with you. That push is the
@@ -1462,68 +1159,53 @@
     if (!s.firing || s.fireCooldown > 0) return;
     s.fireCooldown = TUNING.FIRE_INTERVAL;
     var v = TUNING.BULLET_SPEED;
-    s.bullets.push({ kind: 'bullet', x: s.px + s.aimX * 12, y: BULLET_Y - s.aimUp * 12, d: s.pd + s.aimD * 12,
-      vx: s.aimX * v, vy: -s.aimUp * v, vd: s.aimD * v, travelled: 0 });
+    s.bullets.push({ kind: 'bullet', x: s.px + s.aimX * 12, d: s.pd + s.aimD * 12, vx: s.aimX * v, vd: s.aimD * v, travelled: 0 });
     s.shotsFired++;
     s.muzzle = 0.05;
     Sound.shot();
   };
 
-  // Shots fly in 3D: along the ground in the flat aim, anywhere in the
-  // hemisphere in 3D aim. Moved in short sub-steps so a quick shot can't
-  // skip clean through something thin on a slow frame.
   MainScene.prototype.stepBullets = function (dt) {
     var s = this.state;
     if (s.muzzle) s.muzzle = Math.max(0, s.muzzle - dt);
-    var steps = Math.max(1, Math.ceil(TUNING.BULLET_SPEED * dt / 10)), h = dt / steps;
     for (var i = s.bullets.length - 1; i >= 0; i--) {
-      var b = s.bullets[i], dead = false;
-      for (var st = 0; st < steps && !dead; st++) {
-        b.x += b.vx * h; b.y += b.vy * h; b.d += b.vd * h;
-        b.travelled += TUNING.BULLET_SPEED * h;
-        dead = this.bulletStep(b);
+      var b = s.bullets[i];
+      b.x += b.vx * dt; b.d += b.vd * dt;
+      b.travelled += TUNING.BULLET_SPEED * dt;
+      var dead = b.travelled > BULLET_RANGE || b.d < s.camD + DEPTH_PX * Z_NEAR;
+      if (!dead && Math.abs(b.x) > FACADE_X + 45) {
+        // The building fronts stop them.
+        this.burst(b.x, BULLET_Y, b.d, COLOR_BULLET, true);
+        dead = true;
+      }
+      if (!dead) {
+        for (var j = 0; j < s.enemies.length; j++) {
+          var e = s.enemies[j];
+          // Up a wall, only the low ones are in reach.
+          if (e.climb && Math.abs(GROUND_Y - e.climb - e.h * 0.55 - BULLET_Y) > e.h * 0.5 + 4) continue;
+          if (Math.hypot(e.x - b.x, e.d - b.d) < e.r + BULLET_HIT) { this.hitEnemy(e, b); dead = true; break; }
+        }
+      }
+      if (!dead) {
+        // Fire coming down can be shot once it is low enough to reach.
+        for (var k = 0; k < s.fires.length; k++) {
+          var f = s.fires[k];
+          // The big ones thrown into the road ahead are too big to stop:
+          // they are there to be walked round, not shot down.
+          if (f.stage !== 'fly' || f.ahead) continue;
+          if (Math.abs(f.y - BULLET_Y) < 16 && Math.hypot(f.x - b.x, f.d - b.d) < FIRE_R * f.size + BULLET_HIT + 4) {
+            f.dead = true; dead = true;
+            s.firesShot++;
+            this.addScore(SCORE.fire);
+            this.burst(f.x, f.y, f.d, COLOR_FIRE);
+            Sound.pop();
+            break;
+          }
+        }
       }
       if (dead) s.bullets.splice(i, 1);
     }
     s.fires = s.fires.filter(function (f) { return !f.dead; });
-  };
-
-  // One sub-step of one shot: true when it is spent.
-  MainScene.prototype.bulletStep = function (b) {
-    var s = this.state;
-    if (b.travelled > BULLET_RANGE || b.d < s.camD + DEPTH_PX * Z_NEAR) return true;
-    if (b.y > GROUND_Y) { this.burst(b.x, GROUND_Y, b.d, COLOR_BULLET, true); return true; }
-    if (Math.abs(b.x) > FACADE_X + 45) {
-      // The building fronts stop them.
-      this.burst(b.x, b.y, b.d, COLOR_BULLET, true);
-      return true;
-    }
-    for (var j = 0; j < s.enemies.length; j++) {
-      var e = s.enemies[j];
-      // Its body, at whatever height it is - on the street or up a wall.
-      if (Math.abs(GROUND_Y - (e.climb || 0) - e.h * 0.55 - b.y) > e.h * 0.5 + 4) continue;
-      if (Math.hypot(e.x - b.x, e.d - b.d) < e.r + BULLET_HIT) { this.hitEnemy(e, b); return true; }
-    }
-    for (var k = 0; k < s.fires.length; k++) {
-      var f = s.fires[k];
-      // The big ones thrown into the road ahead can't be stopped by the
-      // flat aim - they are there to be walked round. Aimed in 3D they
-      // can be brought down, but take several hits.
-      if (f.stage !== 'fly' || f.dead || (f.ahead && !aim3d())) continue;
-      if (Math.hypot(f.x - b.x, f.y - b.y, f.d - b.d) < FIRE_R * f.size + BULLET_HIT + 4) {
-        if (f.ahead && (f.hp = (f.hp == null ? AHEAD_HP : f.hp) - 1) > 0) {
-          this.burst(b.x, b.y, b.d, COLOR_FIRE, true);
-          return true;
-        }
-        f.dead = true;
-        s.firesShot++;
-        this.addScore(SCORE.fire);
-        this.burst(f.x, f.y, f.d, COLOR_FIRE);
-        Sound.pop();
-        return true;
-      }
-    }
-    return false;
   };
 
   MainScene.prototype.hitEnemy = function (e, b) {
@@ -1821,7 +1503,6 @@
       else if (o.kind === 'player') this.drawPlayer(g, z);
     }
     this.drawFx();
-    this.drawAimSight();
     this.drawHud();
   };
 
@@ -2185,7 +1866,7 @@
     var shoulderX = x + side * w * 0.4;
     var gz = Math.max(Z_NEAR, this.zOf(s.pd + s.aimD * 16));
     var ax = this.sx(s.px + s.aimX * 16, gz) - x;
-    var ay = this.sy(GROUND_Y - s.elev - 21 - (s.aimUp || 0) * 16, gz) - this.sy(GROUND_Y - s.elev - 21, z);
+    var ay = this.sy(GROUND_Y - s.elev - 21, gz) - this.sy(GROUND_Y - s.elev - 21, z);
     if (ay > 0) ay = 0;                               // toward the camera: held level
     if (Math.abs(ax) < w * 0.15) ax = side * w * 0.15; // always out to its own side a little
     var len = Math.hypot(ax, ay) || 1;
@@ -2295,30 +1976,7 @@
     var z2 = this.zOf(b.d - b.vd * 0.03);
     if (z2 < Z_NEAR) z2 = Z_NEAR;
     g.lineStyle(Math.max(2, 3.5 / z), COLOR_BULLET, 1);
-    g.lineBetween(this.sx(b.x, z), this.sy(b.y, z), this.sx(b.x - b.vx * 0.03, z2), this.sy(b.y - b.vy * 0.03, z2));
-  };
-
-  MainScene.prototype.sightShown = function () {
-    var s = this.state;
-    return aim3d() && s.mode === 'walking' && s.aimUp > 0.01;
-  };
-
-  // When the gun is tilted up, a sight where it points: four ticks on the aim line
-  // a little way out, so a tilt up the wall can be judged.
-  MainScene.prototype.drawAimSight = function () {
-    var s = this.state;
-    // Only while the gun is tilted up: aiming along the ground needs no
-    // sight, and one hanging there all the time is clutter.
-    if (!this.sightShown()) return;
-    var reach = 220, z = this.zOf(s.pd + s.aimD * reach);
-    if (z < Z_NEAR + 0.1) return;
-    var x = this.sx(s.px + s.aimX * reach, z), y = this.sy(BULLET_Y - s.aimUp * reach, z);
-    var g = this.gFx, gap = 4, len = 5;
-    g.lineStyle(1.5, s.firing ? COLOR_FLAME_INNER : COLOR_BULLET, s.firing ? 0.95 : 0.5);
-    g.lineBetween(x - gap - len, y, x - gap, y);
-    g.lineBetween(x + gap, y, x + gap + len, y);
-    g.lineBetween(x, y - gap - len, x, y - gap);
-    g.lineBetween(x, y + gap, x, y + gap + len);
+    g.lineBetween(this.sx(b.x, z), this.sy(BULLET_Y, z), this.sx(b.x - b.vx * 0.03, z2), this.sy(BULLET_Y, z2));
   };
 
   // A ball of fire: an orange orb with a halo and a ragged tail back
@@ -2407,10 +2065,6 @@
   // ==================================================================
   var LAB_SPEC = [
     { title: 'You', rows: [
-      ['AIM_MODE', 'Right stick aims', 'choice', ['Flat, along the ground', 'Half sphere in front', 'Half sphere overhead', 'Flat; push past the rim to lift', 'Flat + tilt slider (left thumb)']],
-      ['TILT_MAX', 'Tilt: most it tilts up', 10, 75, 1, '\u00b0'],
-      ['LIFT_TRAVEL', 'Lift: extra stick travel', 1.1, 2.5, 0.05, '\u00d7'],
-      ['LIFT_MAX', 'Lift: most it tilts up', 15, 90, 1, '\u00b0'],
       ['WALK_SPEED', 'Walk speed', 60, 240, 5, ' px/s'],
       ['LIVES', 'Lives', 1, 9, 1, ''],
       ['FIRE_INTERVAL', 'Fire every', 0.03, 0.3, 0.005, ' s'],
@@ -2489,35 +2143,6 @@
         row.className = 'lab-row';
         var label = document.createElement('label');
         label.textContent = r[1];
-        if (r[2] === 'choice') {
-          // One of a few named settings, stored as its index.
-          var sel = document.createElement('select');
-          sel.className = 'lab-btn';
-          sel.style.flex = '1 1 auto';
-          r[3].forEach(function (name, i) {
-            var opt = document.createElement('option');
-            opt.value = i; opt.textContent = name;
-            sel.appendChild(opt);
-          });
-          var showC = function () { row.classList.toggle('changed', TUNING[key] !== TUNING_DEFAULTS[key]); };
-          sel.addEventListener('change', function () { TUNING[key] = parseInt(sel.value, 10); showC(); saveTuning(); });
-          row.appendChild(label); row.appendChild(sel);
-          box.appendChild(row);
-          labSyncers.push(function () { sel.value = String(Math.round(TUNING[key])); showC(); });
-          return;
-        }
-        if (r[2] === 'toggle') {
-          // On/off, stored as 1 or 0 like any other knob.
-          var cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.dataset.key = key;
-          var showT = function () { row.classList.toggle('changed', !!TUNING[key] !== !!TUNING_DEFAULTS[key]); };
-          cb.addEventListener('change', function () { TUNING[key] = cb.checked ? 1 : 0; showT(); saveTuning(); });
-          row.appendChild(label); row.appendChild(cb);
-          box.appendChild(row);
-          labSyncers.push(function () { cb.checked = !!TUNING[key]; showT(); });
-          return;
-        }
         var input = document.createElement('input');
         input.type = 'range';
         input.min = r[2]; input.max = r[3]; input.step = step;
@@ -2542,7 +2167,7 @@
     labEl.classList.toggle('visible', open);
     labEl.setAttribute('aria-hidden', open ? 'false' : 'true');
     if (open) {
-      releaseMove(); releaseAim(); releaseTilt(); releaseKeys();
+      releaseMove(); releaseAim(); releaseKeys();
       labSyncers.forEach(function (f) { f(); });
       if (scene) document.getElementById('labNoDeath').checked = !!scene.state.invincible;
     }
@@ -2601,20 +2226,20 @@
       return {
         mode: s.mode, t: s.t, modeAge: s.modeAge, camD: s.camD, camX: s.camX,
         px: s.px, pd: s.pd, vx: s.vx, vd: s.vd, z: scene.zOf(s.pd), emerge: s.emerge, elev: s.elev,
-        aimX: s.aimX, aimD: s.aimD, aimUp: s.aimUp, firing: s.firing, sight: scene.sightShown(),
+        aimX: s.aimX, aimD: s.aimD, firing: s.firing,
         lives: s.lives, score: s.score, deaths: s.deaths, lastDeath: s.lastDeath || null, invuln: s.invuln,
         progressM: scene.progressM(), bestM: s.bestM, difficulty: scene.difficulty(), block: s.block,
         groupEvery: scene.groupEvery(), maxAlive: scene.maxAlive(),
         firesAhead: s.firesAhead,
         shotsFired: s.shotsFired, kills: s.kills, firesShot: s.firesShot, firesLaunched: s.firesLaunched, splashes: s.splashes || 0,
-        bullets: s.bullets.map(function (b) { return { x: b.x, y: b.y, d: b.d, vx: b.vx, vy: b.vy, vd: b.vd }; }),
+        bullets: s.bullets.map(function (b) { return { x: b.x, d: b.d, vx: b.vx, vd: b.vd }; }),
         enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r, climb: e.climb || 0 }; }),
         craters: s.craters.map(function (c) { return { x: c.x, d: c.d, r: c.r, burn: c.burn }; }),
         portals: s.portals.length,
         fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size, u: f.stage === 'fly' ? f.age / f.flight : 0, marked: scene.fireMarked(f) }; }),
         buildings: s.buildings.length, banner: s.banner && s.banner.text,
         overlay: document.getElementById('overOverlay').classList.contains('visible'),
-        input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y, atx: aim.tx, aty: aim.ty, tilt: tilt.value }
+        input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y }
       };
     },
     constants: function () {
@@ -2631,10 +2256,6 @@
     setInvincible: function (on) { scene.state.invincible = !!on; },
     setPlayer: function (x, d) { var s = scene.state; s.px = x; s.pd = d; s.vx = s.vd = 0; },
     tune: function (key, v) { TUNING[key] = v; return true; },
-    // The right stick as a thumb would hold it: deflection x, y (-1..1,
-    // y down), touching or not.
-    setTilt: function (v) { tilt.value = v; return true; },
-    setAimStick: function (x, y, held) { aim.tx = x; aim.ty = y; aim.held = !!held; compose(aim); return true; },
     setLives: function (n) { scene.state.lives = n; },
     setScore: function (n) { scene.state.score = n; },
     addScore: function (n) { scene.addScore(n); },
@@ -2649,13 +2270,10 @@
     launchFire: function (opts) { return !!scene.launchFire(opts); },
     projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z), y: scene.sy(GROUND_Y, z), z: z }; },
     difficultyAt: difficultyAt,
-    fittedHeight: function () { return fittedH; },
-    scaleInfo: function () { var sc = game.scale; return { parent: [sc.parentSize.width, sc.parentSize.height], display: [sc.displaySize.width, sc.displaySize.height], mode: sc.scaleMode }; },
-
     lab: { isOpen: function () { return labOpen; }, setOpen: function (o) { setLabOpen(!!o); }, storageKey: TUNING_KEY }
   };
 
-  game = new Phaser.Game({
+  new Phaser.Game({
     type: Phaser.AUTO,
     parent: 'gameRoot',
     width: GAME_WIDTH,

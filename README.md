@@ -437,54 +437,6 @@ itself, for practice.
   to land. Standing still only brings the odd straggler, at the rate
   your distance has already set. A **BLOCK n** banner marks every
   100 m.
-- **Aiming in 3D (a lab choice, "Right stick aims").** There are three
-  modes:
-  - **Flat, along the ground** (the default): twin-stick as described
-    above.
-  - **Half sphere in front:** the stick's circle is the half of the sky
-    in front of you, seen from inside. The middle fires dead ahead at
-    chest height. Pushing up tilts the gun up and pushing sideways
-    swings it round. The edge of the circle is straight up, or straight
-    out to the side.
-  - **Half sphere overhead:** the circle is the dome over your head,
-    seen from above. The direction you push is the direction you shoot,
-    as in flat aim, and how far you push sets how low. Full push is
-    along the ground, easing off lifts the gun, and the middle is
-    straight up. So the flat twin-stick habit still works at full
-    push.
-  - **Flat; push past the rim to lift:** exactly the flat twin-stick
-    as far as the stick normally goes. In this mode it can travel
-    further (1.5x by default), and a dashed ring around your thumb
-    marks the usual limit. Pushing on past that ring lifts the gun, up
-    to 70 degrees at the far end. Ordinary pushes stay pure Robotron,
-    and lifting is a deliberate extra push. **Lift: extra stick travel**
-    and **Lift: most it tilts up** are lab sliders. Keys stay flat.
-
-  - **Flat + tilt slider (left thumb):** the right stick is plain
-    flat twin-stick, for direction only. A third control sits in the
-    strip of the left half to the right of the walking circle. A left
-    thumb that lands there works a slider instead of walking. Its
-    centre is wherever the thumb lands, like the sticks. Sliding up
-    tilts the gun from level up to 45 degrees (**Tilt: most it tilts
-    up** in the lab), sliding down stays level, and letting go puts it
-    level again. So the left thumb either walks or tilts. In the other
-    modes the strip isn't there and the whole left half walks. Shift
-    gives full tilt on a keyboard.
-
-  In both sphere modes touching fires, and in all three non-flat modes
-  shots fly in 3D, so climbers
-  high on the walls and fireballs still in the air can be hit. The big
-  fireballs thrown into the road ahead take 4 hits. While the gun is
-  tilted up, a small sight on the aim line shows where you're pointing. On a keyboard, Space fires
-  at the middle of the stick.
-- **Fits the visible screen.** The page measures the height you can
-  actually see, instead of trusting CSS's `100dvh`, which some browsers
-  and in-app web views overstate, cutting off the bottom of the
-  controls. It re-measures whenever that changes (toolbars sliding,
-  rotation) and refits the canvas each time. Phaser alone re-centres
-  the canvas without resizing it, so after the screen shrank it hung
-  over the controls. A pinch-zoom guard, the same as the other games',
-  stops a stray zoom pushing the controls off the bottom.
 - **Settings lab.** Backquote, or triple-tap the "Main Street" tag.
   Every ramp has a start and a full value, plus jumps to 25%, 50% and
   full difficulty, and **No death**. **Scroll point (depth)** sets how
