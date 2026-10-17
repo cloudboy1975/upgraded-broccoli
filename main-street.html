@@ -358,6 +358,7 @@
   // further up the street, higher on screen - more room to walk around
   // in before it scrolls, less warning of what is coming.
   var PLAYER_Z_PUSH = 1.2;
+  var CAM_CATCHUP = 420;       // px/s, the fastest the camera comes forward
   var STREET_HALF = 165;       // how far either side of the centre line you can walk
   var FACADE_X = 195;          // where the buildings' fronts stand
   var PLAYER_R = 9;            // contact radius, on the ground
@@ -439,6 +440,7 @@
   var CRATER_BURN = 9;         // seconds a crater burns
   var CRATER_SLOW = 0.55;      // your speed across rubble
   var CRATER_SCALE = 0.85;     // crater radius, as a share of the splash
+  var CRATER_TOUCH = 1.05;     // two craters this close (x the sum of their radii) have merged
   var CRATER_PULSE = 0.8;      // how deep the glow's pulse goes (0 steady, 1 down to nothing)
   var CRATER_PULSE_RATE = 1.4; // seconds per pulse
 
@@ -468,6 +470,8 @@
   var COLOR_HIT = 0xef4444;
   var COLOR_FIRE = 0xff7a1a;
   var COLOR_GLOW_RED = 0xff2d4a;      // a burning crater: neon red
+  var COLOR_CRATER_COOL = 0x2a0c16;   // ...and once it has cooled
+  var COLOR_CRATER_COOL_EDGE = 0x5e1f33;
   var COLOR_EYE = 0x0f172a;
   var COLOR_SKY_TOP = 0x03041a;
   var COLOR_SKY_HORIZON = 0x24164a;
@@ -951,9 +955,13 @@
   // The camera only ever moves forward, and only because you pushed it:
   // walk past PLAYER_Z_PUSH and it comes with you. That push is the
   // progress the difficulty is measured by.
-  MainScene.prototype.stepCamera = function () {
+  // It moves no faster than CAM_CATCHUP, well above walking pace, so
+  // while you walk it keeps exactly with you; a sudden gap (stepping out
+  // of the ship deeper than a low scroll point) closes in a glide, not
+  // a jump.
+  MainScene.prototype.stepCamera = function (dt) {
     var s = this.state, want = s.pd - TUNING.PLAYER_Z_PUSH * DEPTH_PX;
-    if (want > s.camD) s.camD = want;
+    if (want > s.camD) s.camD = Math.min(want, s.camD + CAM_CATCHUP * dt);
     var m = this.progressM();
     if (m > s.bestM) {
       var add = m - s.bestM;
@@ -1402,11 +1410,29 @@
     burn = burn == null ? TUNING.CRATER_BURN : burn;
     for (var i = 0; i < s.craters.length; i++) {
       var c = s.craters[i];
-      if (Math.hypot(c.x - x, c.d - d) < c.r * 0.6) { c.burn = Math.max(c.burn, burn); c.r = Math.max(c.r, r); return c; }
+      if (Math.hypot(c.x - x, c.d - d) < c.r * 0.6) { c.burn = Math.max(c.burn, burn); c.r = Math.max(c.r, r); this.igniteCluster(c); return c; }
     }
     var c2 = { kind: 'crater', x: x, d: d, r: r, burn: burn, age: 0, shape: shatterShape() };
     s.craters.push(c2);
+    this.igniteCluster(c2);
     return c2;
+  };
+
+  // Overlapping craters are drawn as one merged shape, so they are one
+  // thing: a hit sets every crater it touches burning again, and every
+  // crater those touch, and so on - the whole merged shape glows and
+  // cools together, never part lit and part dark.
+  MainScene.prototype.igniteCluster = function (from) {
+    var cs = this.state.craters, todo = [from], seen = [from];
+    while (todo.length) {
+      var a = todo.pop();
+      for (var i = 0; i < cs.length; i++) {
+        var b = cs[i];
+        if (seen.indexOf(b) >= 0 || Math.hypot(a.x - b.x, a.d - b.d) > (a.r + b.r) * CRATER_TOUCH) continue;
+        b.burn = Math.max(b.burn, from.burn);
+        seen.push(b); todo.push(b);
+      }
+    }
   };
 
   MainScene.prototype.stepCraters = function (dt) {
@@ -1726,8 +1752,8 @@
 
   // The craters, all together, flat on the road in true perspective.
   // Burning, each is a neon-red danger: a soft radiance, a crisp neon
-  // edge and a dark red body, all pulsing together. Burnt out, a dark
-  // scar with a dim edge.
+  // edge and a dark red body, all pulsing together. As it burns out the
+  // glow eases away into a cooled scar: dim deep red, a faint rim.
   //
   // Drawn in passes across every crater - all the glow, then all the
   // edges, then all the bodies - so where craters overlap, each body
@@ -1768,24 +1794,17 @@
         poly(it, 1 + (halo[h][0] - 1) * (0.6 + 0.4 * pulse)); g.fillPath();
       }
     });
-    // 2. The edges.
+    // 2. The edges: neon while it burns, cooling to a dim red rim.
     list.forEach(function (it) {
-      if (it.heat <= 0) {
-        g.lineStyle(it.w * 2, 0x3a2236, 0.9); poly(it, 1); g.strokePath();
-        return;
-      }
-      g.lineStyle(it.w * 5, COLOR_GLOW_RED, 0.25 * it.heat * pulse); poly(it, 1); g.strokePath();
-      g.lineStyle(it.w * 2, mixColor(COLOR_GLOW_RED, 0xffd6da, 0.45 * pulse), 0.6 + 0.4 * it.heat * pulse); poly(it, 1); g.strokePath();
+      if (it.heat > 0) { g.lineStyle(it.w * 5, COLOR_GLOW_RED, 0.25 * it.heat * pulse); poly(it, 1); g.strokePath(); }
+      g.lineStyle(it.w * 2, mixColor(COLOR_CRATER_COOL_EDGE, mixColor(COLOR_GLOW_RED, 0xffd6da, 0.45 * pulse), it.heat), 0.9);
+      poly(it, 1); g.strokePath();
     });
-    // 3. The bodies, opaque, burnt-out ones first so a burning one over a
-    //    scar shows whole.
+    // 3. The bodies, opaque: glowing red, cooling to a dark red scar -
+    //    cooled glass, not a black hole.
     list.forEach(function (it) {
-      if (it.heat > 0) return;
-      g.fillStyle(0x0b0710, 1); poly(it, 1); g.fillPath();
-    });
-    list.forEach(function (it) {
-      if (it.heat <= 0) return;
-      g.fillStyle(mixColor(0x14030a, mixColor(0x4a0612, 0x8a0c1e, pulse), it.heat), 1); poly(it, 1); g.fillPath();
+      g.fillStyle(mixColor(COLOR_CRATER_COOL, mixColor(0x4a0612, 0x8a0c1e, pulse), it.heat), 1);
+      poly(it, 1); g.fillPath();
     });
   };
 
@@ -2113,7 +2132,7 @@
       ['BULLET_SPEED', 'Shot speed', 250, 1200, 10, ' px/s']
     ] },
     { title: 'Camera', rows: [
-      ['PLAYER_Z_PUSH', 'Scroll point (depth)', 1.2, 4, 0.05, '']
+      ['PLAYER_Z_PUSH', 'Scroll point (depth)', 0.8, 4, 0.05, '']
     ] },
     { title: 'Ramp', rows: [
       ['RAMP_M', 'Full difficulty at', 100, 2000, 10, ' m']

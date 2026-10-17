@@ -416,11 +416,15 @@ itself, for practice.
   the road. Its outline is about the size of the area that kills. While
   it burns it's neon red: a dark red body, a crisp neon edge and a soft
   radiance around it, all pulsing together (every crater in step).
-  Overlapping craters merge into one shape with a single outline.
+  Overlapping craters merge into one shape with a single outline, and
+  behave as one: a new hit sets the whole merged cluster burning again,
+  so it never shows part lit and part dark.
   **Glow pulse depth** and **Glow pulse every** in the lab tune the
   pulse. It burns for 9s. Walking into it kills you, and it burns aliens that walk into
   it too, with no points for those. Once burnt out, the crater stays as
-  a dark, dim-edged scar of rubble that slows you to about half speed. A new life
+  a cooled scar, dim deep red with a faint rim (not black), whose
+  rubble slows you to about half speed. The glow eases into it over the
+  last moments rather than switching off. A new life
   puts out any fire near where you fell.
 - **Lives, not a shield.** You start with 3 every time (nothing carries
   over from the descent), and get an extra one every 10,000 points.
@@ -451,8 +455,11 @@ itself, for practice.
   full difficulty, and **No death**. **Scroll point (depth)** sets how
   far up the street you can walk before the camera follows (1 is the
   ship's depth, 1.2 the default; higher gives you more room on screen
-  and less warning of what's ahead). Where the aliens come from and
-  which towers throw fire move with it.
+  and less warning of what's ahead; it goes down to 0.8). Where the
+  aliens come from and which towers throw fire move with it. The camera
+  never comes forward faster than a quick glide, so a scroll point
+  below where you step out of the ship closes in smoothly rather than
+  jumping.
 - Tests: `tests/test-street.js`.
 
 #### Left off the lawn, into the trees

@@ -94,6 +94,16 @@ harness.run(async (page, check, ctx) => {
   check('a deeper scroll point: the camera follows from there', s.camD > 100 && Math.abs(s.z - 2.5) < 0.05, s);
   await D(page, (v) => window.__streetDebug.tune('PLAYER_Z_PUSH', v), T.PLAYER_Z_PUSH);
 
+  // Below the depth you step out at, the camera glides up to you rather
+  // than jumping.
+  await D(page, () => window.__streetDebug.tune('PLAYER_Z_PUSH', 0.8));
+  await quietStreet(page);
+  s = await until(page, (st) => st.camD > 0, 3000);
+  check('a scroll point lower than where you step out: the camera glides there, no jump', s.camD > 0 && s.camD < 30, s.camD);
+  s = await until(page, (st) => Math.abs(st.z - 0.8) < 0.01, 5000);
+  check('...and settles at it', Math.abs(s.z - 0.8) < 0.01, s.z);
+  await D(page, (v) => window.__streetDebug.tune('PLAYER_Z_PUSH', v), T.PLAYER_Z_PUSH);
+
   // ---- The right stick fires, on its own ------------------------------
   await quietStreet(page);
   const fireT0 = (await state(page)).t;
@@ -288,6 +298,22 @@ harness.run(async (page, check, ctx) => {
   await page.keyboard.up('KeyW');
   check('rubble slows you down', s.vd > 10 && s.vd <= T.WALK_SPEED * T.CRATER_SLOW + 1, { vd: s.vd, cap: T.WALK_SPEED * T.CRATER_SLOW });
   check('...but doesn\'t hurt', s.mode === 'walking', s.mode);
+
+  // Overlapping craters are one shape: a new hit sets the whole merged
+  // cluster burning, never part lit and part dark.
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => {
+    const d = window.__streetDebug;
+    d.addCrater(p.x + 60, p.d + 300, 0, 30);    // cooled
+    d.addCrater(p.x + 110, p.d + 310, 0, 30);   // cooled, touching that one
+    d.addCrater(p.x - 120, p.d + 300, 0, 30);   // cooled, well apart
+    d.addCrater(p.x + 20, p.d + 290, 5, 30);    // a fresh hit touching the first
+  }, { x: s.px, d: s.pd });
+  s = await state(page);
+  const cl = s.craters.map(c => Math.round(c.burn));
+  check('a hit sets the whole merged cluster burning - through the chain - and nothing apart from it',
+    cl.length === 4 && cl[0] === 5 && cl[1] === 5 && cl[2] === 0 && cl[3] === 5, cl);
 
   // ---- Down the walls -------------------------------------------------------
   await quietStreet(page);
