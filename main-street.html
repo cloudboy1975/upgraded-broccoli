@@ -130,6 +130,34 @@
   }
   .move-pad { justify-content: flex-start; padding-left: max(14px, env(safe-area-inset-left)); }
   .aim-pad { justify-content: flex-end; padding-right: max(14px, env(safe-area-inset-right)); }
+  /* Jump: the strip of the right half inside the aim circle, for the
+     right thumb - it leaves the gun to jump, the left thumb keeps
+     steering in the air. Reaches up into the hit slop like the pads. */
+  .jump-zone {
+    position: absolute;
+    top: -56px; bottom: 0; left: 0;
+    right: calc(max(14px, env(safe-area-inset-right)) + 138px);
+    touch-action: none;
+    cursor: pointer;
+  }
+  .jump-face {
+    position: absolute;
+    left: 50%; top: calc(56px + 50%);
+    width: 50px; height: 50px;
+    margin-left: -25px; margin-top: -25px;
+    border-radius: 50%;
+    border: 1px solid rgba(147, 197, 253, 0.5);
+    background: radial-gradient(circle at 35% 30%, rgba(147, 197, 253, 0.25), rgba(30, 58, 138, 0.25) 70%);
+    color: rgba(219, 234, 254, 0.8);
+    font-size: 0.56rem; font-weight: 800; letter-spacing: 0.06em;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+    transition: transform 0.08s, background 0.12s;
+  }
+  .jump-zone.active .jump-face {
+    transform: scale(0.92);
+    background: radial-gradient(circle at 35% 30%, rgba(147, 197, 253, 0.6), rgba(30, 58, 138, 0.5) 70%);
+  }
   /* Hit slop above the bar, as in descent.html. */
   .pad::before {
     content: '';
@@ -267,6 +295,9 @@
       <span class="stick-knob" id="moveKnob" aria-hidden="true"></span>
     </div>
     <div class="pad aim-pad" id="aimZone" aria-label="Fire: press anywhere on the right half and drag the way to shoot">
+      <div class="jump-zone" id="jumpZone" role="button" aria-label="Jump: hold for a full jump, tap for a hop">
+        <span class="jump-face" aria-hidden="true">JUMP</span>
+      </div>
       <span class="stick-ring" aria-hidden="true"></span>
       <span class="stick-anchor" id="aimAnchor" aria-hidden="true"></span>
       <span class="stick-knob" id="aimKnob" aria-hidden="true"></span>
@@ -365,6 +396,17 @@
   var PLAYER_H = 38;           // height in world px
   var WALK_SPEED = 185;        // px/s at full stick
   var WALK_RESPONSE = 14;
+  // Jumping, Mario style: hold for the full height, let go early for a
+  // hop; up fast, down faster; and you keep steering in the air, at
+  // less grip than on the ground. In the air you are above the burning
+  // ground and a splash, and high enough you clear the smaller aliens.
+  var JUMP_HEIGHT = 50;        // px at the top of a full (held) jump
+  var JUMP_TIME = 0.75;        // seconds in the air for a full jump
+  var JUMP_CUT = 3;            // gravity x this once the button is let go on the way up: a hop
+  var JUMP_FALL = 1.6;         // ...and x this on the way down
+  var AIR_CONTROL = 0.45;      // steering grip in the air, as a share of the ground's
+  var JUMP_BUFFER = 0.12;      // a press this soon before landing still jumps on touchdown
+  var AIR_SAFE = 6;            // px up: above the burning ground and a splash
   var LIVES = 3;
   var EXTRA_LIFE_EVERY = 10000;
   var RESPAWN_CLEAR = 170;     // a new life clears aliens this close
@@ -489,6 +531,7 @@
   // ---- Tuning: the live values -------------------------------------
   var TUNING_KEY = 'street-tuning-v1';
   var TUNING_DEFAULTS = {
+    JUMP_HEIGHT: JUMP_HEIGHT, JUMP_TIME: JUMP_TIME, AIR_CONTROL: AIR_CONTROL,
     WALK_SPEED: WALK_SPEED, PLAYER_Z_PUSH: PLAYER_Z_PUSH, FIRE_INTERVAL: FIRE_INTERVAL, BULLET_SPEED: BULLET_SPEED, LIVES: LIVES,
     RAMP_M: RAMP_M, GROUP_EVERY_START: GROUP_EVERY_START, GROUP_EVERY_PEAK: GROUP_EVERY_PEAK,
     GROUP_SIZE_START: GROUP_SIZE_START, GROUP_SIZE_PEAK: GROUP_SIZE_PEAK,
@@ -580,7 +623,9 @@
       death: function () { blip(400, 40, 0.9, 'sawtooth', 0.16); },
       whoosh: function () { blip(160, 420, 0.5, 'triangle', 0.05); },
       portal: function () { blip(300, 700, 0.18, 'triangle', 0.05); },
-      life: function () { blip(660, 1320, 0.3, 'sine', 0.1); }
+      life: function () { blip(660, 1320, 0.3, 'sine', 0.1); },
+      jump: function () { blip(300, 620, 0.14, 'square', 0.04); },
+      land: function () { blip(140, 90, 0.06, 'triangle', 0.05); }
     };
   })();
 
@@ -663,6 +708,37 @@
   var releaseMove = bindStick(document.getElementById('moveZone'), document.getElementById('moveAnchor'), document.getElementById('moveKnob'), move);
   var releaseAim = bindStick(document.getElementById('aimZone'), document.getElementById('aimAnchor'), document.getElementById('aimKnob'), aim);
 
+  // The jump button. `pressed` counts presses, so a tap between two
+  // frames is never lost; `held` is whether it is still down (for the
+  // full height).
+  var jump = { held: false, pressed: 0, kb: false };
+  var releaseJump = (function bindJump(el) {
+    var activeId = null;
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); e.stopPropagation(); }, { passive: false });
+    function release() {
+      if (activeId === null) return;
+      activeId = null;
+      jump.held = false;
+      el.classList.remove('active');
+    }
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      Sound.ensureAudio();
+      activeId = e.pointerId;
+      try { el.setPointerCapture(activeId); } catch (err) {}
+      jump.held = true; jump.pressed++;
+      el.classList.add('active');
+    });
+    function up(e) { if (e.pointerId === activeId) { e.stopPropagation(); release(); } }
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
+    // Its own touches never reach the aim stick underneath.
+    el.addEventListener('pointermove', function (e) { if (e.pointerId === activeId) e.stopPropagation(); });
+    window.addEventListener('blur', release);
+    return release;
+  })(document.getElementById('jumpZone'));
+
   var MOVE_KEYS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
   var AIM_KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyI: 'up', KeyK: 'down', KeyJ: 'left', KeyL: 'right' };
   window.addEventListener('keydown', function (e) {
@@ -674,8 +750,14 @@
     if ((e.code === 'Space' || e.code === 'Enter') && scene && scene.state.mode === 'over' && !e.repeat) {
       e.preventDefault();
       scene.restart();
+      return;
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (!e.repeat) { jump.pressed++; jump.kb = true; }
     }
   });
+  window.addEventListener('keyup', function (e) { if (e.code === 'Space') jump.kb = false; });
   window.addEventListener('keyup', function (e) {
     if (MOVE_KEYS[e.code]) { kbMove[MOVE_KEYS[e.code]] = false; keyVector(move, kbMove); }
     if (AIM_KEYS[e.code]) { kbAim[AIM_KEYS[e.code]] = false; keyVector(aim, kbAim); }
@@ -813,7 +895,7 @@
       t: 0, modeAge: 0,
       camD: 0, camX: 0,
       // You start inside the ship; the intro puts you on the ground.
-      px: 0, pd: DEPTH_PX, vx: 0, vd: 0, elev: 0, emerge: 0,
+      px: 0, pd: DEPTH_PX, vx: 0, vd: 0, elev: 0, vz: 0, airborne: false, jumpCut: false, jumpBuffer: 0, jumpsSeen: jump.pressed, jumps: 0, emerge: 0,
       aimX: 0, aimD: 1, firing: false, walkPhase: 0,
       ship: { x: 0, d: DEPTH_PX },
       lives: Math.max(1, Math.round(TUNING.LIVES)),
@@ -928,8 +1010,11 @@
 
   MainScene.prototype.stepPlayer = function (dt) {
     var s = this.state;
-    var k = 1 - Math.exp(-WALK_RESPONSE * dt);
-    var top = TUNING.WALK_SPEED * (this.craterAt(s.px, s.pd, false) ? TUNING.CRATER_SLOW : 1);
+    this.stepJump(dt);
+    // In the air you keep your momentum and steer with less grip; the
+    // rubble only slows you on the ground.
+    var k = 1 - Math.exp(-WALK_RESPONSE * (s.airborne ? TUNING.AIR_CONTROL : 1) * dt);
+    var top = TUNING.WALK_SPEED * (!s.airborne && this.craterAt(s.px, s.pd, false) ? TUNING.CRATER_SLOW : 1);
     // Up on the stick is up the street, away from you.
     s.vx += (move.x * top - s.vx) * k;
     s.vd += (-move.y * top - s.vd) * k;
@@ -950,6 +1035,33 @@
     s.firing = am >= AIM_DEADZONE;
     if (s.firing) { s.aimX = aim.x / am; s.aimD = -aim.y / am; }
     else if (sp > 20) { s.aimX = s.vx / sp; s.aimD = s.vd / sp; }
+  };
+
+  // Jumping. Gravity is set from the full jump's height and time; it is
+  // stronger once the button is let go on the way up (a hop) and on the
+  // way down (snappy, not floaty).
+  MainScene.prototype.jumpGravity = function () {
+    var up = Math.max(0.05, TUNING.JUMP_TIME / (1 + 1 / Math.sqrt(JUMP_FALL))); // time to the top
+    return 2 * TUNING.JUMP_HEIGHT / (up * up);
+  };
+  MainScene.prototype.stepJump = function (dt) {
+    var s = this.state, g = this.jumpGravity();
+    if (jump.pressed !== s.jumpsSeen) { s.jumpsSeen = jump.pressed; s.jumpBuffer = JUMP_BUFFER; }
+    else s.jumpBuffer = Math.max(0, s.jumpBuffer - dt);
+    var held = jump.held || jump.kb;
+    if (!s.airborne && s.jumpBuffer > 0) {
+      s.airborne = true; s.jumpCut = false; s.jumpBuffer = 0; s.jumps++;
+      s.vz = g * Math.sqrt(2 * TUNING.JUMP_HEIGHT / g);
+      Sound.jump();
+    }
+    if (!s.airborne) return;
+    if (!held) s.jumpCut = true;
+    var acc = g * (s.vz > 0 ? (s.jumpCut ? JUMP_CUT : 1) : JUMP_FALL);
+    // The exact step for steady acceleration, so the height of a jump is
+    // the same whatever the frame rate.
+    s.elev += (s.vz - 0.5 * acc * dt) * dt;
+    s.vz -= acc * dt;
+    if (s.elev <= 0) { s.elev = 0; s.vz = 0; s.airborne = false; Sound.land(); }
   };
 
   // The camera only ever moves forward, and only because you pushed it:
@@ -1364,7 +1476,8 @@
       var u = clamp(f.age / f.flight, 0, 1);
       f.x = lerp(f.x0, f.tx, u); f.y = lerp(f.y0, GROUND_Y - 4, u); f.d = lerp(f.d0, f.td, u);
       // Walking into it on its way down is as bad as being under it.
-      if (s.mode === 'walking' && f.y > GROUND_Y - PLAYER_H && Math.hypot(f.x - s.px, f.d - s.pd) < PLAYER_R + FIRE_R * 0.6 * f.size) {
+      if (s.mode === 'walking' && f.y > GROUND_Y - s.elev - PLAYER_H && f.y < GROUND_Y - s.elev + FIRE_R &&
+          Math.hypot(f.x - s.px, f.d - s.pd) < PLAYER_R + FIRE_R * 0.6 * f.size) {
         this.impact(f); s.fires.splice(i, 1); continue;
       }
       if (u >= 1) { this.impact(f); s.fires.splice(i, 1); }
@@ -1383,7 +1496,7 @@
       if (Math.hypot(e.x - f.tx, e.d - f.td) < R + e.r) this.killEnemy(e, false);
     }
     this.addCrater(f.tx, f.td, null, R * CRATER_SCALE);
-    if (s.mode === 'walking' && Math.hypot(s.px - f.tx, s.pd - f.td) < R + PLAYER_R) this.die('fire');
+    if (s.mode === 'walking' && s.elev < AIR_SAFE && Math.hypot(s.px - f.tx, s.pd - f.td) < R + PLAYER_R) this.die('fire');
   };
 
   // ---- The damaged street -----------------------------------------------
@@ -1465,9 +1578,10 @@
     for (var i = 0; i < s.enemies.length; i++) {
       var e = s.enemies[i];
       if (e.climb > 0) continue;
+      if (s.elev > e.h * 0.8) continue; // jumped clear over it
       if (Math.hypot(e.x - s.px, e.d - s.pd) < e.r + PLAYER_R) { this.die('contact'); return; }
     }
-    if (this.craterAt(s.px, s.pd, true, PLAYER_R * 0.5)) this.die('burn');
+    if (s.elev < AIR_SAFE && this.craterAt(s.px, s.pd, true, PLAYER_R * 0.5)) this.die('burn');
   };
 
   MainScene.prototype.die = function (cause) {
@@ -1504,6 +1618,7 @@
     s.bullets.length = 0;
     s.craters.forEach(function (c) { if (Math.hypot(c.x - s.px, c.d - s.pd) < RESPAWN_CLEAR) c.burn = 0; });
     s.vx = s.vd = 0;
+    s.elev = 0; s.vz = 0; s.airborne = false;
     s.invuln = INVULN_TIME;
     this.setMode('walking');
   };
@@ -1732,14 +1847,23 @@
     }
     // Shadows under you and the aliens.
     var self = this;
-    function shadow(x, d, r) {
+    function shadow(x, d, r, up) {
       var z = self.zOf(d);
       if (z < Z_NEAR) return;
-      g.fillStyle(0x000000, 0.4);
-      g.fillEllipse(self.sx(x, z), self.sy(G, z), r * 2.4 / z, r * 0.7 / z);
+      // Up in the air it shrinks and fades: the shadow on the road is
+      // what shows how high you are, seen from behind.
+      var k = 1 / (1 + (up || 0) / 40);
+      g.fillStyle(0x000000, 0.4 * (0.4 + 0.6 * k));
+      g.fillEllipse(self.sx(x, z), self.sy(G, z), r * 2.4 * k / z, r * 0.7 * k / z);
+      // On a road this dark a shadow alone barely shows, and in a jump
+      // it is where you will come down: a faint pale rim marks it.
+      if (up > 1) {
+        g.lineStyle(1, 0xc4b5fd, 0.5);
+        g.strokeEllipse(self.sx(x, z), self.sy(G, z), r * 2.6 / z, r * 0.8 / z);
+      }
     }
     s.enemies.forEach(function (e) { if (!e.climb) shadow(e.x, e.d, e.r); });
-    if (s.mode === 'walking' || (s.mode === 'intro' && s.emerge >= 1)) shadow(s.px, s.pd, PLAYER_R);
+    if (s.mode === 'walking' || (s.mode === 'intro' && s.emerge >= 1)) shadow(s.px, s.pd, PLAYER_R, s.elev);
   };
 
   // How strongly a falling fireball's landing spot is marked: 0 until
@@ -1912,12 +2036,13 @@
     if (sc <= 0) return;
     var x = this.sx(s.px, z), feet = this.sy(GROUND_Y - s.elev, z);
     var w = 20 * sc, h = PLAYER_H * sc;
-    var walking = Math.hypot(s.vx, s.vd) > 15 && s.mode === 'walking';
+    var walking = Math.hypot(s.vx, s.vd) > 15 && s.mode === 'walking' && !s.airborne;
     var stride = walking ? Math.sin(s.walkPhase) * h * 0.06 : 0;
-    // Legs.
+    // Legs - tucked up in a jump.
+    var tuck = s.airborne ? h * 0.12 : 0;
     g.fillStyle(0x2f3f63, 1);
-    g.fillRect(x - w * 0.28, feet - h * 0.42 - stride, w * 0.22, h * 0.42 + stride);
-    g.fillRect(x + w * 0.06, feet - h * 0.42 + stride, w * 0.22, h * 0.42 - stride);
+    g.fillRect(x - w * 0.28, feet - h * 0.42 - stride, w * 0.22, h * 0.42 + stride - tuck);
+    g.fillRect(x + w * 0.06, feet - h * 0.42 + stride, w * 0.22, h * 0.42 - stride - tuck * 0.6);
     // The gun arm. It hangs from a real shoulder at the side of the
     // body, never the middle, and never swings below shoulder height:
     // aimed toward the camera it is foreshortened into a short stub
@@ -2134,6 +2259,11 @@
     { title: 'Camera', rows: [
       ['PLAYER_Z_PUSH', 'Scroll point (depth)', 0.8, 4, 0.05, '']
     ] },
+    { title: 'Jump', rows: [
+      ['JUMP_HEIGHT', 'Height', 15, 120, 1, ' px'],
+      ['JUMP_TIME', 'Time in the air', 0.3, 1.5, 0.05, ' s'],
+      ['AIR_CONTROL', 'Steering in the air', 0, 1, 0.05, '\u00d7']
+    ] },
     { title: 'Ramp', rows: [
       ['RAMP_M', 'Full difficulty at', 100, 2000, 10, ' m']
     ] },
@@ -2230,7 +2360,7 @@
     labEl.classList.toggle('visible', open);
     labEl.setAttribute('aria-hidden', open ? 'false' : 'true');
     if (open) {
-      releaseMove(); releaseAim(); releaseKeys();
+      releaseMove(); releaseAim(); releaseJump(); releaseKeys(); jump.kb = false;
       labSyncers.forEach(function (f) { f(); });
       if (scene) document.getElementById('labNoDeath').checked = !!scene.state.invincible;
     }
@@ -2289,6 +2419,7 @@
       return {
         mode: s.mode, t: s.t, modeAge: s.modeAge, camD: s.camD, camX: s.camX,
         px: s.px, pd: s.pd, vx: s.vx, vd: s.vd, z: scene.zOf(s.pd), emerge: s.emerge, elev: s.elev,
+        vz: s.vz, airborne: s.airborne, jumps: s.jumps,
         aimX: s.aimX, aimD: s.aimD, firing: s.firing,
         lives: s.lives, score: s.score, deaths: s.deaths, lastDeath: s.lastDeath || null, invuln: s.invuln,
         progressM: scene.progressM(), bestM: s.bestM, difficulty: scene.difficulty(), block: s.block,
@@ -2335,6 +2466,8 @@
     difficultyAt: difficultyAt,
     fittedHeight: function () { return fittedH; },
     setT: function (t) { scene.state.t = t; return true; },
+    pressJump: function (held) { jump.pressed++; jump.held = held !== false; return true; },
+    releaseJumpButton: function () { jump.held = false; return true; },
     lab: { isOpen: function () { return labOpen; }, setOpen: function (o) { setLabOpen(!!o); }, storageKey: TUNING_KEY }
   };
 

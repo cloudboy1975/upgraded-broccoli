@@ -104,6 +104,74 @@ harness.run(async (page, check, ctx) => {
   check('...and settles at it', Math.abs(s.z - 0.8) < 0.01, s.z);
   await D(page, (v) => window.__streetDebug.tune('PLAYER_Z_PUSH', v), T.PLAYER_Z_PUSH);
 
+  // ---- Jumping ---------------------------------------------------------------
+  // Follows one jump through, sampling it: the peak, and how long in the air.
+  async function oneJump(hold) {
+    const t0 = (await state(page)).t;
+    await D(page, (h) => window.__streetDebug.pressJump(h), hold);
+    let peak = 0, st, up = null;
+    const end = Date.now() + 8000;
+    do {
+      await page.waitForTimeout(20);
+      st = await state(page);
+      peak = Math.max(peak, st.elev);
+      if (st.airborne && up === null) up = st.t;
+    } while ((st.airborne || up === null) && Date.now() < end);
+    await D(page, () => window.__streetDebug.releaseJumpButton());
+    return { peak, air: st.t - (up == null ? t0 : up), landed: !st.airborne && st.elev === 0 };
+  }
+  await quietStreet(page);
+  let j = await oneJump(true);
+  check('held, a full jump: up to ' + T.JUMP_HEIGHT + 'px and down again in about ' + T.JUMP_TIME + 's',
+    j.landed && Math.abs(j.peak - T.JUMP_HEIGHT) < 4 && Math.abs(j.air - T.JUMP_TIME) < 0.12, j);
+  j = await oneJump(false);
+  check('...tapped, a hop: well short of it', j.landed && j.peak < T.JUMP_HEIGHT * 0.6 && j.peak > 3, j);
+
+  // Steering: from standing, the same push picks up less speed in the air.
+  async function pushRight(air) {
+    await quietStreet(page);
+    if (air) { await D(page, () => window.__streetDebug.pressJump(true)); await until(page, (st) => st.airborne, 2000); }
+    const t0 = (await state(page)).t;
+    await page.keyboard.down('KeyD');
+    const st = await until(page, (x) => x.t - t0 >= 0.12, 4000);
+    await page.keyboard.up('KeyD');
+    await D(page, () => window.__streetDebug.releaseJumpButton());
+    return st.vx / (st.t - t0);
+  }
+  const groundAcc = await pushRight(false), airAcc = await pushRight(true);
+  check('in the air you can still steer, with less grip than on the ground', airAcc > 0 && airAcc < groundAcc * 0.8, { groundAcc, airAcc });
+
+  // Over an alien, and over the burning ground.
+  await quietStreet(page);
+  await D(page, () => window.__streetDebug.pressJump(true));
+  s = await until(page, (st) => st.elev > 35, 3000);
+  await D(page, (p) => { const d = window.__streetDebug; d.spawnEnemy('grunt', p.x, p.d); d.addCrater(p.x + 70, p.d, 8, 30); }, { x: s.px, d: s.pd });
+  await page.waitForTimeout(100);
+  s = await state(page);
+  check('high in a jump, a grunt underneath can\'t touch you', s.mode === 'walking' && s.airborne, s);
+  await D(page, () => window.__streetDebug.clear());
+  await D(page, (p) => window.__streetDebug.addCrater(p.x, p.d, 8, 30), { x: s.px, d: s.pd });
+  await page.waitForTimeout(60);
+  s = await state(page);
+  check('...nor the burning ground', s.mode === 'walking', s);
+  s = await until(page, (st) => st.mode === 'dying' || (!st.airborne && st.mode === 'walking' && st.elev === 0 && st.lives < T.LIVES), 4000);
+  check('...but land in it and it does', s.mode === 'dying' && s.lastDeath === 'burn', s);
+  await D(page, () => window.__streetDebug.releaseJumpButton());
+
+  // The real button, and Space.
+  await quietStreet(page);
+  const jb = await page.locator('#jumpZone').boundingBox();
+  await page.mouse.move(jb.x + jb.width / 2, jb.y + jb.height * 0.75);
+  await page.mouse.down();
+  s = await until(page, (st) => st.airborne, 3000);
+  await page.mouse.up();
+  check('the JUMP button jumps, and doesn\'t work the gun under it', s.airborne && s.input.ax === 0 && s.input.ay === 0 && !s.firing, s);
+  await until(page, (st) => !st.airborne, 4000);
+  await page.keyboard.press('Space');
+  s = await until(page, (st) => st.airborne, 3000);
+  check('Space jumps', s.airborne && s.jumps === 2, s.jumps);
+  await until(page, (st) => !st.airborne, 4000);
+
   // ---- The right stick fires, on its own ------------------------------
   await quietStreet(page);
   const fireT0 = (await state(page)).t;

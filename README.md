@@ -377,6 +377,18 @@ itself, for practice.
   stick, tinted green. Push it in any direction and the gun fires
   rapidly that way, whichever way you're walking. Your arm points where
   you aim. On a keyboard, WASD walks and the arrow keys (or IJKL) fire.
+- **Jump, Mario style.** The round **JUMP** button between the sticks
+  is for the right thumb (Space on a keyboard). The right thumb leaves
+  the gun to jump while the left keeps steering. Hold it for a full
+  jump (50 px, about 0.75 s in the air), or tap it for a short hop. It
+  goes up fast and comes down faster, and a press just before you land
+  still counts. In the air you keep your momentum and steer with less
+  grip. While airborne you're above the burning ground and a fireball's
+  splash (land in fire and it still kills), rubble doesn't slow you, and
+  high enough you clear grunts and dashers (not a brute, at the default
+  height). Your shadow stays on the road and shrinks as you rise, with a
+  faint pale ring marking where you'll come down. **Height**, **Time in
+  the air** and **Steering in the air** are lab sliders.
 - **Ground aliens don't shoot. Touching one kills.** *Grunts* (the
   descent's diamond aliens, on legs) march straight at you in steps.
   *Dashers* (lime arrowheads) are faster and weave. *Brutes* (violet
