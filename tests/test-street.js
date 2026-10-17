@@ -349,6 +349,22 @@ harness.run(async (page, check, ctx) => {
   s = await until(page, (st) => st.fires.length >= 3, 8000);
   check('well down the street, several balls of fire are in the air at once', s.fires.length >= 3, s.fires.length);
 
+  // ---- Fitting the screen ------------------------------------------------
+  // The page is sized to the visible height, measured; the controls end
+  // exactly at the bottom of the screen at any size, and follow a resize.
+  for (const [w, h] of [[390, 844], [375, 553], [844, 390], [390, 664]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.waitForTimeout(400);
+    const fit = await D(page, () => {
+      const bar = document.querySelector('.control-bar').getBoundingClientRect();
+      return { barBottom: Math.round(bar.bottom), inner: innerHeight, fitted: window.__streetDebug.fittedHeight(),
+        canvasBottom: Math.round(document.querySelector('canvas').getBoundingClientRect().bottom), barTop: Math.round(bar.top) };
+    });
+    check('at ' + w + 'x' + h + ' the controls end at the bottom of the screen, the picture above them',
+      fit.fitted === h && fit.barBottom === h && fit.canvasBottom <= fit.barTop + 1, fit);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+
   // ---- On from the descent ---------------------------------------------
   await page.goto(ctx.url('descent.html?from=head-on&score=4321'));
   await page.waitForTimeout(400);

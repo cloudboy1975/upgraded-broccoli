@@ -683,6 +683,68 @@
     if (e.touches && e.touches.length > 1) e.preventDefault();
   }, { passive: false });
 
+  // ---- Fitting the screen ---------------------------------------------
+  // The page is sized to the part of the screen you can actually see,
+  // measured, not taken on trust from CSS. 100dvh is right in most
+  // browsers, but some (in-app web views especially) count the space
+  // under a toolbar or the home bar as visible, and then the bottom of
+  // the controls is cut off. So the visible height is read from the
+  // browser and set on the page directly, again whenever it changes (a
+  // toolbar sliding away, a rotation), and the game's canvas is refitted
+  // into what is left.
+  var game = null;
+  function visibleHeight() {
+    var vv = window.visualViewport;
+    // Zoomed in, the visual viewport is only part of the page; the
+    // window's own height is the one to fit then.
+    return Math.round(vv && vv.scale <= 1.01 ? vv.height : window.innerHeight);
+  }
+  var fittedH = 0, refitTimer = null;
+  function fitToScreen() {
+    var h = visibleHeight();
+    if (h && h !== fittedH) {
+      fittedH = h;
+      document.body.style.height = h + 'px';
+      window.scrollTo(0, 0);
+    }
+    // Phaser's own resize handling notices the new space but leaves the
+    // canvas at its old size (re-centred, overhanging the controls when
+    // the space shrinks). Refitting once layout has settled - next frame,
+    // and again a moment later for toolbars that slide - puts it right.
+    if (!game || !game.scale) return;
+    requestAnimationFrame(function () { game.scale.refresh(); });
+    clearTimeout(refitTimer);
+    refitTimer = setTimeout(function () { game.scale.refresh(); }, 300);
+  }
+  fitToScreen();
+  window.addEventListener('resize', fitToScreen);
+  window.addEventListener('orientationchange', function () { setTimeout(fitToScreen, 250); });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', fitToScreen);
+    window.visualViewport.addEventListener('scroll', function () { if (window.visualViewport.scale <= 1.01) window.scrollTo(0, 0); });
+  }
+  // A page left zoomed in also pushes the controls off the bottom: the
+  // same pinch-zoom safety net as the other games in this collection.
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
+  (function () {
+    var viewportMeta = document.querySelector('meta[name="viewport"]');
+    var zoomResetTimer = null;
+    function forceResetZoom() {
+      if (!viewportMeta) return;
+      var original = viewportMeta.getAttribute('content');
+      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+    }
+    function scheduleZoomCheck() {
+      clearTimeout(zoomResetTimer);
+      zoomResetTimer = setTimeout(function () {
+        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+      }, 250);
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
+  })();
+
   // The city on the horizon - descent.html's skyline, the spire you were
   // flying toward still standing at the end of the street.
   function makeSkyline() {
@@ -2270,10 +2332,11 @@
     launchFire: function (opts) { return !!scene.launchFire(opts); },
     projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z), y: scene.sy(GROUND_Y, z), z: z }; },
     difficultyAt: difficultyAt,
+    fittedHeight: function () { return fittedH; },
     lab: { isOpen: function () { return labOpen; }, setOpen: function (o) { setLabOpen(!!o); }, storageKey: TUNING_KEY }
   };
 
-  new Phaser.Game({
+  game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: 'gameRoot',
     width: GAME_WIDTH,

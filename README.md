@@ -437,6 +437,14 @@ itself, for practice.
   to land. Standing still only brings the odd straggler, at the rate
   your distance has already set. A **BLOCK n** banner marks every
   100 m.
+- **Fits the visible screen.** The page measures the height you can
+  actually see, instead of trusting CSS's `100dvh`, which some browsers
+  and in-app web views overstate, cutting off the bottom of the
+  controls. It re-measures whenever that changes (toolbars sliding,
+  rotation) and refits the canvas each time. Phaser alone re-centres
+  the canvas without resizing it, so after the screen shrank it hung
+  over the controls. A pinch-zoom guard, the same as the other games',
+  stops a stray zoom pushing the controls off the bottom.
 - **Settings lab.** Backquote, or triple-tap the "Main Street" tag.
   Every ramp has a start and a full value, plus jumps to 25%, 50% and
   full difficulty, and **No death**. **Scroll point (depth)** sets how
