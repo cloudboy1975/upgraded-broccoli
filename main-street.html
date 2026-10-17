@@ -109,6 +109,7 @@
      show where the thumbs go; a thumb landing anywhere on its half
      counts, and that press's centre is wherever it landed. */
   .control-bar {
+    position: relative;
     flex-shrink: 0;
     display: flex;
     align-items: stretch;
@@ -130,19 +131,12 @@
   }
   .move-pad { justify-content: flex-start; padding-left: max(14px, env(safe-area-inset-left)); }
   .aim-pad { justify-content: flex-end; padding-right: max(14px, env(safe-area-inset-right)); }
-  /* Jump: the strip of the right half inside the aim circle, for the
-     right thumb - it leaves the gun to jump, the left thumb keeps
-     steering in the air. Reaches up into the hit slop like the pads. */
-  .jump-zone {
-    position: absolute;
-    top: -56px; bottom: 0; left: 0;
-    right: calc(max(14px, env(safe-area-inset-right)) + 138px);
-    touch-action: none;
-    cursor: pointer;
-  }
+  /* Jump: drawn between the two circles, but the whole region between
+     them - and round the left of the aim circle, and up into the slop -
+     jumps (see isJumpTouch). */
   .jump-face {
     position: absolute;
-    left: 50%; top: calc(56px + 50%);
+    left: 50%; top: 50%;
     width: 50px; height: 50px;
     margin-left: -25px; margin-top: -25px;
     border-radius: 50%;
@@ -154,7 +148,7 @@
     pointer-events: none;
     transition: transform 0.08s, background 0.12s;
   }
-  .jump-zone.active .jump-face {
+  .jump-face.active {
     transform: scale(0.92);
     background: radial-gradient(circle at 35% 30%, rgba(147, 197, 253, 0.6), rgba(30, 58, 138, 0.5) 70%);
   }
@@ -295,13 +289,11 @@
       <span class="stick-knob" id="moveKnob" aria-hidden="true"></span>
     </div>
     <div class="pad aim-pad" id="aimZone" aria-label="Fire: press anywhere on the right half and drag the way to shoot">
-      <div class="jump-zone" id="jumpZone" role="button" aria-label="Jump: hold for a full jump, tap for a hop">
-        <span class="jump-face" aria-hidden="true">JUMP</span>
-      </div>
       <span class="stick-ring" aria-hidden="true"></span>
       <span class="stick-anchor" id="aimAnchor" aria-hidden="true"></span>
       <span class="stick-knob" id="aimKnob" aria-hidden="true"></span>
     </div>
+    <span class="jump-face" id="jumpFace" aria-hidden="true">JUMP</span>
   </div>
 
   <div class="lab" id="lab" aria-hidden="true">
@@ -708,36 +700,50 @@
   var releaseMove = bindStick(document.getElementById('moveZone'), document.getElementById('moveAnchor'), document.getElementById('moveKnob'), move);
   var releaseAim = bindStick(document.getElementById('aimZone'), document.getElementById('aimAnchor'), document.getElementById('aimKnob'), aim);
 
-  // The jump button. `pressed` counts presses, so a tap between two
-  // frames is never lost; `held` is whether it is still down (for the
-  // full height).
+  // Jumping, for the right thumb. Any touch that lands between the two
+  // circles, or round the left-hand side of the aim circle (outside it),
+  // jumps - a big target, since the thumb comes off the gun to hit it
+  // without looking. It takes that space from the sticks' slop; the
+  // circles themselves, and everything right of the aim circle's
+  // middle, stay the sticks'. `pressed` counts presses, so a tap
+  // between two frames is never lost; `held` is whether it is still
+  // down (for the full height).
   var jump = { held: false, pressed: 0, kb: false };
-  var releaseJump = (function bindJump(el) {
+  var controlBar = document.querySelector('.control-bar');
+  var moveRing = document.querySelector('.move-pad .stick-ring');
+  var aimRing = document.querySelector('.aim-pad .stick-ring');
+  var jumpFace = document.getElementById('jumpFace');
+  function isJumpTouch(x, y) {
+    var m = moveRing.getBoundingClientRect(), a = aimRing.getBoundingClientRect();
+    var ax = a.left + a.width / 2, ay = a.top + a.height / 2, ar = a.width / 2;
+    return x > m.right + 4 && x < ax && Math.hypot(x - ax, y - ay) > ar + 4;
+  }
+  var releaseJump = (function () {
     var activeId = null;
-    el.addEventListener('touchstart', function (e) { e.preventDefault(); e.stopPropagation(); }, { passive: false });
     function release() {
       if (activeId === null) return;
       activeId = null;
       jump.held = false;
-      el.classList.remove('active');
+      jumpFace.classList.remove('active');
     }
-    el.addEventListener('pointerdown', function (e) {
+    // On the way down to the pads (capture phase), so a jump touch never
+    // reaches a stick.
+    controlBar.addEventListener('pointerdown', function (e) {
+      if (activeId !== null || !isJumpTouch(e.clientX, e.clientY)) return;
       e.preventDefault(); e.stopPropagation();
       Sound.ensureAudio();
       activeId = e.pointerId;
-      try { el.setPointerCapture(activeId); } catch (err) {}
+      try { controlBar.setPointerCapture(activeId); } catch (err) {}
       jump.held = true; jump.pressed++;
-      el.classList.add('active');
-    });
-    function up(e) { if (e.pointerId === activeId) { e.stopPropagation(); release(); } }
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointercancel', up);
-    el.addEventListener('lostpointercapture', up);
-    // Its own touches never reach the aim stick underneath.
-    el.addEventListener('pointermove', function (e) { if (e.pointerId === activeId) e.stopPropagation(); });
+      jumpFace.classList.add('active');
+    }, true);
+    function up(e) { if (e.pointerId === activeId) release(); }
+    controlBar.addEventListener('pointerup', up);
+    controlBar.addEventListener('pointercancel', up);
+    controlBar.addEventListener('lostpointercapture', up);
     window.addEventListener('blur', release);
     return release;
-  })(document.getElementById('jumpZone'));
+  })();
 
   var MOVE_KEYS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
   var AIM_KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyI: 'up', KeyK: 'down', KeyJ: 'left', KeyL: 'right' };

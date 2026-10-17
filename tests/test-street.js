@@ -160,16 +160,41 @@ harness.run(async (page, check, ctx) => {
 
   // The real button, and Space.
   await quietStreet(page);
-  const jb = await page.locator('#jumpZone').boundingBox();
-  await page.mouse.move(jb.x + jb.width / 2, jb.y + jb.height * 0.75);
-  await page.mouse.down();
-  s = await until(page, (st) => st.airborne, 3000);
-  await page.mouse.up();
-  check('the JUMP button jumps, and doesn\'t work the gun under it', s.airborne && s.input.ax === 0 && s.input.ay === 0 && !s.firing, s);
-  await until(page, (st) => !st.airborne, 4000);
+  // Where a thumb lands: the rings' boxes, in page coordinates.
+  const ring = async (sel) => page.locator(sel).boundingBox();
+  const mr = await ring('.move-pad .stick-ring'), ar = await ring('.aim-pad .stick-ring');
+  const acx = ar.x + ar.width / 2, acy = ar.y + ar.height / 2, aR = ar.width / 2;
+  async function touchAt(x, y) {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 1, y - 30);
+    const st = await until(page, (q) => q.airborne || q.input.ax !== 0 || q.input.ay !== 0 || q.input.mx !== 0 || q.input.my !== 0, 3000);
+    await page.mouse.up();
+    await until(page, (q) => !q.airborne, 4000);
+    return st;
+  }
+  const spots = {
+    'between the circles': [(mr.x + mr.width + ar.x) / 2, acy],
+    'just right of the walking circle': [mr.x + mr.width + 8, acy],
+    'up in the slop above the bar': [(mr.x + mr.width + ar.x) / 2, ar.y - 30],
+    'round the top-left of the aim circle': [acx - aR * 0.8, acy - aR * 0.85],
+    'round the bottom-left of the aim circle': [acx - aR * 0.8, acy + aR * 0.85]
+  };
+  for (const name of Object.keys(spots)) {
+    await quietStreet(page);
+    const st = await touchAt(spots[name][0], spots[name][1]);
+    check('a touch ' + name + ' jumps, and works neither stick', st.airborne && st.input.ax === 0 && st.input.ay === 0 && st.input.mx === 0 && st.input.my === 0, { name, input: st.input, airborne: st.airborne });
+  }
+  await quietStreet(page);
+  let st2 = await touchAt(acx - aR * 0.5, acy);
+  check('inside the aim circle, even on its left side, it aims', !st2.airborne && st2.input.ay < 0, st2.input);
+  await quietStreet(page);
+  st2 = await touchAt(mr.x + mr.width * 0.7, acy);
+  check('on the walking circle it walks', !st2.airborne && st2.input.my < 0, st2.input);
+  await quietStreet(page);
   await page.keyboard.press('Space');
   s = await until(page, (st) => st.airborne, 3000);
-  check('Space jumps', s.airborne && s.jumps === 2, s.jumps);
+  check('Space jumps', s.airborne && s.jumps === 1, s.jumps);
   await until(page, (st) => !st.airborne, 4000);
 
   // ---- The right stick fires, on its own ------------------------------

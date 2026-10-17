@@ -377,8 +377,13 @@ itself, for practice.
   stick, tinted green. Push it in any direction and the gun fires
   rapidly that way, whichever way you're walking. Your arm points where
   you aim. On a keyboard, WASD walks and the arrow keys (or IJKL) fire.
-- **Jump, Mario style.** The round **JUMP** button between the sticks
-  is for the right thumb (Space on a keyboard). The right thumb leaves
+- **Jump, Mario style.** For the right thumb (Space on a keyboard).
+  A round **JUMP** button is drawn between the circles, but any touch
+  between them jumps: around the left side of the aim circle (outside
+  it) and up into the slop above the bar too. It's a big target for a
+  thumb coming off the gun without looking. That space comes out of the
+  sticks' slop; the circles themselves, and everything right of the aim
+  circle's middle, stay the sticks'. The right thumb leaves
   the gun to jump while the left keeps steering. Hold it for a full
   jump (50 px, about 0.75 s in the air), or tap it for a short hop. It
   goes up fast and comes down faster, and a press just before you land
