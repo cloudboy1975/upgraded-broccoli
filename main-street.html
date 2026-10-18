@@ -313,6 +313,15 @@
           <input type="checkbox" id="labNoDeath">
         </div>
       </div>
+      <div class="lab-section">
+        <h3>Settings</h3>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide" id="labExploreBtn">Show all settings</button>
+          <button type="button" class="lab-btn wide primary" id="labCopyBtn">Copy to clipboard</button>
+        </div>
+        <div class="lab-sub" id="labCopyNote" style="margin:6px 0 0"></div>
+        <textarea id="labExplore" readonly spellcheck="false" style="display:none;width:100%;height:220px;margin-top:6px;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;font:11px/1.4 ui-monospace,Menlo,monospace;padding:6px;-webkit-user-select:text;user-select:text;touch-action:pan-y"></textarea>
+      </div>
       <div id="labSections"></div>
       <div class="lab-actions">
         <button type="button" class="lab-btn wide" id="labScreenBtn">Screen info</button>
@@ -2419,6 +2428,58 @@
     }
   }
   document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
+  // ---- Settings explorer --------------------------------------------
+  // Every lab setting with its value and default, the changed ones
+  // first and marked, then all of them as one line of JSON - to copy and
+  // hand over for new defaults.
+  function settingsReport() {
+    var changed = [], same = [];
+    LAB_SPEC.forEach(function (sec) {
+      sec.rows.forEach(function (r) {
+        var key = r[0], v = TUNING[key], d = TUNING_DEFAULTS[key], step = r[4] || 1;
+        var diff = Math.abs(v - d) > step / 2;
+        var line = (diff ? '* ' : '  ') + sec.title + ' / ' + r[1] + ' (' + key + '): ' + labFmt(v, step) + (r[5] || '') +
+          (diff ? '   [default ' + labFmt(d, step) + (r[5] || '') + ']' : '');
+        (diff ? changed : same).push(line);
+      });
+    });
+    var all = {};
+    Object.keys(TUNING_DEFAULTS).forEach(function (k) { all[k] = TUNING[k]; });
+    return ['Main Street settings - ' + changed.length + ' changed from default (marked *)', '']
+      .concat(changed, changed.length ? [''] : [], same, ['', 'JSON: ' + JSON.stringify(all)]).join('\n');
+  }
+  var exploreEl = document.getElementById('labExplore'), copyNote = document.getElementById('labCopyNote');
+  document.getElementById('labExploreBtn').addEventListener('click', function () {
+    var show = exploreEl.style.display === 'none';
+    exploreEl.style.display = show ? 'block' : 'none';
+    if (show) exploreEl.value = settingsReport();
+    this.textContent = show ? 'Hide settings' : 'Show all settings';
+  });
+  document.getElementById('labCopyBtn').addEventListener('click', function () {
+    var text = settingsReport();
+    exploreEl.value = text;
+    function done(ok) {
+      copyNote.textContent = ok ? 'Copied - paste it into the chat.' : 'Couldn\'t reach the clipboard - select the text below and copy it.';
+      if (!ok) { exploreEl.style.display = 'block'; exploreEl.focus(); exploreEl.select(); }
+    }
+    // The clipboard API where it is allowed; the old select-and-copy
+    // where it isn't.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(fallbackCopy(text)); });
+    } else done(fallbackCopy(text));
+  });
+  function fallbackCopy(text) {
+    try {
+      var was = exploreEl.style.display;
+      exploreEl.style.display = 'block';
+      exploreEl.value = text; exploreEl.focus(); exploreEl.select();
+      exploreEl.setSelectionRange(0, text.length);
+      var ok = document.execCommand('copy');
+      exploreEl.style.display = was;
+      return ok;
+    } catch (e) { return false; }
+  }
+
   // What this browser says about the screen, for chasing a layout that
   // is cut off on one phone and fine everywhere else.
   function screenInfo() {
@@ -2541,6 +2602,7 @@
     difficultyAt: difficultyAt,
     fittedHeight: function () { return fittedH; },
     screenInfo: function () { return screenInfo(); },
+    settingsReport: function () { return settingsReport(); },
     setT: function (t) { scene.state.t = t; return true; },
     pressJump: function (held) { jump.pressed++; jump.held = held !== false; return true; },
     releaseJumpButton: function () { jump.held = false; return true; },

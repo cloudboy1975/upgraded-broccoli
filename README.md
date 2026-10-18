@@ -482,6 +482,13 @@ itself, for practice.
   never comes forward faster than a quick glide, so a scroll point
   below where you step out of the ship closes in smoothly rather than
   jumping.
+- **Settings explorer.** In the lab, **Copy to clipboard** copies every
+  setting by its lab name and code name, with your value and the
+  default. Changed ones are marked and listed first, followed by one
+  line of JSON with all of them, ready to paste into a chat and ask for
+  new defaults. **Show all settings** shows the same text in a box (to
+  select by hand if the clipboard is blocked). **Screen info** reports
+  what the browser says about the screen and where things landed.
 - Tests: `tests/test-street.js`.
 
 #### Left off the lawn, into the trees

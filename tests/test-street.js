@@ -505,6 +505,19 @@ harness.run(async (page, check, ctx) => {
     await ctx2.close();
   }
 
+  // The settings explorer: every setting, changed ones first, and a line
+  // of JSON that round-trips.
+  {
+    await D(page, () => window.__streetDebug.tune('WALK_SPEED', 200));
+    const rep = await D(page, () => window.__streetDebug.settingsReport());
+    const json = JSON.parse(rep.split('JSON: ')[1]);
+    const lines = rep.split('\n');
+    check('the settings report marks a changed setting first, with its default', /^\* .*\(WALK_SPEED\): 200 px\/s\s+\[default /.test(lines[2]), lines.slice(0, 4));
+    check('...lists every setting', Object.keys(T).every(k => rep.indexOf('(' + k + ')') >= 0), Object.keys(T).filter(k => rep.indexOf('(' + k + ')') < 0));
+    check('...and ends with all of them as JSON', json.WALK_SPEED === 200 && Object.keys(json).length === Object.keys(T).length, Object.keys(json).length);
+    await D(page, (v) => window.__streetDebug.tune('WALK_SPEED', v), T.WALK_SPEED);
+  }
+
   // ---- On from the descent ---------------------------------------------
   await page.goto(ctx.url('descent.html?from=head-on&score=4321'));
   await page.waitForTimeout(400);
