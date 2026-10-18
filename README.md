@@ -413,7 +413,12 @@ itself, for practice.
 - **A canyon.** The towers stand taller and shoulder to shoulder, with
   only the odd cross street, and the edges of the picture are darkened.
 - **Fire from the buildings.** A window high up a tower ahead glows,
-  then throws a slow ball of fire at where you're standing. A ring on
+  then throws a slow ball of fire at where you're standing. It's
+  flat, like everything here: a disc tumbling end over end as it falls,
+  squashing to a sliver and opening out again. One face is hot
+  yellow-white and the other deeper orange-red, with a soft glow around
+  it and a faint trail of fading copies behind it, so it still reads as
+  fire. A ring on
   the ground shows where it will land, but only for the last fifth of
   its fall by default, so you have to read where it's heading. The
   lab's **Landing spot shown** slider sets how much of the fall it's

@@ -466,6 +466,7 @@
   var FIRE_SPLASH = 24;        // px around the impact that kill
   var FIRE_WARNING = 0.2;      // share of the fall, at the end, during which the landing spot is marked
   var FIRE_R = 9;
+  var FIRE_FLIP_RATE = 7;      // radians/s: how fast a ball of fire tumbles
   var PORTAL_TIME = 0.8;       // an alien coming out of a doorway shows this long first
 
   // The street takes damage. Where fire lands it breaks the road open
@@ -1461,6 +1462,9 @@
     var wd = opts && opts.d != null ? opts.d : o.d;
     var f = {
       kind: 'fire', stage: 'charge', age: 0, tower: o || null,
+      // Its tumble: where in the flip it starts, the tilt of the axis it
+      // flips about, and which way that tilt drifts.
+      flip0: rand(0, Math.PI * 2), tilt0: rand(0, Math.PI), tiltRate: rand(-1.2, 1.2),
       x0: wx, y0: wy, d0: wd, x: wx, y: wy, d: wd,
       tx: 0, td: 0,
       flight: opts && opts.flight || lerp(TUNING.FIRE_FLIGHT_START, TUNING.FIRE_FLIGHT_PEAK, F),
@@ -2185,22 +2189,51 @@
     g.lineBetween(this.sx(b.x, z), this.sy(BULLET_Y, z), this.sx(b.x - b.vx * 0.03, z2), this.sy(BULLET_Y, z2));
   };
 
-  // A ball of fire: an orange orb with a halo and a ragged tail back
-  // along the way it came.
+  // A ball of fire, as this world would make one: a flat disc,
+  // tumbling end over end as it falls - squashing to a sliver edge-on
+  // and opening out again, its tilt drifting - hot yellow-white on one
+  // face, deeper orange-red on the other. A soft glow round it (rounder
+  // than the disc, so it glows even edge-on) and fading copies behind
+  // it along its path, a motion blur, keep it reading as fire.
   MainScene.prototype.drawFire = function (g, f, z) {
     if (f.stage !== 'fly') return;
-    var x = this.sx(f.x, z), y = this.sy(f.y, z), r = Math.max(3, FIRE_R * (f.size || 1) / z);
-    var bx = f.x0 - f.x, by = f.y0 - f.y, bd = f.d0 - f.d, bl = Math.hypot(bx, by, bd) || 1;
-    var tz = Math.max(Z_NEAR, this.zOf(f.d + bd / bl * 26));
-    var tx = this.sx(f.x + bx / bl * 26, tz), ty = this.sy(f.y + by / bl * 26, tz);
-    g.fillStyle(COLOR_FLAME_OUTER, 0.5);
-    g.fillTriangle(x - r * 0.8, y, x + r * 0.8, y, tx + rand(-2, 2), ty + rand(-2, 2));
-    g.fillStyle(COLOR_FIRE, 0.3);
-    g.fillCircle(x, y, r * 1.9);
-    g.fillStyle(COLOR_FIRE, 1);
-    g.fillCircle(x, y, r);
-    g.fillStyle(COLOR_FLAME_INNER, 1);
-    g.fillCircle(x, y, r * 0.45);
+    var self = this, r = Math.max(3, FIRE_R * (f.size || 1) / z);
+    var flip = f.flip0 + f.age * FIRE_FLIP_RATE, tilt = f.tilt0 + f.age * f.tiltRate;
+    var squash = Math.cos(flip), front = squash >= 0;
+    squash = Math.max(0.12, Math.abs(squash));
+    function at(u) {
+      // Where it was at an earlier point of its flight (the path is a
+      // straight line), on screen.
+      u = clamp(u, 0, 1);
+      var zz = Math.max(Z_NEAR, self.zOf(lerp(f.d0, f.td, u)));
+      return [self.sx(lerp(f.x0, f.tx, u), zz), self.sy(lerp(f.y0, GROUND_Y - 4, u), zz)];
+    }
+    function disc(cx, cy, rad, sq, color, alpha) {
+      var c = Math.cos(tilt), sn = Math.sin(tilt);
+      g.fillStyle(color, alpha);
+      g.beginPath();
+      for (var i = 0; i < 18; i++) {
+        var a = i / 18 * Math.PI * 2, px = Math.cos(a) * rad, py = Math.sin(a) * rad * sq;
+        var X = cx + px * c - py * sn, Y = cy + px * sn + py * c;
+        if (i === 0) g.moveTo(X, Y); else g.lineTo(X, Y);
+      }
+      g.closePath(); g.fillPath();
+    }
+    var u = f.age / f.flight, p = at(u);
+    // Motion blur: where it was a moment ago, fading.
+    for (var k = 3; k >= 1; k--) {
+      var q = at(u - k * 0.035);
+      disc(q[0], q[1], r * (1 - k * 0.08), squash, COLOR_FIRE, 0.16 * (4 - k) / 3);
+    }
+    // The glow, roundish whatever the flip.
+    var glowSq = lerp(squash, 1, 0.65);
+    disc(p[0], p[1], r * 2.3, glowSq, COLOR_FIRE, 0.08);
+    disc(p[0], p[1], r * 1.7, glowSq, COLOR_FIRE, 0.14);
+    disc(p[0], p[1], r * 1.3, glowSq, COLOR_FLAME_OUTER, 0.22);
+    // The disc itself: one face hot, the other deeper.
+    disc(p[0], p[1], r, squash, front ? COLOR_FIRE : 0xd9381e, 1);
+    disc(p[0], p[1], r * 0.62, squash, front ? COLOR_FLAME_INNER : COLOR_FIRE, 1);
+    if (front) disc(p[0], p[1], r * 0.28, squash, 0xfff7e0, 1);
   };
 
   MainScene.prototype.drawBurst = function (g, o, z) {
