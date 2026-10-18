@@ -489,6 +489,22 @@ harness.run(async (page, check, ctx) => {
   }
   await page.setViewportSize({ width: 390, height: 844 });
 
+  // The lab's way in on a phone - three taps on the tag - with real
+  // touches. The tag takes its own taps (so iOS never reads them as a
+  // double-tap zoom, which pushed the header off the top of the screen).
+  {
+    const ctx2 = await page.context().browser().newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const tp = await ctx2.newPage();
+    await tp.goto(ctx.url('main-street.html'));
+    await tp.waitForTimeout(500);
+    const tag = await tp.locator('#labTap').boundingBox();
+    for (let i = 0; i < 3; i++) { await tp.touchscreen.tap(tag.x + tag.width / 2, tag.y + tag.height / 2); await tp.waitForTimeout(80); }
+    await tp.waitForTimeout(200);
+    const r = await tp.evaluate(() => ({ lab: window.__streetDebug.lab.isOpen(), scale: window.visualViewport ? window.visualViewport.scale : 1 }));
+    check('three taps on the tag open the lab, and the page is not zoomed', r.lab && Math.abs(r.scale - 1) < 0.01, r);
+    await ctx2.close();
+  }
+
   // ---- On from the descent ---------------------------------------------
   await page.goto(ctx.url('descent.html?from=head-on&score=4321'));
   await page.waitForTimeout(400);

@@ -801,6 +801,7 @@
   }
   var fittedH = 0, fittedTop = 0, refitTimer = null;
   function fitToScreen() {
+    scheduleZoomCheck();
     var v = visibleArea();
     if (v.height && (v.height !== fittedH || v.top !== fittedTop)) {
       fittedH = v.height; fittedTop = v.top;
@@ -827,23 +828,30 @@
   // same pinch-zoom safety net as the other games in this collection.
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
   document.addEventListener('gesturechange', function (e) { e.preventDefault(); });
-  (function () {
-    var viewportMeta = document.querySelector('meta[name="viewport"]');
-    var zoomResetTimer = null;
-    function forceResetZoom() {
-      if (!viewportMeta) return;
-      var original = viewportMeta.getAttribute('content');
-      viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
-      requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
-    }
-    function scheduleZoomCheck() {
-      clearTimeout(zoomResetTimer);
-      zoomResetTimer = setTimeout(function () {
-        if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
-      }, 250);
-    }
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleZoomCheck);
-  })();
+  // iOS zooms on a quick double tap anywhere, ignoring the viewport's
+  // no-zoom; the second touch of a quick pair is marked handled instead.
+  // (Not in the lab, where the sliders and buttons want their taps.)
+  var lastTouchEnd = 0;
+  document.addEventListener('touchend', function (e) {
+    var now = Date.now();
+    if (now - lastTouchEnd < 350 && !(e.target.closest && e.target.closest('#lab'))) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+  // And if the page is zoomed all the same, put it back.
+  var viewportMeta = document.querySelector('meta[name="viewport"]');
+  var zoomResetTimer = null;
+  function forceResetZoom() {
+    if (!viewportMeta) return;
+    var original = viewportMeta.getAttribute('content');
+    viewportMeta.setAttribute('content', original + ', shrink-to-fit=no');
+    requestAnimationFrame(function () { viewportMeta.setAttribute('content', original); });
+  }
+  function scheduleZoomCheck() {
+    clearTimeout(zoomResetTimer);
+    zoomResetTimer = setTimeout(function () {
+      if (window.visualViewport && window.visualViewport.scale > 1.02) forceResetZoom();
+    }, 250);
+  }
 
   // The city on the horizon - descent.html's skyline, the spire you were
   // flying toward still standing at the end of the street.
@@ -2425,14 +2433,20 @@
     scene.buildStreet();
     if (s.spawning) scene.seedClimbers();
   }
+  // The taps are counted here and the touches marked handled, so iOS
+  // never sees a quick double tap there - which it takes as zoom in,
+  // whatever the viewport says. A slightly zoomed page puts the top of
+  // the header off the screen.
   (function () {
-    var taps = 0, tapTimer = null;
-    document.getElementById('labTap').addEventListener('pointerup', function () {
+    var taps = 0, tapTimer = null, el = document.getElementById('labTap');
+    function tap() {
       taps++;
       clearTimeout(tapTimer);
       if (taps >= 3) { taps = 0; setLabOpen(true); return; }
       tapTimer = setTimeout(function () { taps = 0; }, 600);
-    });
+    }
+    el.addEventListener('touchend', function (e) { e.preventDefault(); tap(); }, { passive: false });
+    el.addEventListener('pointerup', function (e) { if (e.pointerType !== 'touch') tap(); });
   })();
 
   // ==================================================================
