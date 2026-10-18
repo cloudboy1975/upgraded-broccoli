@@ -505,7 +505,7 @@ harness.run(async (page, check, ctx) => {
     await ctx2.close();
   }
 
-  // The settings explorer: every setting, changed ones first, and a line
+  // The settings exporter: every setting, changed ones first, and a line
   // of JSON that round-trips.
   {
     await D(page, () => window.__streetDebug.tune('WALK_SPEED', 200));

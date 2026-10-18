@@ -482,7 +482,7 @@ itself, for practice.
   never comes forward faster than a quick glide, so a scroll point
   below where you step out of the ship closes in smoothly rather than
   jumping.
-- **Settings explorer.** In the lab, **Copy to clipboard** copies every
+- **Settings exporter.** In the lab, **Copy to clipboard** copies every
   setting by its lab name and code name, with your value and the
   default. Changed ones are marked and listed first, followed by one
   line of JSON with all of them, ready to paste into a chat and ask for
