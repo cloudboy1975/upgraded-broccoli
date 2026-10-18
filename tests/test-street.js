@@ -477,10 +477,15 @@ harness.run(async (page, check, ctx) => {
     const fit = await D(page, () => {
       const bar = document.querySelector('.control-bar').getBoundingClientRect();
       return { barBottom: Math.round(bar.bottom), inner: innerHeight, fitted: window.__streetDebug.fittedHeight(),
-        canvasBottom: Math.round(document.querySelector('canvas').getBoundingClientRect().bottom), barTop: Math.round(bar.top) };
+        canvasBottom: Math.round(document.querySelector('canvas').getBoundingClientRect().bottom), barTop: Math.round(bar.top),
+        hudTop: Math.round(document.querySelector('.hud-bar').getBoundingClientRect().top),
+        canvasTop: Math.round(document.querySelector('canvas').getBoundingClientRect().top),
+        rootTop: Math.round(document.getElementById('gameRoot').getBoundingClientRect().top) };
     });
     check('at ' + w + 'x' + h + ' the controls end at the bottom of the screen, the picture above them',
       fit.fitted === h && fit.barBottom === h && fit.canvasBottom <= fit.barTop + 1, fit);
+    check('...and nothing is cut off at the top: the header at the top of the screen, the picture below it',
+      fit.hudTop === 0 && fit.canvasTop >= fit.rootTop - 1, fit);
   }
   await page.setViewportSize({ width: 390, height: 844 });
 

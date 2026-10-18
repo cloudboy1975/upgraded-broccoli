@@ -315,6 +315,7 @@
       </div>
       <div id="labSections"></div>
       <div class="lab-actions">
+        <button type="button" class="lab-btn wide" id="labScreenBtn">Screen info</button>
         <button type="button" class="lab-btn wide" id="labResetBtn">Reset to defaults</button>
         <button type="button" class="lab-btn wide primary" id="labCloseBtn">Close</button>
       </div>
@@ -787,19 +788,24 @@
   // toolbar sliding away, a rotation), and the game's canvas is refitted
   // into what is left.
   var game = null;
-  function visibleHeight() {
+  // The visible area: its height, and how far down the page it starts.
+  // Some browsers put the visible area below the top of the page (under
+  // a toolbar laid over it), so the page goes where the visible area
+  // is, not just as tall as it.
+  function visibleArea() {
     var vv = window.visualViewport;
     // Zoomed in, the visual viewport is only part of the page; the
-    // window's own height is the one to fit then.
-    return Math.round(vv && vv.scale <= 1.01 ? vv.height : window.innerHeight);
+    // window's own size is the one to fit then.
+    if (!vv || vv.scale > 1.01) return { top: 0, height: Math.round(window.innerHeight) };
+    return { top: Math.round(vv.offsetTop), height: Math.round(vv.height) };
   }
-  var fittedH = 0, refitTimer = null;
+  var fittedH = 0, fittedTop = 0, refitTimer = null;
   function fitToScreen() {
-    var h = visibleHeight();
-    if (h && h !== fittedH) {
-      fittedH = h;
-      document.body.style.height = h + 'px';
-      window.scrollTo(0, 0);
+    var v = visibleArea();
+    if (v.height && (v.height !== fittedH || v.top !== fittedTop)) {
+      fittedH = v.height; fittedTop = v.top;
+      document.body.style.top = v.top + 'px';
+      document.body.style.height = v.height + 'px';
     }
     // Phaser's own resize handling notices the new space but leaves the
     // canvas at its old size (re-centred, overhanging the controls when
@@ -815,7 +821,7 @@
   window.addEventListener('orientationchange', function () { setTimeout(fitToScreen, 250); });
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', fitToScreen);
-    window.visualViewport.addEventListener('scroll', function () { if (window.visualViewport.scale <= 1.01) window.scrollTo(0, 0); });
+    window.visualViewport.addEventListener('scroll', fitToScreen);
   }
   // A page left zoomed in also pushes the controls off the bottom: the
   // same pinch-zoom safety net as the other games in this collection.
@@ -2372,6 +2378,22 @@
     }
   }
   document.getElementById('labCloseBtn').addEventListener('click', function () { setLabOpen(false); });
+  // What this browser says about the screen, for chasing a layout that
+  // is cut off on one phone and fine everywhere else.
+  function screenInfo() {
+    var vv = window.visualViewport, r = function (sel) {
+      var b = document.querySelector(sel).getBoundingClientRect();
+      return Math.round(b.top) + '..' + Math.round(b.bottom);
+    };
+    return [
+      'window ' + innerWidth + ' x ' + innerHeight + ', screen ' + screen.width + ' x ' + screen.height + ', dpr ' + devicePixelRatio,
+      'visual viewport ' + (vv ? Math.round(vv.width) + ' x ' + Math.round(vv.height) + ' at top ' + Math.round(vv.offsetTop) + ', scale ' + vv.scale.toFixed(2) : 'n/a'),
+      'fitted: top ' + fittedTop + ', height ' + fittedH,
+      'header ' + r('.hud-bar') + ', picture box ' + r('#gameRoot') + ', canvas ' + r('canvas') + ', controls ' + r('.control-bar'),
+      navigator.userAgent
+    ].join('\n');
+  }
+  document.getElementById('labScreenBtn').addEventListener('click', function () { window.alert(screenInfo()); });
   document.getElementById('labResetBtn').addEventListener('click', function () {
     resetTuning(); saveTuning(); labSyncers.forEach(function (f) { f(); });
   });
@@ -2471,6 +2493,7 @@
     projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z), y: scene.sy(GROUND_Y, z), z: z }; },
     difficultyAt: difficultyAt,
     fittedHeight: function () { return fittedH; },
+    screenInfo: function () { return screenInfo(); },
     setT: function (t) { scene.state.t = t; return true; },
     pressJump: function (held) { jump.pressed++; jump.held = held !== false; return true; },
     releaseJumpButton: function () { jump.held = false; return true; },
