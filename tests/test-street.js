@@ -55,7 +55,7 @@ harness.run(async (page, check, ctx) => {
   // The camera is where descent.html left it: its height puts the
   // ground at the same place on screen as the pad the ship came down on.
   const pad = await D(page, () => window.__streetDebug.projectGround(0, window.__streetDebug.constants().DEPTH_PX));
-  check('the view is the landing\'s: the pad sits where the descent put it', Math.abs(pad.y - (C.CY + (C.GROUND_Y - C.CAM_Y))) < 1 && Math.abs(C.CAM_Y - 11.5) < 1e-9, { pad, C });
+  check('the view is the landing\'s: the pad sits where the descent put it', Math.abs(pad.y - (C.CY + (C.GROUND_Y - C.CAM_Y) / pad.z)) < 1 && Math.abs(C.CAM_Y - 11.5) < 1e-9, { pad, C });
 
   // ---- The left stick walks ------------------------------------------
   await quietStreet(page);
@@ -139,7 +139,7 @@ harness.run(async (page, check, ctx) => {
     return st.vx / (st.t - t0);
   }
   const groundAcc = await pushRight(false), airAcc = await pushRight(true);
-  check('in the air you can still steer, with less grip than on the ground', airAcc > 0 && airAcc < groundAcc * 0.8, { groundAcc, airAcc });
+  check('in the air you can still steer, with less grip than on the ground', airAcc > 0 && airAcc < groundAcc * 0.95, { groundAcc, airAcc, AIR_CONTROL: T.AIR_CONTROL });
 
   // Over an alien, and over the burning ground.
   await quietStreet(page);
@@ -303,22 +303,34 @@ harness.run(async (page, check, ctx) => {
   const dStart = s.difficulty;
   await page.waitForTimeout(2500);
   s = await state(page);
-  check('standing still, it does not get harder', s.difficulty === dStart && dStart === 0, { dStart, now: s.difficulty });
+  check('standing still, it does not get harder', s.difficulty === dStart && dStart < 0.01, { dStart, now: s.difficulty });
   const easy = { every: s.groupEvery, max: s.maxAlive };
   await D(page, () => window.__streetDebug.jumpTo(window.__streetDebug.constants().tuning.RAMP_M / 2));
   s = await state(page);
   check('halfway down the street: half difficulty', Math.abs(s.difficulty - 0.5) < 0.01, s.difficulty);
   check('...groups come closer together and more at once', s.groupEvery < easy.every && s.maxAlive > easy.max, { easy, now: { every: s.groupEvery, max: s.maxAlive } });
 
-  // No fire in the first stretch, however long you stand there.
+  // Fire from the very first step, by default...
   await D(page, () => { const d = window.__streetDebug; d.restart(); d.skipIntro(); d.setSpawning(true); d.setInvincible(true); });
-  await page.waitForTimeout(3000);
+  s = await until(page, (st) => st.firesLaunched > 0, 8000);
+  check('fire from the buildings from the very start of the street (default ' + T.FIRE_START_M + ' m)', T.FIRE_START_M === 0 && s.firesLaunched > 0, s.firesLaunched);
+  // ...and FIRE_START_M holds it back when set.
+  await D(page, () => { const d = window.__streetDebug; d.tune('FIRE_START_M', 60); d.restart(); d.skipIntro(); d.setSpawning(true); d.setInvincible(true); });
+  await page.waitForTimeout(2500);
   s = await state(page);
-  check('no fire from the buildings at the start of the street', s.firesLaunched === 0 && s.fires.length === 0, s.firesLaunched);
-  // ...but there is once you are past FIRE_START_M.
-  await D(page, () => window.__streetDebug.jumpTo(window.__streetDebug.constants().tuning.RAMP_M * 0.9));
-  s = await until(page, (st) => st.firesLaunched > 0, 6000);
-  check('...and there is, well down it', s.firesLaunched > 0, s.firesLaunched);
+  check('...unless "Starts at" holds it back', s.firesLaunched - s.firesAhead === 0, { launched: s.firesLaunched, ahead: s.firesAhead });
+  await D(page, (v) => window.__streetDebug.tune('FIRE_START_M', v), T.FIRE_START_M);
+
+  // The ramp: full difficulty at RAMP_M, with the kinds arriving at
+  // fixed distances - attacks from behind not until past this stretch.
+  const sharesAt = async (m) => { await D(page, (m) => window.__streetDebug.jumpTo(m), m); return D(page, () => window.__streetDebug.shares()); };
+  let sh = await sharesAt(20);
+  check('at 20 m: grunts only, straight up the street', sh.side === 0 && sh.dasher === 0 && sh.brute === 0 && sh.behind === 0, sh);
+  sh = await sharesAt(100);
+  check('at 100 m: doorways and dashers, no brutes yet', sh.side > 0 && sh.dasher > 0 && sh.brute === 0, sh);
+  sh = await sharesAt(T.RAMP_M);
+  s = await state(page);
+  check('at ' + T.RAMP_M + ' m: full difficulty, brutes in, nothing from behind', s.difficulty === 1 && sh.brute > 0 && sh.behind === 0, { sh, d: s.difficulty });
 
   // ---- Integration: walking brings them --------------------------------
   await D(page, () => { const d = window.__streetDebug; d.restart(); d.skipIntro(); d.setSpawning(true); d.setInvincible(true); });

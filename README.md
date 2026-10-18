@@ -385,7 +385,7 @@ itself, for practice.
   sticks' slop; the circles themselves, and everything right of the aim
   circle's middle, stay the sticks'. The right thumb leaves
   the gun to jump while the left keeps steering. Hold it for a full
-  jump (50 px, about 0.75 s in the air), or tap it for a short hop. It
+  jump (75 px, about a second in the air), or tap it for a short hop. It
   goes up fast and comes down faster, and a press just before you land
   still counts. In the air you keep your momentum and steer with less
   grip. While airborne you're above the burning ground and a fireball's
@@ -406,8 +406,8 @@ itself, for practice.
   often two or three to a tower. The walls are already crawling when you
   step out. Up on a wall they can't touch you, and only the low ones are
   in range of your gun. Once they drop into the road they come for you
-  like the rest. A new batch comes every 1.6s at first and every 0.4s
-  later, with up to 7 on the walls at first and 24 later.
+  like the rest. A new batch comes every 1.6 s at first and every 1.2 s
+  at full difficulty, with up to 7 on the walls at first and 12 later.
 - **Outrun them and they're gone.** An alien that falls back past the
   bottom of the picture is left behind.
 - **A canyon.** The towers stand taller and shoulder to shoulder, with
@@ -425,10 +425,9 @@ itself, for practice.
   marked for, from never (0) to the whole way down (1). Step off the
   ring. Once it's low enough you can shoot it (50
   points). It also burns any aliens it lands on. Further down the street
-  the windows throw in **volleys** of up to 3. The first is aimed at you
-  and the rest land around you, a beat apart, so several fireballs are
-  in the air at once (up to 10).
-- **Fire into the road ahead.** From 20 m in, towers further up the
+  the windows throw in **volleys** of up to 2. The first is aimed at you
+  and the rest land around you, a beat apart.
+- **Fire into the road ahead.** From the start, towers further up the
   street throw bigger fireballs (1.7x) into the road between you and
   them. You watch them come down, and they're too big to shoot. What
   they leave is burning ground you have to walk around.
@@ -455,15 +454,23 @@ itself, for practice.
   the air put out. Lose the last life and it's **Overrun**, with the
   distance walked, the score and your best.
 - **Harder the further you get, not the longer you play.** Difficulty
-  is measured in metres down the street, from 0 at the ship to full at
-  600 m. It sets how often groups come (every 24 m walked at the start,
-  every 8 m at full), how big they are (2 to 6), how many can be up at
-  once (4 to 22), how fast they walk, when dashers (12%), side doors
-  (5%), brutes (35%) and attacks from behind (40%) start, and the fire:
-  none for the first 60 m, then more often, more at once and quicker
-  to land. Standing still only brings the odd straggler, at the rate
-  your distance has already set. A **BLOCK n** banner marks every
-  100 m.
+  is measured in metres down the street. It's menacing from the first
+  step: fire from the buildings and into the road ahead, and crawling
+  walls. It ramps to "hard but survivable" at 200 m and holds there.
+  The ramp sets:
+  - how often groups come (every 24 m walked at the start, every 19 m
+    at full), how big they are (2 to 3), and how many can be up at
+    once (4 to 9)
+  - how fast they walk (34 to 47 px/s)
+  - the climbers (one every 1.6 s down to 1.2 s; 7 to 12 on the walls)
+  - the fire from the buildings (every 5 s down to 4.2 s, 1 to 2 in the
+    air, volleys up to 2, taking 5 s down to 4.2 s to land)
+
+  The kinds of alien arrive at fixed distances, whatever the ramp's
+  length: side doors from 30 m, dashers from 70 m, brutes from 170 m.
+  Attacks from behind are held back until 400 m, past this stretch.
+  Standing still only brings the odd straggler, at the rate your
+  distance has already set. A **BLOCK n** banner marks every 100 m.
 - **Fits the visible screen.** The page measures the height you can
   actually see, instead of trusting CSS's `100dvh`, which some browsers
   and in-app web views overstate, cutting off the bottom of the
@@ -476,7 +483,7 @@ itself, for practice.
   Every ramp has a start and a full value, plus jumps to 25%, 50% and
   full difficulty, and **No death**. **Scroll point (depth)** sets how
   far up the street you can walk before the camera follows (1 is the
-  ship's depth, 1.2 the default; higher gives you more room on screen
+  ship's depth, 1.1 the default; higher gives you more room on screen
   and less warning of what's ahead; it goes down to 0.8). Where the
   aliens come from and which towers throw fire move with it. The camera
   never comes forward faster than a quick glide, so a scroll point

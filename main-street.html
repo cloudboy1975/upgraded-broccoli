@@ -390,7 +390,7 @@
   // you. 1 is the ship's own depth, where you climb out; higher puts it
   // further up the street, higher on screen - more room to walk around
   // in before it scrolls, less warning of what is coming.
-  var PLAYER_Z_PUSH = 1.2;
+  var PLAYER_Z_PUSH = 1.1;
   var CAM_CATCHUP = 420;       // px/s, the fastest the camera comes forward
   var STREET_HALF = 165;       // how far either side of the centre line you can walk
   var FACADE_X = 195;          // where the buildings' fronts stand
@@ -402,11 +402,11 @@
   // hop; up fast, down faster; and you keep steering in the air, at
   // less grip than on the ground. In the air you are above the burning
   // ground and a splash, and high enough you clear the smaller aliens.
-  var JUMP_HEIGHT = 50;        // px at the top of a full (held) jump
-  var JUMP_TIME = 0.75;        // seconds in the air for a full jump
+  var JUMP_HEIGHT = 75;        // px at the top of a full (held) jump
+  var JUMP_TIME = 1;        // seconds in the air for a full jump
   var JUMP_CUT = 3;            // gravity x this once the button is let go on the way up: a hop
   var JUMP_FALL = 1.6;         // ...and x this on the way down
-  var AIR_CONTROL = 0.45;      // steering grip in the air, as a share of the ground's
+  var AIR_CONTROL = 0.7;      // steering grip in the air, as a share of the ground's
   var JUMP_BUFFER = 0.12;      // a press this soon before landing still jumps on touchdown
   var AIR_SAFE = 6;            // px up: above the burning ground and a splash
   var LIVES = 3;
@@ -429,48 +429,51 @@
   // the street the camera has been pushed, from 0 at the ship to 1 at
   // RAMP_M metres. Time spent standing still never changes it.
   var PX_PER_M = 20;
-  var RAMP_M = 600;
+  var RAMP_M = 200;
   var BLOCK_M = 100;           // a banner each time you pass another block
   var GROUP_EVERY_START = 24;  // metres walked per group of aliens, at the ship...
-  var GROUP_EVERY_PEAK = 8;    // ...and at full difficulty
+  var GROUP_EVERY_PEAK = 19;    // ...and at full difficulty
   var GROUP_SIZE_START = 2;
-  var GROUP_SIZE_PEAK = 6;
+  var GROUP_SIZE_PEAK = 3;
   var MAX_ALIVE_START = 4;
-  var MAX_ALIVE_PEAK = 22;
+  var MAX_ALIVE_PEAK = 9;
   var TRICKLE_START = 5.5;     // seconds between stragglers while you stand still
-  var TRICKLE_PEAK = 2.2;
+  var TRICKLE_PEAK = 4.5;
   var GRUNT_SPEED_START = 34;  // px/s
-  var GRUNT_SPEED_PEAK = 76;
-  var DASHER_FROM = 0.12;      // D at which each kind starts to show up
-  var BRUTE_FROM = 0.35;
-  var SIDE_FROM = 0.05;
-  var BEHIND_FROM = 0.4;
+  var GRUNT_SPEED_PEAK = 47;
+  // Where each kind starts to show up, in metres down the street - fixed
+  // distances, so changing the length of the ramp doesn't pull them
+  // earlier. Attacks from behind are held back past this stretch.
+  var SIDE_FROM_M = 30;
+  var DASHER_FROM_M = 70;
+  var BRUTE_FROM_M = 170;
+  var BEHIND_FROM_M = 400;
   var BRUTE_HP = 6;
   // Fire from the buildings: none for the first stretch, then slowly
   // more often, more at once, and a little quicker to land.
-  var FIRE_START_M = 60;
+  var FIRE_START_M = 0;
   var FIRE_EVERY_START = 5;
-  var FIRE_EVERY_PEAK = 1.1;
-  var FIRE_MAX_START = 2;
-  var FIRE_MAX_PEAK = 10;
+  var FIRE_EVERY_PEAK = 4.2;
+  var FIRE_MAX_START = 1;
+  var FIRE_MAX_PEAK = 2;
   // Later on a window doesn't throw alone: a volley comes from the
   // towers around it, the first at you and the rest round about, a beat
   // apart - several balls of fire in the air at once.
   var FIRE_VOLLEY_START = 1;
-  var FIRE_VOLLEY_PEAK = 3;
+  var FIRE_VOLLEY_PEAK = 2;
   var VOLLEY_SPREAD_X = 75;    // px either side of you the rest of a volley lands
   var VOLLEY_STAGGER = 0.3;    // seconds between the windows of a volley
   // Fire up the street, not at you: bigger balls thrown from the towers
   // further on, coming down in the road ahead. You watch them fall, and
   // what they leave is burning ground you have to walk round.
-  var AHEAD_START_M = 20;
-  var AHEAD_EVERY_START = 3.5;
-  var AHEAD_EVERY_PEAK = 1.1;
-  var AHEAD_MAX_START = 2;     // in the air at once
-  var AHEAD_MAX_PEAK = 6;
+  var AHEAD_START_M = 0;
+  var AHEAD_EVERY_START = 1;
+  var AHEAD_EVERY_PEAK = 1;
+  var AHEAD_MAX_START = 5;     // in the air at once
+  var AHEAD_MAX_PEAK = 5;
   var AHEAD_SIZE = 1.7;        // x the splash (and crater) of fire thrown at you
-  var FIRE_FLIGHT_START = 3.6; // seconds from window to ground
-  var FIRE_FLIGHT_PEAK = 2.4;
+  var FIRE_FLIGHT_START = 5; // seconds from window to ground
+  var FIRE_FLIGHT_PEAK = 4.2;
   var FIRE_CHARGE = 0.7;       // the window glows this long before it throws
   var FIRE_SPLASH = 24;        // px around the impact that kill
   var FIRE_WARNING = 0.2;      // share of the fall, at the end, during which the landing spot is marked
@@ -494,9 +497,9 @@
   // road and come for you like the rest. Up on the wall they can't
   // reach you, and the guns can only reach them once they are low.
   var CLIMB_EVERY_START = 1.6; // seconds between climbers...
-  var CLIMB_EVERY_PEAK = 0.4;
+  var CLIMB_EVERY_PEAK = 1.2;
   var CLIMB_MAX_START = 7;     // ...and how many can be on the walls at once
-  var CLIMB_MAX_PEAK = 24;
+  var CLIMB_MAX_PEAK = 12;
   var CLIMB_SPEED = 45;        // px/s down the wall
 
   var SCORE = { grunt: 100, dasher: 150, brute: 500, fire: 50 };
@@ -1239,11 +1242,11 @@
     var lo = s.camD + DEPTH_PX * (near ? 0.9 : push + 3), hi = s.camD + DEPTH_PX * (near ? push + 3 : push + 7);
     var towers = s.buildings.filter(function (o) { return o.d > lo && o.d < hi && GROUND_Y - o.top > 140; });
     if (!towers.length) return null;
-    var o = pick(towers), D = this.difficulty(), first = null;
+    var o = pick(towers), first = null;
     count = count || (1 + (Math.random() < 0.5 ? 1 : 0) + (Math.random() < 0.25 ? 1 : 0));
     var top = Math.min(GROUND_Y - o.top - 30, 320);
     for (var i = 0; i < count; i++) {
-      var e = this.addEnemy(kind || this.pickKind(D), o.x - o.side * o.w / 2 + o.side * rand(6, Math.max(8, o.w * 0.4)), o.d - 2 - i);
+      var e = this.addEnemy(kind || this.pickKind(), o.x - o.side * o.w / 2 + o.side * rand(6, Math.max(8, o.w * 0.4)), o.d - 2 - i);
       e.climb = clamp(rand(90, top) - i * 40, 60, top);
       first = first || e;
     }
@@ -1255,10 +1258,17 @@
     for (var i = 0; i < 3; i++) this.spawnClimber(null, 1 + (i % 2));
   };
 
-  MainScene.prototype.pickKind = function (D) {
+  // A share that is nothing before `fromM` metres, `a` once there, and
+  // grows to `b` by the end of the ramp.
+  MainScene.prototype.shareFrom = function (fromM, a, b) {
+    var m = this.progressM();
+    if (m < fromM) return 0;
+    return lerp(a, b, clamp((m - fromM) / Math.max(1, TUNING.RAMP_M - fromM), 0, 1));
+  };
+
+  MainScene.prototype.pickKind = function () {
     var r = Math.random();
-    var brute = D >= BRUTE_FROM ? lerp(0.06, 0.14, (D - BRUTE_FROM) / (1 - BRUTE_FROM)) : 0;
-    var dasher = D >= DASHER_FROM ? lerp(0.12, 0.32, (D - DASHER_FROM) / (1 - DASHER_FROM)) : 0;
+    var brute = this.shareFrom(BRUTE_FROM_M, 0.06, 0.14), dasher = this.shareFrom(DASHER_FROM_M, 0.12, 0.32);
     return r < brute ? 'brute' : r < brute + dasher ? 'dasher' : 'grunt';
   };
 
@@ -1266,12 +1276,11 @@
   // side, or - later on - from behind you. The near ones show a portal
   // first, so nothing appears on top of you unannounced.
   MainScene.prototype.spawnEnemy = function (kind, from) {
-    var s = this.state, D = this.difficulty();
-    kind = kind || this.pickKind(D);
+    var s = this.state;
+    kind = kind || this.pickKind();
     if (!from) {
       var r = Math.random();
-      var side = D >= SIDE_FROM ? lerp(0.25, 0.45, D) : 0;
-      var behind = D >= BEHIND_FROM ? lerp(0.08, 0.16, (D - BEHIND_FROM) / (1 - BEHIND_FROM)) : 0;
+      var side = this.shareFrom(SIDE_FROM_M, 0.25, 0.45), behind = this.shareFrom(BEHIND_FROM_M, 0.08, 0.16);
       from = r < behind ? 'behind' : r < behind + side ? 'side' : 'ahead';
     }
     // Measured from the scroll point, so moving it moves them with it.
@@ -2603,6 +2612,11 @@
     fittedHeight: function () { return fittedH; },
     screenInfo: function () { return screenInfo(); },
     settingsReport: function () { return settingsReport(); },
+    // The mix of kinds and of where they come from, where you are now.
+    shares: function () {
+      return { side: scene.shareFrom(SIDE_FROM_M, 0.25, 0.45), dasher: scene.shareFrom(DASHER_FROM_M, 0.12, 0.32),
+        brute: scene.shareFrom(BRUTE_FROM_M, 0.06, 0.14), behind: scene.shareFrom(BEHIND_FROM_M, 0.08, 0.16) };
+    },
     setT: function (t) { scene.state.t = t; return true; },
     pressJump: function (held) { jump.pressed++; jump.held = held !== false; return true; },
     releaseJumpButton: function () { jump.held = false; return true; },
