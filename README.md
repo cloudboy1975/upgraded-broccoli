@@ -394,6 +394,18 @@ itself, for practice.
   height). Your shadow stays on the road and shrinks as you rise, with a
   faint pale ring marking where you'll come down. **Height**, **Time in
   the air** and **Steering in the air** are lab sliders.
+- **Live fences.** From 50 m, a fence of crackling electricity runs kerb
+  to kerb across the street: two dark posts with glowing tips, three
+  jagged cyan-white bolts that redraw constantly, and a line of cyan
+  light on the road. There's no way around, so jump it (32 px, well
+  under the jump). The first one comes with a **LIVE FENCE — JUMP**
+  banner. Then one every 60 m, tightening to every 35 m at full
+  difficulty. Aliens that walk into one are zapped, like Robotron's
+  electrodes, with no points, so once you're over, it guards your back.
+  Fire into the road ahead keeps clear of fences, so there's somewhere
+  to land, and if a fence gets you, you come back a step short of it.
+  **Live fences** in the lab sets where the first is, the spacing and
+  the height.
 - **Ground aliens don't shoot. Touching one kills.** *Grunts* (the
   descent's diamond aliens, on legs) march straight at you in steps.
   *Dashers* (lime arrowheads) are faster and weave. *Brutes* (violet

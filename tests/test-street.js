@@ -138,8 +138,12 @@ harness.run(async (page, check, ctx) => {
     await D(page, () => window.__streetDebug.releaseJumpButton());
     return st.vx / (st.t - t0);
   }
+  // At a clearly reduced grip, so the difference isn't lost in frame
+  // timing (the default is close to the ground's).
+  await D(page, () => window.__streetDebug.tune('AIR_CONTROL', 0.3));
   const groundAcc = await pushRight(false), airAcc = await pushRight(true);
-  check('in the air you can still steer, with less grip than on the ground', airAcc > 0 && airAcc < groundAcc * 0.95, { groundAcc, airAcc, AIR_CONTROL: T.AIR_CONTROL });
+  await D(page, (v) => window.__streetDebug.tune('AIR_CONTROL', v), T.AIR_CONTROL);
+  check('in the air you can still steer, with less grip than on the ground', airAcc > 0 && airAcc < groundAcc * 0.8, { groundAcc, airAcc });
 
   // Over an alien, and over the burning ground.
   await quietStreet(page);
@@ -196,6 +200,43 @@ harness.run(async (page, check, ctx) => {
   s = await until(page, (st) => st.airborne, 3000);
   check('Space jumps', s.airborne && s.jumps === 1, s.jumps);
   await until(page, (st) => !st.airborne, 4000);
+
+  // ---- Live fences -----------------------------------------------------------
+  {
+    await D(page, () => { const d = window.__streetDebug; d.restart(); });
+    const st0 = await state(page);
+    const first = await D(page, () => {
+      const c = window.__streetDebug.constants(); return c.tuning.FENCE_FIRST_M * c.PX_PER_M + c.tuning.PLAYER_Z_PUSH * c.DEPTH_PX;
+    });
+    check('the first live fence is laid ' + T.FENCE_FIRST_M + ' m down the street', st0.fences[0] === first, { fences: st0.fences, first });
+  }
+  // Walk into one: it kills.
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (d) => window.__streetDebug.addFence(d), s.pd + 60);
+  await page.keyboard.down('KeyW');
+  s = await until(page, (st) => st.mode === 'dying', 5000);
+  await page.keyboard.up('KeyW');
+  check('walking into a live fence kills', s.lastDeath === 'shock', s.lastDeath);
+  s = await until(page, (st) => st.mode === 'walking', 4000);
+  check('...and you come back a step short of it, not in it', s.fences.length === 1 && s.fences[0] - s.pd > C.PLAYER_R + 2, { pd: s.pd, fence: s.fences[0] });
+  // Jump it: over, and on.
+  await quietStreet(page);
+  s = await state(page);
+  const fenceD = s.pd + 90;
+  await D(page, (d) => window.__streetDebug.addFence(d), fenceD);
+  await page.keyboard.down('KeyW');
+  await D(page, () => window.__streetDebug.pressJump(true));
+  s = await until(page, (st) => st.pd > fenceD + 40 || st.mode !== 'walking', 6000);
+  await page.keyboard.up('KeyW');
+  await D(page, () => window.__streetDebug.releaseJumpButton());
+  check('jump it and you are over', s.mode === 'walking' && s.pd > fenceD + 40, { pd: s.pd, fenceD, mode: s.mode, death: s.lastDeath });
+  // An alien walking into it is zapped.
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => { const d = window.__streetDebug; d.addFence(p.d + 60); d.spawnEnemy('grunt', p.x, p.d + 110); }, { x: s.px, d: s.pd });
+  s = await until(page, (st) => st.zapped > 0 || st.mode !== 'walking', 6000);
+  check('an alien walking into a fence is zapped (no points), and you are safe behind it', s.zapped === 1 && s.score === 0 && s.mode === 'walking', s);
 
   // ---- The right stick fires, on its own ------------------------------
   await quietStreet(page);
