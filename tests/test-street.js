@@ -217,41 +217,36 @@ harness.run(async (page, check, ctx) => {
         ev('pointerup', y - px);
       }, { px, steps, gap, hold });
     }
-    async function flickRun(px, steps, gap) {
+    // Runs one thumb movement and reports whether it jumped.
+    async function flickRun(px, steps, gap, hold) {
       const j0 = (await state(page)).jumps;
-      const run = thumb(px, steps, gap, 1500);
-      const st = await until(page, (q) => q.airborne || q.jumps > j0, 2500);
+      const run = thumb(px, steps, gap, hold || 0);
+      const st = await until(page, (q) => q.airborne || q.jumps > j0, 2500 + (hold || 0));
       await run;
       await until(page, (q) => !q.airborne, 6000);
       return st;
     }
     await quietStreet(page);
-    let st = await flickRun(44, 3, 0);
-    check('a quick flick up of the walking stick jumps', st.airborne, { airborne: st.airborne, jumps: st.jumps });
+    let st = await flickRun(44, 3, 0, 0);
+    check('a flick - quick up, and the thumb off the screen - jumps', st.airborne, { airborne: st.airborne, jumps: st.jumps });
     await quietStreet(page);
-    st = await flickRun(44, 12, 50);
-    check('...an ordinary push to walk forward doesn\'t', !st.airborne && st.jumps === 0 && st.input.my < -0.9, { airborne: st.airborne, my: st.input.my });
-    // Flick, then keep the thumb up through the landing: one jump.
+    {
+      const run = thumb(44, 3, 0, 900);
+      await page.waitForTimeout(400);
+      const mid = await state(page);
+      await run;
+      await page.waitForTimeout(400);
+      const after = await state(page);
+      check('...quick up and still holding is just walking: no jump while it holds', !mid.airborne && mid.jumps === 0 && mid.input.my < -0.9, { airborne: mid.airborne, my: mid.input.my });
+      check('...nor when the thumb lifts long after the movement stopped', after.jumps === 0 && !after.airborne, { jumps: after.jumps });
+    }
     await quietStreet(page);
-    // Down, flick, and stay up.
-    await page.evaluate(() => {
-      const z = document.getElementById('moveZone'), r = z.getBoundingClientRect();
-      const x = r.left + r.width * 0.35, y = r.top + r.height * 0.6;
-      const ev = (type, yy) => z.dispatchEvent(new PointerEvent(type, { pointerId: 78, clientX: x, clientY: yy, bubbles: true, cancelable: true, pointerType: 'touch' }));
-      ev('pointerdown', y); ev('pointermove', y - 22); ev('pointermove', y - 44);
-    });
-    await until(page, (q) => !q.airborne && q.jumps >= 1, 8000);
-    await page.waitForTimeout(500);
-    st = await state(page);
-    await page.evaluate(() => {
-      const z = document.getElementById('moveZone');
-      z.dispatchEvent(new PointerEvent('pointerup', { pointerId: 78, bubbles: true, pointerType: 'touch' }));
-    });
-    check('...and holding it up afterwards doesn\'t keep jumping', st.jumps === 1 && !st.airborne, { jumps: st.jumps });
+    st = await flickRun(44, 12, 50, 0);
+    check('...nor is a slow push and a lift', !st.airborne && st.jumps === 0, { airborne: st.airborne, jumps: st.jumps });
     await D(page, () => window.__streetDebug.tune('FLICK_JUMP', 0));
     await quietStreet(page);
-    st = await flickRun(44, 3, 0);
-    check('...and switched off in the lab, a flick just walks', !st.airborne && st.jumps === 0, { airborne: st.airborne, jumps: st.jumps });
+    st = await flickRun(44, 3, 0, 0);
+    check('...and switched off in the lab, a flick does nothing', !st.airborne && st.jumps === 0, { airborne: st.airborne, jumps: st.jumps });
     await D(page, (v) => window.__streetDebug.tune('FLICK_JUMP', v), T.FLICK_JUMP);
   }
 

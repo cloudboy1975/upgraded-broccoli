@@ -676,7 +676,9 @@
   function bindStick(el, anchorEl, knobEl, v) {
     var activeId = null, watchdogTimer = null, anchorX = 0, anchorY = 0;
     el.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
-    function release() {
+    // `liftT`: when the thumb came off the screen, if it did (not for a
+    // release forced by a blur or the watchdog).
+    function release(liftT) {
       if (activeId === null) return;
       activeId = null;
       clearTimeout(watchdogTimer);
@@ -686,7 +688,7 @@
       knobEl.style.transform = 'translate(0px, 0px)';
       v.tx = 0; v.ty = 0;
       compose(v);
-      if (v.onStick) v.onStick(null);
+      if (v.onStick) v.onStick(null, typeof liftT === 'number' ? liftT : null);
     }
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault();
@@ -721,7 +723,7 @@
       clearTimeout(watchdogTimer);
       watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
     });
-    function up(e) { if (e.pointerId === activeId) release(); }
+    function up(e) { if (e.pointerId === activeId) release(e.type === 'pointerup' ? (e.timeStamp || performance.now()) : null); }
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
     el.addEventListener('lostpointercapture', up);
@@ -741,32 +743,37 @@
   // down (for the full height).
   var jump = { held: false, pressed: 0, kb: false, flick: false };
 
-  // Experimental (a lab switch): a quick flick up of the walking stick
-  // jumps too, so the left thumb can jump without the right leaving the
-  // gun. A flick is the thumb travelling up fast - measured over the
-  // last FLICK_WINDOW_MS, timed by the events' own timestamps, the way
-  // descent.html measures its flicks - well quicker than a push to walk
-  // forward. It has to be a fresh one: after a flick the thumb must slow
-  // down before the next counts. Kept up after the flick, the jump goes
-  // full height; let the stick drop back and it is a hop.
+  // Experimental (a lab switch): a flick of the walking stick jumps, so
+  // the left thumb can jump while the right stays on the gun. A flick is
+  // a fast move up that ends with the thumb leaving the screen: the jump
+  // goes as it lifts, if the last of its movement was quick and upward.
+  // Up fast and still holding is just walking forward; a slow push and
+  // a lift, or a quick push, a pause and a lift, are not flicks. Speed is
+  // measured over the last FLICK_WINDOW_MS by the events' own times.
+  // With the thumb off the screen there is no holding for height, so a
+  // flick is always the full jump.
   var FLICK_WINDOW_MS = 60;
+  var FLICK_LIFT_MS = 90;      // the lift has to come this soon after the last of the movement
   (function () {
-    var trail = [], armed = true;
+    var trail = [], rate = 0, lastT = 0, lastY = 0;
     move.onStick = function (y, t, fresh) {
-      if (y === null) { trail = []; armed = true; jump.flick = false; return; }
-      if (fresh) { trail = [{ t: t, y: y }]; armed = true; return; }
+      if (y === null) {
+        if (t !== null && TUNING.FLICK_JUMP && rate >= TUNING.FLICK_JUMP_SPEED && lastY < -0.3 && t - lastT <= FLICK_LIFT_MS) {
+          jump.flick = true; jump.pressed++; jump.flicks = (jump.flicks || 0) + 1;
+        }
+        trail = []; rate = 0;
+        return;
+      }
+      if (fresh) { trail = [{ t: t, y: y }]; rate = 0; lastT = t; lastY = y; return; }
       trail.push({ t: t, y: y });
       while (trail.length > 2 && trail[1].t <= t - FLICK_WINDOW_MS) trail.shift();
       // Stick-heights per second, upward: over the real time since the
       // sample the window starts from, but no less than a frame (a burst
       // of events at once) and no more than two windows (a thumb resting
       // still sends nothing, and a flick after a rest must still count).
-      var up = trail[0].y - y, span = clamp(t - trail[0].t, 16, FLICK_WINDOW_MS * 2);
-      var rate = up / (span / 1000);
-      if (armed && TUNING.FLICK_JUMP && rate >= TUNING.FLICK_JUMP_SPEED && y < -0.4) {
-        armed = false; jump.flick = true; jump.pressed++; jump.flicks = (jump.flicks || 0) + 1;
-      } else if (rate < TUNING.FLICK_JUMP_SPEED * 0.3) armed = true;
-      if (y > -0.3) jump.flick = false;
+      var span = clamp(t - trail[0].t, 16, FLICK_WINDOW_MS * 2);
+      rate = (trail[0].y - y) / (span / 1000);
+      lastT = t; lastY = y;
     };
   })();
   var controlBar = document.querySelector('.control-bar');
@@ -1141,7 +1148,7 @@
     // the same whatever the frame rate.
     s.elev += (s.vz - 0.5 * acc * dt) * dt;
     s.vz -= acc * dt;
-    if (s.elev <= 0) { s.elev = 0; s.vz = 0; s.airborne = false; Sound.land(); }
+    if (s.elev <= 0) { s.elev = 0; s.vz = 0; s.airborne = false; jump.flick = false; Sound.land(); }
   };
 
   // The camera only ever moves forward, and only because you pushed it:
