@@ -394,6 +394,14 @@ itself, for practice.
   height). Your shadow stays on the road and shrinks as you rise, with a
   faint pale ring marking where you'll come down. **Height**, **Time in
   the air** and **Steering in the air** are lab sliders.
+- **Flick up to jump (experimental, a lab switch, on by default).** A
+  quick flick up of the walking stick also jumps, so the left thumb can
+  jump while the right stays on the gun. A flick is the thumb moving
+  up fast (9 stick-heights a second, **Flick: how quick** in the lab),
+  measured over the last 60 ms of real time, much quicker than a push to
+  walk forward. Each flick must be fresh: hold the stick up and it won't
+  keep jumping. Keep the stick up after the flick for the full height,
+  or let it drop back for a hop.
 - **Live fences.** From 50 m, a fence of crackling electricity runs kerb
   to kerb across the street: two dark posts with glowing tips, three
   jagged cyan-white bolts that redraw constantly, and a line of cyan

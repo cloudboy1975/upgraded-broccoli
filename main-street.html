@@ -406,6 +406,8 @@
   var JUMP_TIME = 1;        // seconds in the air for a full jump
   var JUMP_CUT = 3;            // gravity x this once the button is let go on the way up: a hop
   var JUMP_FALL = 1.6;         // ...and x this on the way down
+  var FLICK_JUMP = 1;          // 1: a quick flick up of the walking stick jumps (experimental)
+  var FLICK_JUMP_SPEED = 9;    // stick-heights per second upward that count as a flick
   var AIR_CONTROL = 0.7;      // steering grip in the air, as a share of the ground's
   var JUMP_BUFFER = 0.12;      // a press this soon before landing still jumps on touchdown
   var AIR_SAFE = 6;            // px up: above the burning ground and a splash
@@ -548,7 +550,7 @@
   // ---- Tuning: the live values -------------------------------------
   var TUNING_KEY = 'street-tuning-v1';
   var TUNING_DEFAULTS = {
-    JUMP_HEIGHT: JUMP_HEIGHT, JUMP_TIME: JUMP_TIME, AIR_CONTROL: AIR_CONTROL,
+    JUMP_HEIGHT: JUMP_HEIGHT, JUMP_TIME: JUMP_TIME, AIR_CONTROL: AIR_CONTROL, FLICK_JUMP: FLICK_JUMP, FLICK_JUMP_SPEED: FLICK_JUMP_SPEED,
     WALK_SPEED: WALK_SPEED, PLAYER_Z_PUSH: PLAYER_Z_PUSH, FIRE_INTERVAL: FIRE_INTERVAL, BULLET_SPEED: BULLET_SPEED, LIVES: LIVES,
     RAMP_M: RAMP_M, GROUP_EVERY_START: GROUP_EVERY_START, GROUP_EVERY_PEAK: GROUP_EVERY_PEAK,
     GROUP_SIZE_START: GROUP_SIZE_START, GROUP_SIZE_PEAK: GROUP_SIZE_PEAK,
@@ -684,6 +686,7 @@
       knobEl.style.transform = 'translate(0px, 0px)';
       v.tx = 0; v.ty = 0;
       compose(v);
+      if (v.onStick) v.onStick(null);
     }
     el.addEventListener('pointerdown', function (e) {
       e.preventDefault();
@@ -702,6 +705,7 @@
       el.classList.add('active');
       v.tx = 0; v.ty = 0;
       compose(v);
+      if (v.onStick) v.onStick(0, e.timeStamp || performance.now(), true);
       watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
     });
     el.addEventListener('pointermove', function (e) {
@@ -712,6 +716,7 @@
       knobEl.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
       v.tx = kx / STICK_MAX_RADIUS_PX; v.ty = ky / STICK_MAX_RADIUS_PX;
       compose(v);
+      if (v.onStick) v.onStick(v.ty, e.timeStamp || performance.now());
       // A press that keeps moving is a thumb in use: push the watchdog back.
       clearTimeout(watchdogTimer);
       watchdogTimer = setTimeout(release, HOLD_WATCHDOG_MS);
@@ -734,7 +739,36 @@
   // middle, stay the sticks'. `pressed` counts presses, so a tap
   // between two frames is never lost; `held` is whether it is still
   // down (for the full height).
-  var jump = { held: false, pressed: 0, kb: false };
+  var jump = { held: false, pressed: 0, kb: false, flick: false };
+
+  // Experimental (a lab switch): a quick flick up of the walking stick
+  // jumps too, so the left thumb can jump without the right leaving the
+  // gun. A flick is the thumb travelling up fast - measured over the
+  // last FLICK_WINDOW_MS, timed by the events' own timestamps, the way
+  // descent.html measures its flicks - well quicker than a push to walk
+  // forward. It has to be a fresh one: after a flick the thumb must slow
+  // down before the next counts. Kept up after the flick, the jump goes
+  // full height; let the stick drop back and it is a hop.
+  var FLICK_WINDOW_MS = 60;
+  (function () {
+    var trail = [], armed = true;
+    move.onStick = function (y, t, fresh) {
+      if (y === null) { trail = []; armed = true; jump.flick = false; return; }
+      if (fresh) { trail = [{ t: t, y: y }]; armed = true; return; }
+      trail.push({ t: t, y: y });
+      while (trail.length > 2 && trail[1].t <= t - FLICK_WINDOW_MS) trail.shift();
+      // Stick-heights per second, upward: over the real time since the
+      // sample the window starts from, but no less than a frame (a burst
+      // of events at once) and no more than two windows (a thumb resting
+      // still sends nothing, and a flick after a rest must still count).
+      var up = trail[0].y - y, span = clamp(t - trail[0].t, 16, FLICK_WINDOW_MS * 2);
+      var rate = up / (span / 1000);
+      if (armed && TUNING.FLICK_JUMP && rate >= TUNING.FLICK_JUMP_SPEED && y < -0.4) {
+        armed = false; jump.flick = true; jump.pressed++; jump.flicks = (jump.flicks || 0) + 1;
+      } else if (rate < TUNING.FLICK_JUMP_SPEED * 0.3) armed = true;
+      if (y > -0.3) jump.flick = false;
+    };
+  })();
   var controlBar = document.querySelector('.control-bar');
   var moveRing = document.querySelector('.move-pad .stick-ring');
   var aimRing = document.querySelector('.aim-pad .stick-ring');
@@ -1094,7 +1128,7 @@
     var s = this.state, g = this.jumpGravity();
     if (jump.pressed !== s.jumpsSeen) { s.jumpsSeen = jump.pressed; s.jumpBuffer = JUMP_BUFFER; }
     else s.jumpBuffer = Math.max(0, s.jumpBuffer - dt);
-    var held = jump.held || jump.kb;
+    var held = jump.held || jump.kb || jump.flick;
     if (!s.airborne && s.jumpBuffer > 0) {
       s.airborne = true; s.jumpCut = false; s.jumpBuffer = 0; s.jumps++;
       s.vz = g * Math.sqrt(2 * TUNING.JUMP_HEIGHT / g);
@@ -2426,7 +2460,9 @@
     { title: 'Jump', rows: [
       ['JUMP_HEIGHT', 'Height', 15, 120, 1, ' px'],
       ['JUMP_TIME', 'Time in the air', 0.3, 1.5, 0.05, ' s'],
-      ['AIR_CONTROL', 'Steering in the air', 0, 1, 0.05, '\u00d7']
+      ['AIR_CONTROL', 'Steering in the air', 0, 1, 0.05, '\u00d7'],
+      ['FLICK_JUMP', 'Flick up to jump (left)', 'toggle'],
+      ['FLICK_JUMP_SPEED', 'Flick: how quick', 3, 25, 0.5, '/s']
     ] },
     { title: 'Ramp', rows: [
       ['RAMP_M', 'Full difficulty at', 100, 2000, 10, ' m']
@@ -2506,6 +2542,17 @@
         row.className = 'lab-row';
         var label = document.createElement('label');
         label.textContent = r[1];
+        if (r[2] === 'toggle') {
+          // On/off, stored as 1 or 0 like any other knob.
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          var showT = function () { row.classList.toggle('changed', !!TUNING[key] !== !!TUNING_DEFAULTS[key]); };
+          cb.addEventListener('change', function () { TUNING[key] = cb.checked ? 1 : 0; showT(); saveTuning(); });
+          row.appendChild(label); row.appendChild(cb);
+          box.appendChild(row);
+          labSyncers.push(function () { cb.checked = !!TUNING[key]; showT(); });
+          return;
+        }
         var input = document.createElement('input');
         input.type = 'range';
         input.min = r[2]; input.max = r[3]; input.step = step;
@@ -2544,7 +2591,7 @@
     var changed = [], same = [];
     LAB_SPEC.forEach(function (sec) {
       sec.rows.forEach(function (r) {
-        var key = r[0], v = TUNING[key], d = TUNING_DEFAULTS[key], step = r[4] || 1;
+        var key = r[0], v = TUNING[key], d = TUNING_DEFAULTS[key], step = typeof r[4] === 'number' ? r[4] : 1;
         var diff = Math.abs(v - d) > step / 2;
         var line = (diff ? '* ' : '  ') + sec.title + ' / ' + r[1] + ' (' + key + '): ' + labFmt(v, step) + (r[5] || '') +
           (diff ? '   [default ' + labFmt(d, step) + (r[5] || '') + ']' : '');
@@ -2664,7 +2711,7 @@
       return {
         mode: s.mode, t: s.t, modeAge: s.modeAge, camD: s.camD, camX: s.camX,
         px: s.px, pd: s.pd, vx: s.vx, vd: s.vd, z: scene.zOf(s.pd), emerge: s.emerge, elev: s.elev,
-        vz: s.vz, airborne: s.airborne, jumps: s.jumps,
+        vz: s.vz, airborne: s.airborne, jumps: s.jumps, flicks: jump.flicks || 0,
         aimX: s.aimX, aimD: s.aimD, firing: s.firing,
         lives: s.lives, score: s.score, deaths: s.deaths, lastDeath: s.lastDeath || null, invuln: s.invuln,
         progressM: scene.progressM(), bestM: s.bestM, difficulty: scene.difficulty(), block: s.block,
