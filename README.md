@@ -414,6 +414,20 @@ itself, for practice.
   of it. **Live fences** in the lab sets the first distance, the
   spacing, the height, how far ahead they switch on and how long they
   take to power up.
+- **Energy grenade.** A grunt you shoot down has a 10% chance of
+  dropping one: a small white-violet hexagon floating above the road,
+  turning and bobbing (it waits 9 s, blinking at the end). Walk over it
+  to pick it up; you can carry 3. While you have one, a glowing icon
+  with a count sits over the bottom centre of the picture, above the
+  JUMP button. Tap it (E or Q on a keyboard) and there's a white flash,
+  a hard shake, and a ring of energy races out across the whole street
+  from you, with a shimmering wall of light standing on it. Whatever
+  the ring reaches is destroyed as it arrives: every alien, including
+  climbers high on the walls (for points), fire in the air, portals
+  about to open. Burning craters go out, and a fence it reaches powers
+  down (the power-up in reverse). Nothing new spawns until it has
+  passed. **Energy grenade** in the lab sets the drop chance, how many
+  you can carry, and how fast the pulse spreads.
 - **Ground aliens don't shoot. Touching one kills.** *Grunts* (the
   descent's diamond aliens, on legs) march straight at you in steps.
   *Dashers* (lime arrowheads) are faster and weave. *Brutes* (violet

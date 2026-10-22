@@ -262,6 +262,60 @@ harness.run(async (page, check, ctx) => {
   s = await until(page, (st) => st.zapped > 0 || st.mode !== 'walking', 6000);
   check('an alien walking into a fence is zapped (no points), and you are safe behind it', s.zapped === 1 && s.score === 0 && s.mode === 'walking', s);
 
+  // ---- Energy grenade -------------------------------------------------------
+  // A grunt shot down can drop one (certain, for the test); walk over it.
+  await D(page, () => window.__streetDebug.tune('GRENADE_DROP', 1));
+  await quietStreet(page);
+  s = await state(page);
+  check('no grenade to start with, and no icon', s.grenades === 0 && !s.grenadeShown, s);
+  await D(page, (p) => window.__streetDebug.spawnEnemy('grunt', p.x, p.d + 200), { x: s.px, d: s.pd });
+  await page.keyboard.down('ArrowUp');
+  s = await until(page, (st) => st.kills > 0, 4000);
+  await page.keyboard.up('ArrowUp');
+  check('a grunt shot down drops an energy grenade', s.drops === 1, s.drops);
+  await page.keyboard.down('KeyW');
+  s = await until(page, (st) => st.grenades > 0, 5000);
+  await page.keyboard.up('KeyW');
+  check('...walk over it and it\'s yours, with the icon showing', s.grenades === 1 && s.drops === 0 && s.grenadeShown && s.banner === 'ENERGY GRENADE', s);
+  await D(page, (v) => window.__streetDebug.tune('GRENADE_DROP', v), T.GRENADE_DROP);
+  await D(page, () => window.__streetDebug.tune('GRENADE_DROP', 0));
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => window.__streetDebug.spawnEnemy('grunt', p.x, p.d + 200), { x: s.px, d: s.pd });
+  await page.keyboard.down('ArrowUp');
+  s = await until(page, (st) => st.kills > 0, 4000);
+  await page.keyboard.up('ArrowUp');
+  check('...and with no chance set, none drops', s.drops === 0, s.drops);
+  await D(page, (v) => window.__streetDebug.tune('GRENADE_DROP', v), T.GRENADE_DROP);
+
+  // Set it off: everything the pulse reaches goes.
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (p) => {
+    const d = window.__streetDebug;
+    d.giveGrenade(1);
+    d.spawnEnemy('grunt', p.x + 60, p.d + 80);           // close
+    d.spawnEnemy('brute', p.x - 80, p.d + 1200);         // far up the street
+    d.spawnClimber('grunt', 210, p.d + 600, 150);        // high on a wall
+    d.launchFire({ x: -230, y: -150, d: p.d + 900, flight: 8, charge: 0, target: { x: p.x, d: p.d } });
+    d.addCrater(p.x + 100, p.d + 400, 8, 30);
+    d.addFence(p.d + 700);
+  }, { x: s.px, d: s.pd });
+  await page.waitForTimeout(100);
+  const gb = await page.locator('#grenadeBtn').boundingBox();
+  const cb = await page.locator('canvas').boundingBox();
+  check('the grenade icon sits on the picture, bottom centre', gb && gb.y + gb.height <= cb.y + cb.height && gb.y > cb.y + cb.height * 0.7 && Math.abs(gb.x + gb.width / 2 - (cb.x + cb.width / 2)) < 2, { gb, cb });
+  await page.locator('#grenadeBtn').dispatchEvent('pointerdown');
+  s = await state(page);
+  check('tapping the icon sets it off', s.grenades === 0 && s.pulse !== null && s.grenadesUsed === 1, s);
+  s = await until(page, (st) => st.pulse === null, 10000);
+  check('...the pulse sweeps the street: every alien gone, near, far and on the walls, for points',
+    s.enemies.length === 0 && s.pulseKills === 3 && s.score > 0, { enemies: s.enemies.length, pulseKills: s.pulseKills, score: s.score });
+  check('...the fire in the air gone, the burning ground out', s.fires.length === 0 && s.craters.every(c => c.burn === 0), { fires: s.fires.length, craters: s.craters });
+  check('...and the fence brought down', s.fences.length === 0, s.fences);
+  check('...and the icon gone with the last grenade', !s.grenadeShown, s.grenadeShown);
+  check('without a grenade, nothing to set off', !(await D(page, () => window.__streetDebug.detonate())));
+
   // ---- The right stick fires, on its own ------------------------------
   await quietStreet(page);
   const fireT0 = (await state(page)).t;

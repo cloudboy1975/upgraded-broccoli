@@ -64,6 +64,33 @@
   #gameRoot { position: relative; flex: 1; min-height: 0; }
   #gameRoot canvas { display: block; }
 
+  /* The energy grenade: over the picture, bottom centre - just above
+     the JUMP button below it. Only there while you carry one. */
+  .grenade-btn {
+    position: absolute;
+    left: 50%; bottom: 10px;
+    width: 58px; height: 58px; margin-left: -29px;
+    border-radius: 50%;
+    border: 2px solid rgba(221, 214, 254, 0.85);
+    background: radial-gradient(circle at 50% 45%, rgba(196, 181, 253, 0.55), rgba(76, 29, 149, 0.55) 70%);
+    box-shadow: 0 0 14px rgba(167, 139, 250, 0.8);
+    display: none; align-items: center; justify-content: center;
+    padding: 0; cursor: pointer; z-index: 4;
+    touch-action: manipulation;
+    animation: grenadePulse 1.2s ease-in-out infinite;
+  }
+  .grenade-btn.ready { display: flex; }
+  .grenade-btn svg { width: 34px; height: 34px; pointer-events: none; }
+  .grenade-count {
+    position: absolute; right: -4px; top: -4px;
+    min-width: 18px; height: 18px; border-radius: 9px; padding: 0 4px;
+    background: #f5f3ff; color: #4c1d95; font: 800 11px/18px system-ui, sans-serif; text-align: center;
+    pointer-events: none;
+  }
+  @keyframes grenadePulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(167, 139, 250, 0.6); transform: scale(1); }
+    50% { box-shadow: 0 0 22px rgba(196, 181, 253, 0.95); transform: scale(1.06); }
+  }
   .overlay {
     position: absolute;
     inset: 0;
@@ -269,6 +296,13 @@
   </div>
 
   <div id="gameRoot">
+    <button type="button" class="grenade-btn" id="grenadeBtn" aria-label="Energy grenade: tap to detonate">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <polygon points="16,2 28,9 28,23 16,30 4,23 4,9" fill="rgba(76,29,149,0.6)" stroke="#ede9fe" stroke-width="2"/>
+        <polygon points="18,6 10,18 15,18 13,26 22,13 17,13" fill="#ffffff"/>
+      </svg>
+      <span class="grenade-count" id="grenadeCount">1</span>
+    </button>
     <div class="overlay" id="overOverlay">
       <div class="overlay-title" id="overTitle">Overrun</div>
       <div class="overlay-line" id="overLine"></div>
@@ -501,7 +535,22 @@
   var FENCE_POWERUP = 0.7;     // seconds from the posts rising to live
   var FENCE_H = 32;            // px: clear this and you are over
   var FENCE_POST_X = 177;      // the posts, on the kerbs
+  var FENCE_DOWN_TIME = 0.6;   // seconds a fence takes to wind down when a pulse hits it
   var COLOR_FENCE = 0x67e8f9;
+  // The energy grenade. A grunt shot down sometimes drops one: walk
+  // over it to pick it up. Tap the icon over the bottom of the picture
+  // (or E / Q) and a pulse of energy races out across the whole street
+  // from you, destroying everything as its front reaches it - every
+  // alien (for points), fire in the air, portals about to open; burning
+  // craters go out and a fence it reaches powers down. Nothing new
+  // comes until it has passed: a reset.
+  var GRENADE_DROP = 0.1;      // chance a grunt you shoot drops one
+  var GRENADE_MAX = 3;         // most you can carry
+  var GRENADE_SPEED = 1500;    // px/s the pulse spreads
+  var GRENADE_REACH = 3600;    // px: the whole street you can see
+  var DROP_LIFE = 9;           // seconds a dropped one waits for you
+  var DROP_CATCH = 30;         // px: walk this close and it's yours
+  var COLOR_PULSE = 0xc4b5fd;
   var CRATER_BURN = 9;         // seconds a crater burns
   var CRATER_SLOW = 0.55;      // your speed across rubble
   var CRATER_SCALE = 0.85;     // crater radius, as a share of the splash
@@ -567,6 +616,7 @@
     FIRE_VOLLEY_START: FIRE_VOLLEY_START, FIRE_VOLLEY_PEAK: FIRE_VOLLEY_PEAK,
     FENCE_FIRST_M: FENCE_FIRST_M, FENCE_EVERY_START: FENCE_EVERY_START, FENCE_EVERY_PEAK: FENCE_EVERY_PEAK, FENCE_H: FENCE_H,
     FENCE_AHEAD: FENCE_AHEAD, FENCE_POWERUP: FENCE_POWERUP,
+    GRENADE_DROP: GRENADE_DROP, GRENADE_MAX: GRENADE_MAX, GRENADE_SPEED: GRENADE_SPEED,
     CRATER_BURN: CRATER_BURN, CRATER_SLOW: CRATER_SLOW, CRATER_PULSE: CRATER_PULSE, CRATER_PULSE_RATE: CRATER_PULSE_RATE,
     AHEAD_START_M: AHEAD_START_M, AHEAD_EVERY_START: AHEAD_EVERY_START, AHEAD_EVERY_PEAK: AHEAD_EVERY_PEAK,
     AHEAD_MAX_START: AHEAD_MAX_START, AHEAD_MAX_PEAK: AHEAD_MAX_PEAK, AHEAD_SIZE: AHEAD_SIZE,
@@ -651,6 +701,7 @@
       life: function () { blip(660, 1320, 0.3, 'sine', 0.1); },
       jump: function () { blip(300, 620, 0.14, 'square', 0.04); },
       land: function () { blip(140, 90, 0.06, 'triangle', 0.05); },
+      pulse: function () { blip(80, 1600, 0.9, 'sawtooth', 0.14); blip(2400, 60, 1.2, 'square', 0.06); },
       fenceUp: function () { blip(120, 900, 0.6, 'sawtooth', 0.04); },
       fenceOn: function () { blip(1400, 200, 0.16, 'square', 0.07); }
     };
@@ -780,6 +831,10 @@
     return release;
   })();
 
+  var grenadeBtn = document.getElementById('grenadeBtn'), grenadeCount = document.getElementById('grenadeCount');
+  grenadeBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); Sound.ensureAudio(); if (scene) scene.detonate(); });
+  grenadeBtn.addEventListener('touchend', function (e) { e.preventDefault(); }, { passive: false });
+
   var MOVE_KEYS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
   var AIM_KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', KeyI: 'up', KeyK: 'down', KeyJ: 'left', KeyL: 'right' };
   window.addEventListener('keydown', function (e) {
@@ -793,6 +848,7 @@
       scene.restart();
       return;
     }
+    if ((e.code === 'KeyE' || e.code === 'KeyQ') && !e.repeat) { if (scene) scene.detonate(); return; }
     if (e.code === 'Space') {
       e.preventDefault();
       if (!e.repeat) { jump.pressed++; jump.kb = true; }
@@ -961,6 +1017,7 @@
       trickle: 4,
       fireTimer: 0, climbTimer: 1, aheadTimer: 1.5, firesAhead: 0,
       enemies: [], bullets: [], fires: [], portals: [], bursts: [], shards: [], craters: [],
+      grenades: 0, drops: [], pulse: null, grenadesUsed: 0,
       buildings: [], lamps: [], nextBuild: [0, 0], nextLamp: 0, fences: [], nextFenceM: 0, fenceBanner: false,
       banner: null, flash: 0, shake: 0,
       invincible: prev ? prev.invincible : false,
@@ -1022,6 +1079,8 @@
       this.stepFires(dt);
       this.stepCraters(dt);
       this.stepFences(dt);
+      this.stepDrops(dt);
+      this.stepPulse(dt);
       this.checkContact();
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else if (s.mode === 'dying') {
@@ -1189,9 +1248,12 @@
     for (var i = 0; i < s.fences.length; i++) {
       var f = s.fences[i], was = f.live;
       f.age += dt;
-      f.live = f.age >= TUNING.FENCE_POWERUP;
+      if (f.down != null) f.down += dt;
+      f.live = f.down == null && f.age >= TUNING.FENCE_POWERUP;
       if (f.live && !was) Sound.fenceOn();
     }
+    // Brought down by a pulse: gone once it has wound down.
+    s.fences = s.fences.filter(function (o) { return o.down == null || o.down < FENCE_DOWN_TIME; });
     if (m < s.nextFenceM || s.fences.some(function (o) { return o.d > s.pd - PLAYER_R; })) return;
     this.addFence(s.pd + TUNING.FENCE_AHEAD + rand(-50, 50));
     s.nextFenceM = m + lerp(TUNING.FENCE_EVERY_START, TUNING.FENCE_EVERY_PEAK, this.difficulty()) * rand(0.6, 1.4);
@@ -1203,6 +1265,62 @@
     this.state.fences.push(f);
     if (!live) Sound.fenceUp();
     return f;
+  };
+
+  // ---- The energy grenade ---------------------------------------------
+  MainScene.prototype.stepDrops = function (dt) {
+    var s = this.state, gone = s.camD + DEPTH_PX * Z_NEAR;
+    for (var i = s.drops.length - 1; i >= 0; i--) {
+      var o = s.drops[i];
+      o.age += dt;
+      if (Math.hypot(o.x - s.px, o.d - s.pd) < DROP_CATCH && s.grenades < TUNING.GRENADE_MAX) {
+        s.drops.splice(i, 1);
+        s.grenades++;
+        s.banner = { text: 'ENERGY GRENADE', age: 0 };
+        Sound.life();
+        continue;
+      }
+      if (o.age > DROP_LIFE || o.d < gone) s.drops.splice(i, 1);
+    }
+  };
+
+  MainScene.prototype.detonate = function () {
+    var s = this.state;
+    if (s.grenades <= 0 || s.mode !== 'walking' || s.pulse) return false;
+    s.grenades--;
+    s.grenadesUsed++;
+    s.pulse = { x: s.px, d: s.pd, age: 0, r: 0 };
+    s.shake = 1.2; s.whiteout = 1;
+    Sound.pulse();
+    return true;
+  };
+
+  // The pulse front sweeps out; whatever it reaches goes.
+  MainScene.prototype.stepPulse = function (dt) {
+    var s = this.state, p = s.pulse;
+    if (s.whiteout) s.whiteout = Math.max(0, s.whiteout - dt * 2.5);
+    if (!p) return;
+    p.age += dt;
+    p.r = p.age * TUNING.GRENADE_SPEED;
+    var self = this, R = p.r;
+    function reached(x, d) { return Math.hypot(x - p.x, d - p.d) < R; }
+    s.enemies.slice().forEach(function (e) {
+      if (!reached(e.x, e.d)) return;
+      self.burst(e.x, GROUND_Y - (e.climb || 0) - e.h * 0.5, e.d, COLOR_PULSE, false, 26);
+      s.pulseKills = (s.pulseKills || 0) + 1;
+      self.killEnemy(e, true);
+    });
+    s.fires = s.fires.filter(function (f) {
+      if (!reached(f.x, f.d)) return true;
+      if (f.stage === 'fly') self.burst(f.x, f.y, f.d, COLOR_PULSE, false, 20);
+      return false;
+    });
+    s.portals = s.portals.filter(function (o) { return !reached(o.x, o.d); });
+    s.craters.forEach(function (c) { if (c.burn > 0 && reached(c.x, c.d)) c.burn = 0; });
+    s.fences.forEach(function (f) {
+      if (f.down == null && Math.abs(f.d - p.d) < R) { f.down = 0; f.live = false; Sound.fenceOn(); }
+    });
+    if (R > GRENADE_REACH) s.pulse = null;
   };
 
   // The live fence you are in, if any: within reach of its line and not
@@ -1226,7 +1344,7 @@
 
   MainScene.prototype.stepSpawning = function (dt) {
     var s = this.state, D = this.difficulty();
-    if (!s.spawning) return;
+    if (!s.spawning || s.pulse) return;
     var every = Math.max(2, this.groupEvery());
     while (s.spawnAcc >= every) {
       s.spawnAcc -= every;
@@ -1514,6 +1632,9 @@
     var s = this.state, i = s.enemies.indexOf(e);
     if (i >= 0) s.enemies.splice(i, 1);
     if (scored) { s.kills++; this.addScore(SCORE[e.type]); }
+    if (scored && e.type === 'grunt' && !e.climb && !s.pulse && Math.random() < TUNING.GRENADE_DROP) {
+      s.drops.push({ kind: 'drop', x: e.x, d: e.d, age: 0 });
+    }
     this.burst(e.x, GROUND_Y - e.h / 2, e.d, e.color);
     Sound.pop();
   };
@@ -1784,7 +1905,7 @@
 
     var self = this, items = [];
     function add(list) { for (var i = 0; i < list.length; i++) { var z = self.zOf(list[i].d); if (z >= Z_NEAR && z < Z_FAR) items.push({ o: list[i], z: z }); } }
-    add(s.buildings); add(s.lamps); add(s.fences); add(s.enemies); add(s.bullets); add(s.fires); add(s.bursts);
+    add(s.buildings); add(s.lamps); add(s.fences); add(s.drops); add(s.enemies); add(s.bullets); add(s.fires); add(s.bursts);
     items.push({ o: { kind: 'ship' }, z: this.zOf(s.ship.d) });
     if (s.mode !== 'over' && !(s.mode === 'dying') && !(s.mode === 'intro' && s.emerge <= 0)) items.push({ o: { kind: 'player' }, z: this.zOf(s.pd) });
     items.sort(function (a, b) { return b.z - a.z; });
@@ -1794,6 +1915,7 @@
       if (o.kind === 'building') this.drawTower(g, o, z);
       else if (o.kind === 'lamp') this.drawLamp(g, o, z);
       else if (o.kind === 'fence') this.drawFence(g, o, z);
+      else if (o.kind === 'drop') this.drawDrop(g, o, z);
       else if (o.kind === 'enemy') this.drawEnemy(g, o, z);
       else if (o.kind === 'bullet') this.drawBullet(g, o, z);
       else if (o.kind === 'fire') this.drawFire(g, o, z);
@@ -1802,6 +1924,7 @@
       else if (o.kind === 'player') this.drawPlayer(g, z);
     }
     this.drawFx();
+    this.drawPulse();
     this.drawHud();
   };
 
@@ -2107,7 +2230,10 @@
     var a = depthAlpha(z) * clamp((z - Z_NEAR) / 0.25, 0, 1);
     if (a <= 0) return;
     var self = this, G = GROUND_Y, H = TUNING.FENCE_H, X = FENCE_POST_X, t = this.state.t;
-    var p = o.live ? 1 : clamp(o.age / Math.max(0.05, TUNING.FENCE_POWERUP), 0, 1);
+    // Brought down, it runs the power-up backwards: stutters out, the
+    // bolt pulls back, the posts sink.
+    var p = o.down != null ? clamp(1 - o.down / FENCE_DOWN_TIME, 0, 1)
+      : o.live ? 1 : clamp(o.age / Math.max(0.05, TUNING.FENCE_POWERUP), 0, 1);
     var rise = smooth(p / 0.35), shoot = clamp((p - 0.35) / 0.25, 0, 1), stutter = clamp((p - 0.6) / 0.4, 0, 1);
     var gy = this.sy(G, z), xl = this.sx(-X, z), xr = this.sx(X, z);
     // Posts, rising.
@@ -2159,6 +2285,65 @@
     g.fillStyle(COLOR_FENCE, 0.05 * a);
     g.fillRect(xl, this.sy(G - H, z), xr - xl, gy - this.sy(G - H, z));
     for (var b = 0; b < 3; b++) bolt(b, 1, 1);
+  };
+
+  // A dropped energy grenade: a small white-violet hexagon floating a
+  // little above the road, turning and bobbing, a glow under it -
+  // blinking in its last seconds.
+  MainScene.prototype.drawDrop = function (g, o, z) {
+    var a = depthAlpha(z);
+    if (a <= 0) return;
+    if (o.age > DROP_LIFE - 2 && Math.floor(o.age * 8) % 2 === 0) return;
+    var t = this.state.t, x = this.sx(o.x, z), gy = this.sy(GROUND_Y, z);
+    var y = this.sy(GROUND_Y - 16 - 4 * Math.sin(o.age * 4), z), r = Math.max(4, 9 / z);
+    g.fillStyle(COLOR_PULSE, 0.25 * a); g.fillEllipse(x, gy, r * 3, r * 0.8);
+    g.fillStyle(COLOR_PULSE, 0.18 * a); g.fillCircle(x, y, r * 2);
+    var turn = o.age * 2.2, sq = 0.45 + 0.55 * Math.abs(Math.cos(turn));
+    g.fillStyle(0x4c1d95, a); g.lineStyle(Math.max(1, 1.6 / z), 0xede9fe, a);
+    g.beginPath();
+    for (var i = 0; i < 6; i++) {
+      var an = i / 6 * Math.PI * 2 + Math.PI / 6, px = x + Math.cos(an) * r * sq, py = y + Math.sin(an) * r;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath(); g.fillPath(); g.strokePath();
+    g.fillStyle(0xffffff, a); g.fillCircle(x, y, r * 0.3);
+  };
+
+  // The pulse: a ring of energy racing out over the road from where it
+  // went off, a shimmering wall of light standing on it, a wash of
+  // light behind it; plus the white flash it went off with.
+  MainScene.prototype.drawPulse = function () {
+    var s = this.state, g = this.gFx, p = s.pulse, self = this;
+    if (s.whiteout > 0) { g.fillStyle(0xf5f3ff, 0.75 * s.whiteout); g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); }
+    if (!p) return;
+    var R = p.r, G = GROUND_Y, fade = clamp(1 - R / GRENADE_REACH, 0, 1), WALL = 70;
+    var n = 64, ground = [], top = [];
+    for (var i = 0; i < n; i++) {
+      var an = i / n * Math.PI * 2, x = p.x + Math.cos(an) * R, d = p.d + Math.sin(an) * R;
+      var z = this.zOf(d);
+      if (z < Z_NEAR + 0.02 || z > Z_FAR) { ground.push(null); top.push(null); continue; }
+      ground.push([this.sx(x, z), this.sy(G, z), z]);
+      top.push([this.sx(x, z), this.sy(G - WALL * (0.8 + 0.2 * Math.sin(s.t * 30 + i)), z)]);
+    }
+    function ring(pts, width, color, alpha) {
+      g.lineStyle(width, color, alpha);
+      for (var i = 0; i < n; i++) {
+        var a = pts[i], b = pts[(i + 1) % n];
+        if (a && b) g.lineBetween(a[0], a[1], b[0], b[1]);
+      }
+    }
+    // The wall: light rising off the ring, brightest at the foot.
+    for (var k = 0; k < n; k++) {
+      var gp = ground[k], tp = top[k], gq = ground[(k + 1) % n], tq = top[(k + 1) % n];
+      if (!gp || !gq) continue;
+      g.fillStyle(COLOR_PULSE, 0.16 * fade);
+      g.fillTriangle(gp[0], gp[1], tp[0], tp[1], gq[0], gq[1]);
+      g.fillTriangle(tp[0], tp[1], tq[0], tq[1], gq[0], gq[1]);
+    }
+    ring(top, 1.5, 0xede9fe, 0.45 * fade);
+    ring(ground, 14, COLOR_PULSE, 0.18 * fade);
+    ring(ground, 6, COLOR_PULSE, 0.5 * fade);
+    ring(ground, 2, 0xffffff, 0.95 * fade);
   };
 
   MainScene.prototype.drawLamp = function (g, o, z) {
@@ -2440,6 +2625,16 @@
 
   MainScene.prototype.drawHud = function () {
     var s = this.state, g = this.gHud;
+    // The grenade icon over the picture: there while you carry one.
+    var show = s.grenades > 0 && s.mode !== 'over';
+    if (grenadeBtn.classList.contains('ready') !== show) grenadeBtn.classList.toggle('ready', show);
+    if (show && grenadeCount.textContent !== String(s.grenades)) grenadeCount.textContent = String(s.grenades);
+    // Kept on the picture itself: the canvas can be letterboxed inside
+    // its box, so the icon goes up from the canvas's own bottom edge.
+    if (show && (this.game.loop.frame % 20 === 0 || !grenadeBtn.style.bottom)) {
+      var box = document.getElementById('gameRoot').getBoundingClientRect(), cv = this.game.canvas.getBoundingClientRect();
+      grenadeBtn.style.bottom = Math.round(box.bottom - cv.bottom + 10) + 'px';
+    }
     this.scoreText.setText(s.score.toLocaleString());
     this.distText.setText(Math.floor(s.bestM).toLocaleString() + ' m');
     // Lives: a little figure each, top left.
@@ -2518,6 +2713,11 @@
       ['FENCE_H', 'Height', 10, 70, 1, ' px'],
       ['FENCE_AHEAD', 'Switches on this far ahead', 120, 600, 10, ' px'],
       ['FENCE_POWERUP', 'Powering up takes', 0.2, 2, 0.05, ' s']
+    ] },
+    { title: 'Energy grenade', rows: [
+      ['GRENADE_DROP', 'Chance a grunt drops one', 0, 1, 0.01, ''],
+      ['GRENADE_MAX', 'Most you can carry', 1, 9, 1, ''],
+      ['GRENADE_SPEED', 'Pulse spreads at', 300, 4000, 50, ' px/s']
     ] },
     { title: 'Damaged street', rows: [
       ['CRATER_BURN', 'Craters burn for', 0, 30, 0.5, ' s'],
@@ -2723,6 +2923,8 @@
         enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r, climb: e.climb || 0 }; }),
         craters: s.craters.map(function (c) { return { x: c.x, d: c.d, r: c.r, burn: c.burn }; }),
         fences: s.fences.map(function (f) { return f.d; }), fenceLive: s.fences.map(function (f) { return f.live; }),
+        grenades: s.grenades, drops: s.drops.length, pulse: s.pulse ? s.pulse.r : null, grenadesUsed: s.grenadesUsed,
+        pulseKills: s.pulseKills || 0, grenadeShown: document.getElementById('grenadeBtn').classList.contains('ready'),
         nextFenceM: s.nextFenceM, zapped: s.zapped || 0,
         portals: s.portals.length,
         fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size, u: f.stage === 'fly' ? f.age / f.flight : 0, marked: scene.fireMarked(f) }; }),
@@ -2740,7 +2942,7 @@
     restart: function () { scene.restart(); },
     skipIntro: function () { jumpTo(0); var s = scene.state; s.px = EXIT_X; s.pd = EXIT_D; return true; },
     jumpTo: function (m) { jumpTo(m); return true; },
-    clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; s.fences.length = 0; s.nextFenceM = Infinity; },
+    clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; s.fences.length = 0; s.nextFenceM = Infinity; s.drops.length = 0; },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },
     setPlayer: function (x, d) { var s = scene.state; s.px = x; s.pd = d; s.vx = s.vd = 0; },
@@ -2754,6 +2956,9 @@
       var e = scene.addEnemy(type || 'grunt', x, d); e.climb = climb; return true;
     },
     launchAhead: function (target) { return !!scene.launchAhead(target); },
+    giveGrenade: function (n) { scene.state.grenades = n; return true; },
+    detonate: function () { return scene.detonate(); },
+    dropAt: function (x, d) { scene.state.drops.push({ kind: 'drop', x: x, d: d, age: 0 }); return true; },
     addFence: function (d, poweringUp) { scene.addFence(d, !poweringUp); return true; },
     addCrater: function (x, d, burn, r) { scene.addCrater(x, d, burn, r); return true; },
     spawnFrom: function (type, from) { scene.spawnEnemy(type, from); return true; },
