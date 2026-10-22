@@ -487,12 +487,18 @@
   // that slows you down.
   // Live fences: kerb to kerb across the street, a band of crackling
   // electricity low enough to jump - and only jumped, there is no way
-  // round. The first at 50 m, on its own, as the lesson; then more
-  // often as it gets harder. An alien that walks into one is zapped
-  // (Robotron's electrodes): over a fence, it guards your back.
+  // round. They are not laid out up the street to be seen from afar:
+  // one switches on a short way ahead of you as you walk, at a moment
+  // you can't quite predict - one at a time, the next not until you are
+  // past it. It powers up (posts rise, a bolt shoots across, it stutters
+  // and locks on) and only kills once it is on. An alien that walks
+  // into a live one is zapped (Robotron's electrodes): over a fence, it
+  // guards your back.
   var FENCE_FIRST_M = 50;
-  var FENCE_EVERY_START = 60;  // metres to the next fence, at the start...
-  var FENCE_EVERY_PEAK = 35;   // ...and at full difficulty
+  var FENCE_EVERY_START = 60;  // average metres walked between fences, at the start...
+  var FENCE_EVERY_PEAK = 35;   // ...and at full difficulty (each gap 0.6-1.4x that)
+  var FENCE_AHEAD = 270;       // px ahead of you that one switches on (give or take 50)
+  var FENCE_POWERUP = 0.7;     // seconds from the posts rising to live
   var FENCE_H = 32;            // px: clear this and you are over
   var FENCE_POST_X = 177;      // the posts, on the kerbs
   var COLOR_FENCE = 0x67e8f9;
@@ -560,6 +566,7 @@
     FIRE_FLIGHT_START: FIRE_FLIGHT_START, FIRE_FLIGHT_PEAK: FIRE_FLIGHT_PEAK, FIRE_SPLASH: FIRE_SPLASH, FIRE_WARNING: FIRE_WARNING,
     FIRE_VOLLEY_START: FIRE_VOLLEY_START, FIRE_VOLLEY_PEAK: FIRE_VOLLEY_PEAK,
     FENCE_FIRST_M: FENCE_FIRST_M, FENCE_EVERY_START: FENCE_EVERY_START, FENCE_EVERY_PEAK: FENCE_EVERY_PEAK, FENCE_H: FENCE_H,
+    FENCE_AHEAD: FENCE_AHEAD, FENCE_POWERUP: FENCE_POWERUP,
     CRATER_BURN: CRATER_BURN, CRATER_SLOW: CRATER_SLOW, CRATER_PULSE: CRATER_PULSE, CRATER_PULSE_RATE: CRATER_PULSE_RATE,
     AHEAD_START_M: AHEAD_START_M, AHEAD_EVERY_START: AHEAD_EVERY_START, AHEAD_EVERY_PEAK: AHEAD_EVERY_PEAK,
     AHEAD_MAX_START: AHEAD_MAX_START, AHEAD_MAX_PEAK: AHEAD_MAX_PEAK, AHEAD_SIZE: AHEAD_SIZE,
@@ -643,7 +650,9 @@
       portal: function () { blip(300, 700, 0.18, 'triangle', 0.05); },
       life: function () { blip(660, 1320, 0.3, 'sine', 0.1); },
       jump: function () { blip(300, 620, 0.14, 'square', 0.04); },
-      land: function () { blip(140, 90, 0.06, 'triangle', 0.05); }
+      land: function () { blip(140, 90, 0.06, 'triangle', 0.05); },
+      fenceUp: function () { blip(120, 900, 0.6, 'sawtooth', 0.04); },
+      fenceOn: function () { blip(1400, 200, 0.16, 'square', 0.07); }
     };
   })();
 
@@ -952,7 +961,7 @@
       trickle: 4,
       fireTimer: 0, climbTimer: 1, aheadTimer: 1.5, firesAhead: 0,
       enemies: [], bullets: [], fires: [], portals: [], bursts: [], shards: [], craters: [],
-      buildings: [], lamps: [], nextBuild: [0, 0], nextLamp: 0, fences: [], nextFence: 0, fencesSeen: 0, fenceBanner: false,
+      buildings: [], lamps: [], nextBuild: [0, 0], nextLamp: 0, fences: [], nextFenceM: 0, fenceBanner: false,
       banner: null, flash: 0, shake: 0,
       invincible: prev ? prev.invincible : false,
       spawning: prev ? prev.spawning : true
@@ -967,7 +976,7 @@
     // The towers that stood round the pad as you came down.
     st.nextBuild = [DEPTH_PX * 0.45, DEPTH_PX * 0.55];
     st.nextLamp = DEPTH_PX * 0.6;
-    st.nextFence = this.fenceDepthAt(TUNING.FENCE_FIRST_M);
+    st.nextFenceM = TUNING.FENCE_FIRST_M;
     this.buildStreet();
     document.getElementById('overOverlay').classList.remove('visible');
   };
@@ -1012,6 +1021,7 @@
       this.stepBullets(dt);
       this.stepFires(dt);
       this.stepCraters(dt);
+      this.stepFences(dt);
       this.checkContact();
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else if (s.mode === 'dying') {
@@ -1164,33 +1174,42 @@
       s.lamps.push({ kind: 'lamp', x: STREET_HALF + 18, d: s.nextLamp });
       s.nextLamp += 300;
     }
-    // Fences, laid out ahead like the towers, so each is seen coming
-    // from far up the street.
-    while (s.nextFence < far) {
-      s.fences.push({ kind: 'fence', d: s.nextFence, seed: rand(0, 1000) });
-      var at = (s.nextFence - TUNING.PLAYER_Z_PUSH * DEPTH_PX) / PX_PER_M;
-      s.nextFence += lerp(TUNING.FENCE_EVERY_START, TUNING.FENCE_EVERY_PEAK, difficultyAt(at)) * PX_PER_M;
-    }
     var gone = s.camD + Z_NEAR * DEPTH_PX;
     s.buildings = s.buildings.filter(function (o) { return o.d > gone; });
     s.lamps = s.lamps.filter(function (o) { return o.d > gone; });
     s.fences = s.fences.filter(function (o) { return o.d > gone; });
-    // The first one into view gets a word of warning.
-    if (!s.fenceBanner && s.mode === 'walking' && s.fences.some(function (o) { return (o.d - s.camD) / DEPTH_PX < 5; })) {
-      s.fenceBanner = true;
-      s.banner = { text: 'LIVE FENCE \u2014 JUMP', age: 0 };
-    }
   };
 
-  // Where to put a fence so that you meet it at `m` metres down the
-  // street: that far, plus where you walk relative to the camera.
-  MainScene.prototype.fenceDepthAt = function (m) { return m * PX_PER_M + TUNING.PLAYER_Z_PUSH * DEPTH_PX; };
+  // Switching fences on. Once you have walked far enough (the gaps
+  // random, around the current spacing), and there is no fence still
+  // ahead of you, one starts powering up a short way ahead. Your walking
+  // forward is what brings them, like everything else that ramps.
+  MainScene.prototype.stepFences = function (dt) {
+    var s = this.state, m = this.progressM();
+    for (var i = 0; i < s.fences.length; i++) {
+      var f = s.fences[i], was = f.live;
+      f.age += dt;
+      f.live = f.age >= TUNING.FENCE_POWERUP;
+      if (f.live && !was) Sound.fenceOn();
+    }
+    if (m < s.nextFenceM || s.fences.some(function (o) { return o.d > s.pd - PLAYER_R; })) return;
+    this.addFence(s.pd + TUNING.FENCE_AHEAD + rand(-50, 50));
+    s.nextFenceM = m + lerp(TUNING.FENCE_EVERY_START, TUNING.FENCE_EVERY_PEAK, this.difficulty()) * rand(0.6, 1.4);
+    if (!s.fenceBanner) { s.fenceBanner = true; s.banner = { text: 'LIVE FENCE \u2014 JUMP', age: 0 }; }
+  };
 
-  // The fence you are in, if any: within reach of its line and not high
-  // enough to be over it.
+  MainScene.prototype.addFence = function (d, live) {
+    var f = { kind: 'fence', d: d, seed: rand(0, 1000), age: live ? TUNING.FENCE_POWERUP : 0, live: !!live };
+    this.state.fences.push(f);
+    if (!live) Sound.fenceUp();
+    return f;
+  };
+
+  // The live fence you are in, if any: within reach of its line and not
+  // high enough to be over it. One still powering up can't hurt.
   MainScene.prototype.fenceAt = function (d, reach, up) {
     var fs = this.state.fences;
-    for (var i = 0; i < fs.length; i++) if (Math.abs(fs[i].d - d) < reach && (up || 0) < TUNING.FENCE_H) return fs[i];
+    for (var i = 0; i < fs.length; i++) if (fs[i].live && Math.abs(fs[i].d - d) < reach && (up || 0) < TUNING.FENCE_H) return fs[i];
     return null;
   };
 
@@ -2075,44 +2094,71 @@
     }
   };
 
-  // A live fence, flat across the street at its depth: a dark post on
-  // each kerb with a glowing tip, and between them three jagged bolts
-  // of cyan-white electricity, redrawn every few frames so they crackle,
-  // each with a soft glow. A line of cyan light on the road under it.
+  // A fence, flat across the street at its depth: a dark post on each
+  // kerb with a glowing tip, and between them three jagged bolts of
+  // cyan-white electricity, redrawn every few frames so they crackle,
+  // each with a soft glow; a line of cyan light on the road under it.
+  //
+  // Powering up it builds to that rather than appearing: the posts rise
+  // out of the kerbs and their tips light; one bright bolt shoots from
+  // one post across to the other; the fence stutters on and off; then
+  // it locks on.
   MainScene.prototype.drawFence = function (g, o, z) {
     var a = depthAlpha(z) * clamp((z - Z_NEAR) / 0.25, 0, 1);
     if (a <= 0) return;
     var self = this, G = GROUND_Y, H = TUNING.FENCE_H, X = FENCE_POST_X, t = this.state.t;
+    var p = o.live ? 1 : clamp(o.age / Math.max(0.05, TUNING.FENCE_POWERUP), 0, 1);
+    var rise = smooth(p / 0.35), shoot = clamp((p - 0.35) / 0.25, 0, 1), stutter = clamp((p - 0.6) / 0.4, 0, 1);
     var gy = this.sy(G, z), xl = this.sx(-X, z), xr = this.sx(X, z);
-    g.lineStyle(Math.max(1, 3 / z), COLOR_FENCE, 0.25 * a);
-    g.lineBetween(xl, gy, xr, gy);
-    g.fillStyle(COLOR_FENCE, 0.05 * a);
-    g.fillRect(xl, this.sy(G - H, z), xr - xl, gy - this.sy(G - H, z));
-    // Posts.
+    // Posts, rising.
+    var postTop = G - H * 1.35 * rise;
     [-X, X].forEach(function (px) {
-      var x = self.sx(px, z), top = self.sy(G - H * 1.35, z);
+      var x = self.sx(px, z), top = self.sy(postTop, z);
       g.lineStyle(Math.max(2, 4 / z), 0x1e293b, a);
       g.lineBetween(x, gy, x, top);
-      g.fillStyle(COLOR_FENCE, 0.25 * a); g.fillCircle(x, top, Math.max(2, 6 / z));
-      g.fillStyle(0xe0f7ff, a); g.fillCircle(x, top, Math.max(1, 2.2 / z));
+      g.fillStyle(COLOR_FENCE, 0.25 * a * rise); g.fillCircle(x, top, Math.max(2, 6 / z));
+      g.fillStyle(0xe0f7ff, a * rise); g.fillCircle(x, top, Math.max(1, 2.2 / z));
     });
-    // Bolts: a new jag every few frames.
+    // The first bolt, shooting across: a jagged line from the left post
+    // as far as it has got, with a hot head.
     var frame = Math.floor(t * 18), segs = 16;
-    for (var b = 0; b < 3; b++) {
-      var h = H * (0.25 + b * 0.3), pts = [];
-      for (var i = 0; i <= segs; i++) {
+    function bolt(b, upto, alpha) {
+      var h = H * (0.25 + b * 0.3), pts = [], last = Math.round(segs * upto);
+      for (var i = 0; i <= last; i++) {
         var n = Math.sin((frame * 13 + b * 101 + i * 37 + o.seed) * 12.9898) * 43758.5453;
         var j = (i === 0 || i === segs) ? 0 : ((n - Math.floor(n)) - 0.5) * H * 0.35;
         pts.push([self.sx(-X + 2 * X * i / segs, z), self.sy(G - h + j, z)]);
       }
+      if (pts.length < 2) return pts[0];
       for (var pass = 0; pass < 2; pass++) {
-        g.lineStyle(pass ? Math.max(1, 1.4 / z) : Math.max(2, 5 / z), pass ? 0xe0f7ff : COLOR_FENCE, (pass ? 0.95 : 0.3) * a);
+        g.lineStyle(pass ? Math.max(1, 1.4 / z) : Math.max(2, 5 / z), pass ? 0xe0f7ff : COLOR_FENCE, (pass ? 0.95 : 0.3) * a * alpha);
         g.beginPath();
         g.moveTo(pts[0][0], pts[0][1]);
         for (var k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1]);
         g.strokePath();
       }
+      return pts[pts.length - 1];
     }
+    if (shoot > 0 && stutter <= 0) {
+      var head = bolt(1, shoot, 1);
+      if (head) {
+        g.fillStyle(0xffffff, a); g.fillCircle(head[0], head[1], Math.max(2, 4 / z));
+        g.fillStyle(COLOR_FENCE, 0.35 * a); g.fillCircle(head[0], head[1], Math.max(4, 10 / z));
+      }
+      return;
+    }
+    if (stutter <= 0) return;
+    // Stuttering on: lit on some frames, dark on others, more and more
+    // lit, then steady.
+    if (stutter < 1) {
+      var n2 = Math.sin((frame * 7.13 + o.seed) * 12.9898) * 43758.5453;
+      if ((n2 - Math.floor(n2)) > 0.25 + 0.75 * stutter) return;
+    }
+    g.lineStyle(Math.max(1, 3 / z), COLOR_FENCE, 0.25 * a);
+    g.lineBetween(xl, gy, xr, gy);
+    g.fillStyle(COLOR_FENCE, 0.05 * a);
+    g.fillRect(xl, this.sy(G - H, z), xr - xl, gy - this.sy(G - H, z));
+    for (var b = 0; b < 3; b++) bolt(b, 1, 1);
   };
 
   MainScene.prototype.drawLamp = function (g, o, z) {
@@ -2467,9 +2513,11 @@
     ] },
     { title: 'Live fences', rows: [
       ['FENCE_FIRST_M', 'First at', 0, 300, 5, ' m'],
-      ['FENCE_EVERY_START', 'Then every (start)', 10, 200, 5, ' m'],
-      ['FENCE_EVERY_PEAK', 'Then every (full)', 10, 200, 5, ' m'],
-      ['FENCE_H', 'Height', 10, 70, 1, ' px']
+      ['FENCE_EVERY_START', 'Then about every (start)', 10, 200, 5, ' m'],
+      ['FENCE_EVERY_PEAK', 'Then about every (full)', 10, 200, 5, ' m'],
+      ['FENCE_H', 'Height', 10, 70, 1, ' px'],
+      ['FENCE_AHEAD', 'Switches on this far ahead', 120, 600, 10, ' px'],
+      ['FENCE_POWERUP', 'Powering up takes', 0.2, 2, 0.05, ' s']
     ] },
     { title: 'Damaged street', rows: [
       ['CRATER_BURN', 'Craters burn for', 0, 30, 0.5, ' s'],
@@ -2632,7 +2680,7 @@
     s.nextBuild = [s.camD + DEPTH_PX * 0.4, s.camD + DEPTH_PX * 0.5];
     s.nextLamp = s.camD + DEPTH_PX * 0.5;
     s.buildings = []; s.lamps = []; s.fences = [];
-    s.nextFence = Math.max(scene.fenceDepthAt(TUNING.FENCE_FIRST_M), s.camD + DEPTH_PX * (TUNING.PLAYER_Z_PUSH + 2));
+    s.nextFenceM = Math.max(TUNING.FENCE_FIRST_M, m + 10);
     scene.buildStreet();
     if (s.spawning) scene.seedClimbers();
   }
@@ -2674,7 +2722,8 @@
         bullets: s.bullets.map(function (b) { return { x: b.x, d: b.d, vx: b.vx, vd: b.vd }; }),
         enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r, climb: e.climb || 0 }; }),
         craters: s.craters.map(function (c) { return { x: c.x, d: c.d, r: c.r, burn: c.burn }; }),
-        fences: s.fences.map(function (f) { return f.d; }), zapped: s.zapped || 0,
+        fences: s.fences.map(function (f) { return f.d; }), fenceLive: s.fences.map(function (f) { return f.live; }),
+        nextFenceM: s.nextFenceM, zapped: s.zapped || 0,
         portals: s.portals.length,
         fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size, u: f.stage === 'fly' ? f.age / f.flight : 0, marked: scene.fireMarked(f) }; }),
         buildings: s.buildings.length, banner: s.banner && s.banner.text,
@@ -2691,7 +2740,7 @@
     restart: function () { scene.restart(); },
     skipIntro: function () { jumpTo(0); var s = scene.state; s.px = EXIT_X; s.pd = EXIT_D; return true; },
     jumpTo: function (m) { jumpTo(m); return true; },
-    clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; s.fences.length = 0; s.nextFence = Infinity; },
+    clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; s.fences.length = 0; s.nextFenceM = Infinity; },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },
     setPlayer: function (x, d) { var s = scene.state; s.px = x; s.pd = d; s.vx = s.vd = 0; },
@@ -2705,7 +2754,7 @@
       var e = scene.addEnemy(type || 'grunt', x, d); e.climb = climb; return true;
     },
     launchAhead: function (target) { return !!scene.launchAhead(target); },
-    addFence: function (d) { scene.state.fences.push({ kind: 'fence', d: d, seed: 1 }); return true; },
+    addFence: function (d, poweringUp) { scene.addFence(d, !poweringUp); return true; },
     addCrater: function (x, d, burn, r) { scene.addCrater(x, d, burn, r); return true; },
     spawnFrom: function (type, from) { scene.spawnEnemy(type, from); return true; },
     launchFire: function (opts) { return !!scene.launchFire(opts); },
@@ -2720,6 +2769,7 @@
         brute: scene.shareFrom(BRUTE_FROM_M, 0.06, 0.14), behind: scene.shareFrom(BEHIND_FROM_M, 0.08, 0.16) };
     },
     setT: function (t) { scene.state.t = t; return true; },
+    fenceAge: function (age) { scene.state.fences.forEach(function (f) { f.age = age; }); return true; },
     pressJump: function (held) { jump.pressed++; jump.held = held !== false; return true; },
     releaseJumpButton: function () { jump.held = false; return true; },
     lab: { isOpen: function () { return labOpen; }, setOpen: function (o) { setLabOpen(!!o); }, storageKey: TUNING_KEY }

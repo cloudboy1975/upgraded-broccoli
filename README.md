@@ -394,18 +394,26 @@ itself, for practice.
   height). Your shadow stays on the road and shrinks as you rise, with a
   faint pale ring marking where you'll come down. **Height**, **Time in
   the air** and **Steering in the air** are lab sliders.
-- **Live fences.** From 50 m, a fence of crackling electricity runs kerb
-  to kerb across the street: two dark posts with glowing tips, three
-  jagged cyan-white bolts that redraw constantly, and a line of cyan
-  light on the road. There's no way around, so jump it (32 px, well
-  under the jump). The first one comes with a **LIVE FENCE — JUMP**
-  banner. Then one every 60 m, tightening to every 35 m at full
-  difficulty. Aliens that walk into one are zapped, like Robotron's
-  electrodes, with no points, so once you're over, it guards your back.
-  Fire into the road ahead keeps clear of fences, so there's somewhere
-  to land, and if a fence gets you, you come back a step short of it.
-  **Live fences** in the lab sets where the first is, the spacing and
-  the height.
+- **Live fences.** A fence of crackling electricity across the street,
+  kerb to kerb: two dark posts with glowing tips, three jagged
+  cyan-white bolts that redraw constantly, and a line of cyan light on
+  the road. There's no way around, so jump it (32 px, well under the
+  jump). They aren't laid out up the street to be seen from far off.
+  One switches on a short way ahead of you (about 270 px) as you walk,
+  at a moment you can't quite predict, and only one at a time: the
+  next doesn't come until you're past it. The first comes at 50 m with
+  a **LIVE FENCE — JUMP** banner. After that the gaps are random,
+  0.6–1.4 times about 60 m, tightening to about 35 m with difficulty.
+  Each one **powers up** over 0.7 s rather than appearing: the posts
+  rise out of the kerbs and their tips light, one bright bolt shoots
+  from post to post, the fence stutters on and off, then locks on with
+  a zap. It can't hurt you until it's on. Aliens that walk into a live
+  one are zapped, like Robotron's electrodes, with no points, so once
+  you're over, it guards your back. Fire into the road ahead keeps
+  clear of fences, and if a fence gets you, you come back a step short
+  of it. **Live fences** in the lab sets the first distance, the
+  spacing, the height, how far ahead they switch on and how long they
+  take to power up.
 - **Ground aliens don't shoot. Touching one kills.** *Grunts* (the
   descent's diamond aliens, on legs) march straight at you in steps.
   *Dashers* (lime arrowheads) are faster and weave. *Brutes* (violet

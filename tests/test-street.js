@@ -99,7 +99,9 @@ harness.run(async (page, check, ctx) => {
   await D(page, () => window.__streetDebug.tune('PLAYER_Z_PUSH', 0.8));
   await quietStreet(page);
   s = await until(page, (st) => st.camD > 0, 3000);
-  check('a scroll point lower than where you step out: the camera glides there, no jump', s.camD > 0 && s.camD < 30, s.camD);
+  // The gap is 0.34 of a depth unit (82px); the glide closes it at most
+  // 21px a frame, so whatever frame it is first seen on, it is short.
+  check('a scroll point lower than where you step out: the camera glides there, no jump', s.camD > 0 && s.camD < 66, s.camD);
   s = await until(page, (st) => Math.abs(st.z - 0.8) < 0.01, 5000);
   check('...and settles at it', Math.abs(s.z - 0.8) < 0.01, s.z);
   await D(page, (v) => window.__streetDebug.tune('PLAYER_Z_PUSH', v), T.PLAYER_Z_PUSH);
@@ -202,14 +204,36 @@ harness.run(async (page, check, ctx) => {
   await until(page, (st) => !st.airborne, 4000);
 
   // ---- Live fences -----------------------------------------------------------
+  // None waiting up the street: one switches on just ahead of you once
+  // you are past the first distance, and powers up before it is live.
   {
-    await D(page, () => { const d = window.__streetDebug; d.restart(); });
-    const st0 = await state(page);
-    const first = await D(page, () => {
-      const c = window.__streetDebug.constants(); return c.tuning.FENCE_FIRST_M * c.PX_PER_M + c.tuning.PLAYER_Z_PUSH * c.DEPTH_PX;
-    });
-    check('the first live fence is laid ' + T.FENCE_FIRST_M + ' m down the street', st0.fences[0] === first, { fences: st0.fences, first });
+    await D(page, () => { const d = window.__streetDebug; d.restart(); d.jumpTo(d.constants().tuning.FENCE_FIRST_M - 6); d.setSpawning(false); d.setInvincible(true); });
+    let st = await state(page);
+    check('no fence laid out ahead before ' + T.FENCE_FIRST_M + ' m', st.fences.length === 0, st.fences);
+    await page.keyboard.down('KeyW');
+    st = await until(page, (q) => q.fences.length > 0, 10000);
+    await page.keyboard.up('KeyW');
+    const ahead = st.fences[0] - st.pd;
+    check('...then one switches on a short way ahead of you, past ' + T.FENCE_FIRST_M + ' m',
+      st.fences.length === 1 && st.bestM >= T.FENCE_FIRST_M && ahead > T.FENCE_AHEAD - 80 && ahead < T.FENCE_AHEAD + 60,
+      { ahead, m: st.bestM });
+    check('...powering up, not yet live', st.fenceLive[0] === false, st.fenceLive);
+    check('...with a warning the first time', st.banner === 'LIVE FENCE \u2014 JUMP', st.banner);
+    st = await until(page, (q) => q.fenceLive[0], 5000);
+    check('...and live a moment later', st.fenceLive[0] === true, st.fenceLive);
+    // One at a time: no second one while it is still ahead.
+    st = await state(page);
+    check('...one at a time: no other until you are past it', st.fences.length === 1, st.fences.length);
   }
+  // Powering up, it can't hurt you; once live it does.
+  await quietStreet(page);
+  s = await state(page);
+  await D(page, (d) => window.__streetDebug.addFence(d, true), s.pd);
+  await page.waitForTimeout(150);
+  s = await state(page);
+  check('a fence still powering up doesn\'t hurt, even right on you', s.mode === 'walking' && s.fenceLive[0] === false, s);
+  s = await until(page, (q) => q.mode === 'dying', 6000);
+  check('...live, it does', s.lastDeath === 'shock', s.lastDeath);
   // Walk into one: it kills.
   await quietStreet(page);
   s = await state(page);
