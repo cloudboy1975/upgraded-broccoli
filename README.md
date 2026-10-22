@@ -449,8 +449,9 @@ itself, for practice.
   and the rest land around you, a beat apart.
 - **Fire into the road ahead.** From the start, towers further up the
   street throw bigger fireballs (1.7x) into the road between you and
-  them. You watch them come down, and they're too big to shoot. What
-  they leave is burning ground you have to walk around.
+  them, one every 1.35 s or so, up to 4 in the air at once. You watch
+  them come down, and they're too big to shoot. What they leave is
+  burning ground you have to walk around.
 - **The street takes damage.** Where fire lands it breaks the road open
   into a crater shaped like a broken-out piece of glass: an irregular
   closed polygon with straight edges and uneven corners, laid flat on
@@ -483,7 +484,7 @@ itself, for practice.
     once (4 to 9)
   - how fast they walk (34 to 47 px/s)
   - the climbers (one every 1.6 s down to 1.2 s; 7 to 12 on the walls)
-  - the fire from the buildings (every 5 s down to 4.2 s, 1 to 2 in the
+  - the fire from the buildings (every 6 s down to 5 s, 1 to 2 in the
     air, volleys up to 2, taking 5 s down to 4.2 s to land)
 
   The kinds of alien arrive at fixed distances, whatever the ramp's
