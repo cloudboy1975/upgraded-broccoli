@@ -414,7 +414,7 @@ itself, for practice.
   of it. **Live fences** in the lab sets the first distance, the
   spacing, the height, how far ahead they switch on and how long they
   take to power up.
-- **Energy grenade.** A grunt you shoot down has a 20% (one in five) chance of
+- **Energy grenade.** A grunt you shoot down has a 10% chance of
   dropping one: a small white-violet hexagon floating above the road,
   turning and bobbing (it waits 9 s, blinking at the end). Walk over it
   to pick it up; you can carry 3. While you have one, a glowing icon
