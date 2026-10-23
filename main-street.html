@@ -601,8 +601,10 @@
   var COLLAPSE_SPEED = 130;    // px/s the falling front comes up the street
   var COLLAPSE_LEAD = 1.2;     // seconds' rumble before it starts to move
   var DOOR_TIME = 30;          // seconds of holding the plaza before the door opens
-  var PLAZA_FROM = 1.4;        // the last towers stand this far (z) past where the camera stops
-  var WALL_PAST = 2;           // the spire's wall: this far (z) past the scroll point, once stopped
+  var PLAZA_FROM = 1;          // the last towers stand this far (z) past where the camera stops
+  // The spire's wall: this far (z) past the scroll point once the camera
+  // has stopped. Close, so the fight at the door is fought up close.
+  var WALL_PAST = 1;
   var DOOR_HALF = 44;          // px either side of the centre: the door's half width
   var DOOR_H = 130;
   var WIN_BONUS = 5000;        // for walking in...
@@ -663,7 +665,7 @@
     CLIMB_EVERY_START: CLIMB_EVERY_START, CLIMB_EVERY_PEAK: CLIMB_EVERY_PEAK,
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
-    COLLAPSE_SPEED: COLLAPSE_SPEED, DOOR_TIME: DOOR_TIME
+    COLLAPSE_SPEED: COLLAPSE_SPEED, DOOR_TIME: DOOR_TIME, WALL_PAST: WALL_PAST
   };
   var TUNING = {};
   function resetTuning() { Object.keys(TUNING_DEFAULTS).forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; }); }
@@ -1111,8 +1113,8 @@
   // Where the street ends: the camera stops at lockD; the towers stop at
   // plazaD; the spire's wall, with the door in it, stands at wallD.
   MainScene.prototype.lockD = function () { return TUNING.STREET_END_M * PX_PER_M; };
-  MainScene.prototype.plazaD = function () { return this.lockD() + PLAZA_FROM * DEPTH_PX; };
-  MainScene.prototype.wallD = function () { return this.lockD() + (TUNING.PLAYER_Z_PUSH + WALL_PAST) * DEPTH_PX; };
+  MainScene.prototype.plazaD = function () { return Math.min(this.lockD() + PLAZA_FROM * DEPTH_PX, this.wallD() - DEPTH_PX * 0.5); };
+  MainScene.prototype.wallD = function () { return this.lockD() + (TUNING.PLAYER_Z_PUSH + TUNING.WALL_PAST) * DEPTH_PX; };
   MainScene.prototype.difficulty = function () { return difficultyAt(this.progressM()); };
 
   // ---- Update --------------------------------------------------------
@@ -1683,7 +1685,7 @@
     var push = TUNING.PLAYER_Z_PUSH, x, d;
     for (var tries = 0; tries < 6; tries++) {
       if (from === 'ahead') { x = rand(-140, 140); d = Math.min(s.camD + DEPTH_PX * (push + rand(1.5, 3.1)), this.wallD() - rand(40, 90)); }
-      else if (from === 'side') { x = (Math.random() < 0.5 ? -1 : 1) * (FACADE_X - 8); d = s.camD + DEPTH_PX * rand(1.1, push + 1.7); }
+      else if (from === 'side') { x = (Math.random() < 0.5 ? -1 : 1) * (FACADE_X - 8); d = Math.min(s.camD + DEPTH_PX * rand(1.1, push + 1.7), this.wallD() - rand(30, 80)); }
       else { x = rand(-140, 140); d = s.camD + DEPTH_PX * 0.62; }
       if (Math.hypot(x - s.px, d - s.pd) > 150 && !(s.collapse && d < s.collapse.d + 20)) break;
       from = 'ahead';
@@ -3140,7 +3142,8 @@
       ['RUN_START_M', 'The run starts at', 0, 1000, 10, ' m'],
       ['STREET_END_M', 'The plaza at', 50, 1000, 10, ' m'],
       ['COLLAPSE_SPEED', 'Street falls at', 40, 300, 5, ' px/s'],
-      ['DOOR_TIME', 'Door takes', 1, 120, 1, ' s']
+      ['DOOR_TIME', 'Door takes', 1, 120, 1, ' s'],
+      ['WALL_PAST', 'Spire wall (depth past scroll point)', 0.6, 3, 0.05, '']
     ] }
   ];
 

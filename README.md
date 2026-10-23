@@ -540,8 +540,10 @@ itself, for practice.
     score and your best. *To be continued…*
 
   **The end of the street** in the lab sets the checkpoint, where the
-  run starts, where the plaza is, how fast the street falls and how
-  long the door takes. The lab's jumps also go straight to the
+  run starts, where the plaza is, how fast the street falls, how
+  long the door takes, and how far up the screen the spire's wall
+  stands (**Spire wall**, 1 past the scroll point by default, so the
+  fight at the door is up close). The lab's jumps also go straight to the
   **Checkpoint**, **The run** or **The door**.
 - **Fits the visible screen.** The page measures the height you can
   actually see, instead of trusting CSS's `100dvh`, which some browsers
