@@ -515,36 +515,63 @@ itself, for practice.
   - **Checkpoint at 200 m.** A **CHECKPOINT** banner. A game over after
     it offers **Carry on from 200 m**: fresh lives, back at 200 m with
     the score and grenades you had there.
-  - **The run, from 350 m.** A **THE STREET IS FALLING — RUN** banner,
-    a rumble and a shake, and the street gives way behind you. The
+  - **The run, from 300 m.** A **THE STREET IS FALLING — RUN** banner,
+    a rumble and a shake, and the street gives way behind you for the
+    last 100 m. The
     fallen part is black, its broken lip a jagged neon-red line, with
     lumps of road tumbling down into it. The front comes up the street
     at 130 px/s: slower than you walk, faster than you cross rubble. Stop
     to fight and it comes up the bottom of the picture. Touch it and you
     go down with it (jumping doesn't help). It takes the aliens, fences,
     craters and lamps behind it, and the towers sink into it. When you
-    come back after any death it's pushed back off you.
-  - **The plaza, at 400 m.** The towers end and the camera stops. The
-    falling street stops too, just under the bottom of the picture. The
-    wall bounds the plaza, which has rings set in the ground. **HOLD ON —
-    THE DOOR IS OPENING**: the door charges for 30 s, its frame filling
-    with light up both sides (the top bar shows the charge). Meanwhile
-    the arena runs. Aliens come from the sides, behind and ahead, the
-    spire's wall crawls with climbers and throws fire, and fences flick
-    on across the plaza (never where you're standing) and wind down a few
-    seconds later. It gets busier as the door nears open. Then **THE DOOR
-    IS OPEN — GO IN**: the leaves slide apart onto white light, which
-    spills across the plaza, and nothing new comes. Walk in for the
-    results, **The spire**: time, aliens, grenades used, lives left (and
-    any continues), a bonus of 5,000 plus 1,000 for each life left, the
-    score and your best. *To be continued…*
+    come back after any death it's pushed back off you. The street's last
+    fence comes before the plaza: none switches on inside it, and one
+    still on as you arrive winds down.
+  - **The plaza, at 400 m: the guardian.** The towers end and the camera
+    stops. The falling street stops too, just under the bottom of the
+    picture. The wall bounds the plaza, which has rings set in the
+    ground. **THE GUARDIAN**, the descent's boss, comes down out of the
+    sky in pieces and assembles in front of the door: the violet square
+    core and four triangles, a little bigger than in the sky, hovering
+    with its lowest tip just off the road, its shadow under it. Unlike in
+    the sky it stays put. It doesn't drift about, only spins and turns.
+    Everything else is the sky fight's:
+    - its forms as pieces go (**The Star**, **Pinwheel**, **Triad**,
+      **The Bird**, **Dart**, **The Cube**), each with its own spin and
+      attack, named on a title card as it regroups;
+    - turning edge-on every few seconds, when your shots glance off;
+    - volleys announced by the tips glowing, in the colour of the piece
+      that fires.
+
+    Its shots now cross the plaza at chest height toward where you are,
+    taking 1.2 s to get there, with a shadow and a pale ring on the road
+    under each. Step out of the way, or jump. A hit costs a life. Your
+    shots travel low, so a shot hits the **lowest** piece over the spot
+    where it crosses the guardian. Up the middle that's the bottom
+    triangle first, so you work up from below, or come at the side
+    pieces from the side. A piece is worth 1,000 (the core 2,000). An
+    energy grenade takes 3 hits off every piece and clears its shots.
+    You can't walk into it.
+
+    Meanwhile aliens keep coming, from the sides, behind and ahead, and
+    climbers crawl down the spire's wall either side of the door, more as
+    the guardian comes apart. The top bar becomes its health, a segment
+    per piece in that piece's colour, and the door's frame fills with
+    light as it wears down. With the last piece gone it's **GUARDIAN
+    DOWN**: the door's leaves slide apart onto white light, which spills
+    across the plaza, and nothing new comes. Walk in for the results,
+    **The spire**: time, aliens, grenades used, lives left (and any
+    continues), a bonus of 5,000 plus 1,000 for each life left, the score
+    and your best. *To be continued…*
 
   **The end of the street** in the lab sets the checkpoint, where the
-  run starts, where the plaza is, how fast the street falls, how
-  long the door takes, and how far up the screen the spire's wall
-  stands (**Spire wall**, 1 past the scroll point by default, so the
-  fight at the door is up close). The lab's jumps also go straight to the
-  **Checkpoint**, **The run** or **The door**.
+  run starts, where the plaza is, how fast the street falls, and how
+  far up the screen the spire's wall stands (**Spire wall**, 1 past the
+  scroll point by default, so the fight at the door is up close).
+  **The guardian** sets the hits per triangle (8) and for the core (14),
+  how long its shots take, and the time between volleys. The lab's
+  jumps also go straight to the **Checkpoint**, **The run** or **The
+  door**.
 - **Fits the visible screen.** The page measures the height you can
   actually see, instead of trusting CSS's `100dvh`, which some browsers
   and in-app web views overstate, cutting off the bottom of the

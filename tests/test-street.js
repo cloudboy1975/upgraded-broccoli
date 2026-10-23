@@ -688,49 +688,52 @@ harness.run(async (page, check, ctx) => {
     check('...pushed back off you when you are back on your feet', st.mode === 'walking' && st.collapseD <= st.pd - 200, st);
   }
 
-  // The plaza: the camera stops, the spire's wall bounds it, the door
-  // charges over DOOR_TIME while the arena runs, fences flick on and off
-  // across it, and once it is open, walking in wins.
+  // The plaza: the camera stops, the spire's wall bounds it, and the
+  // guardian assembles in front of the door while aliens keep coming.
+  // Your shots hit its lowest piece; edge-on they glance off; its shots
+  // kill; with it down the door opens, and walking in wins.
   {
     await quietStreet(page);
-    await D(page, () => window.__streetDebug.tune('DOOR_TIME', 4));
     await D(page, (m) => window.__streetDebug.jumpTo(m), T.STREET_END_M);
     let st = await until(page, (x) => x.finale, 3000);
-    check('at ' + T.STREET_END_M + ' m the plaza: the hold begins, under a banner', st.finale && !st.finale.open && /DOOR/.test(st.banner), st);
+    check('at ' + T.STREET_END_M + ' m the plaza: the guardian comes, under a banner', st.finale && !st.finale.open && st.boss && st.boss.mode === 'assembling' && st.banner === 'THE GUARDIAN', st);
     await D(page, () => { const d = window.__streetDebug; d.setInvincible(true); const s = d.state(); d.setPlayer(0, s.wallD + 500); });
-    st = await until(page, (x) => x.t > 0, 1000);
     await page.waitForTimeout(300);
     st = await state(page);
-    check('...the camera stops there, and the wall stops you', Math.abs(st.camD - st.lockD) < 1e-6 && st.pd <= st.wallD - 20, st);
+    check('...the camera stops there, and you can\'t walk into it', Math.abs(st.camD - st.lockD) < 1e-6 && st.pd < st.bossD - 30 && st.bossD < st.wallD, st);
     await D(page, () => window.__streetDebug.setSpawning(true));
     st = await until(page, (x) => x.enemies.length + x.portals > 2, 6000);
-    check('...the arena: they come for you there', st.enemies.length + st.portals > 2, st.enemies.length);
-    await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.clear(); d.setPlayer(0, d.state().lockD + 300); });
-    st = await until(page, (x) => x.finale.open, 12000);
-    check('...the door opens after DOOR_TIME', st.finale.open && st.mode === 'walking', st.finale);
+    check('...and they keep coming for you there', st.enemies.length + st.portals > 2, st.enemies.length);
+    check('...but no fence switches on in the plaza', st.fenceLive.every((l) => !l), st.fences);
+    await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.clear(); d.bossReady(); });
+    const lowest = await D(page, () => window.__streetDebug.bossHitAt(0));
+    check('...a low shot up the middle meets the lowest piece first', lowest === 'bottom', lowest);
+    await D(page, () => { const d = window.__streetDebug, s = d.state(); d.setPlayer(0, s.bossD - 180); d.setBossVolley(99); });
+    await page.keyboard.down('ArrowUp');
+    st = await until(page, (x) => x.boss && x.boss.hits > 0, 10000);
+    await page.keyboard.up('ArrowUp');
+    const hp = {}; (st.boss ? st.boss.pieces : []).forEach((p) => { hp[p.id] = p.hp; });
+    check('...shooting it wears the piece down', st.boss && st.boss.hits > 0 && hp.bottom < T.BOSS_TRI_HP && hp.core === T.BOSS_CORE_HP && hp.top === T.BOSS_TRI_HP, st.boss);
+    await D(page, () => window.__streetDebug.damageBoss('bottom', 99));
+    st = await state(page);
+    check('...a piece shot to nothing and the rest regroup into a new form', st.boss.form === 'triad' && st.banner === 'TRIAD', st.boss);
+    await D(page, () => { const d = window.__streetDebug; d.setInvincible(false); d.state(); d.setBossVolley(0.05); });
+    st = await until(page, (x) => x.mode !== 'walking', 8000);
+    check('...its shots cross the plaza and kill', st.lastDeath === 'guardian' && st.bossShotsFired > 0, st);
+    st = await until(page, (x) => x.mode === 'walking', 6000);
+    await D(page, () => { const d = window.__streetDebug; d.setInvincible(true); d.killBoss(); });
+    st = await state(page);
+    check('...with it down the door opens', !st.boss && st.finale.open && st.banner === 'GUARDIAN DOWN', st);
     await D(page, () => { const d = window.__streetDebug; d.setPlayer(0, d.state().wallD); });
     st = await until(page, (x) => x.overlay, 6000);
     check('...and walking in wins: the results', st.mode === 'won' && st.overlay && st.overTitle === 'The spire' && st.bonus > 0 && !st.checkpointOffered, st);
-    await D(page, (v) => window.__streetDebug.tune('DOOR_TIME', v), T.DOOR_TIME);
-  }
-  {
-    // Fences across the plaza, on and off again (sped up).
-    await quietStreet(page);
-    await D(page, (m) => window.__streetDebug.jumpTo(m), T.STREET_END_M);
-    await D(page, () => { const d = window.__streetDebug; d.setInvincible(true); d.setSpawning(true); d.timeScale = 3; });
-    let st = await until(page, (x) => x.finale && x.finale.fences > 0 && x.fences.length > 0, 12000);
-    const first = st.finale && st.finale.fences;
-    check('a fence switches on across the plaza', first > 0, st.finale);
-    st = await until(page, (x) => x.fences.length === 0, 15000);
-    check('...and goes off again a few seconds later', st.fences.length === 0, st.fences);
-    await D(page, () => { window.__streetDebug.timeScale = 1; window.__streetDebug.setSpawning(false); });
   }
   {
     const lab = await D(page, () => ({
       jumps: Array.from(document.querySelectorAll('[data-jump-to]')).map(b => b.getAttribute('data-jump-to')),
-      rows: ['RUN_START_M', 'STREET_END_M', 'COLLAPSE_SPEED', 'DOOR_TIME', 'CHECKPOINT_M'].every(k => window.__streetDebug.settingsReport().indexOf('(' + k + ')') >= 0)
+      rows: ['RUN_START_M', 'STREET_END_M', 'COLLAPSE_SPEED', 'CHECKPOINT_M', 'BOSS_TRI_HP', 'BOSS_SHOT_TIME'].every(k => window.__streetDebug.settingsReport().indexOf('(' + k + ')') >= 0)
     }));
-    check('the lab jumps to the checkpoint, the run and the door, and has the finale settings', lab.jumps.join() === 'checkpoint,run,door' && lab.rows, lab);
+    check('the lab jumps to the checkpoint, the run and the door, and has the finale and guardian settings', lab.jumps.join() === 'checkpoint,run,door' && lab.rows, lab);
     await page.locator('[data-jump-to="door"]').dispatchEvent('click');
     const st = await until(page, (x) => x.finale, 3000);
     check('..."The door" goes straight to the plaza', !!st.finale, st.mode);

@@ -596,21 +596,63 @@
   // there while the door at the spire's foot charges open, then walk
   // in.
   var CHECKPOINT_M = 200;      // a game over from here on can carry on from here
-  var RUN_START_M = 350;       // the street starts to fall in behind you
+  var RUN_START_M = 300;       // the street starts to fall in behind you
   var STREET_END_M = 400;      // the plaza: the camera stops here
   var COLLAPSE_SPEED = 130;    // px/s the falling front comes up the street
   var COLLAPSE_LEAD = 1.2;     // seconds' rumble before it starts to move
-  var DOOR_TIME = 30;          // seconds of holding the plaza before the door opens
   var PLAZA_FROM = 1;          // the last towers stand this far (z) past where the camera stops
   // The spire's wall: this far (z) past the scroll point once the camera
   // has stopped. Close, so the fight at the door is fought up close.
   var WALL_PAST = 1;
   var DOOR_HALF = 44;          // px either side of the centre: the door's half width
   var DOOR_H = 130;
+  // The guardian: descent.html's boss, come down to guard the door. It
+  // assembles in front of it, hovering over the plaza, and stays put -
+  // no drifting about as it did in the sky - while aliens keep coming
+  // at you. Its pieces, its forms, its turning edge-on and its volleys
+  // are the sky fight's; its shots now cross the plaza at you and can
+  // be stepped (or jumped) out of the way of. Your shots travel low,
+  // so they hit the lowest piece over where they cross its plane: work
+  // up from the bottom. When the last piece goes, the door opens.
+  var BOSS_TRI_HP = 8;          // hits per triangle
+  var BOSS_CORE_HP = 14;        // hits for the square
+  var BOSS_SHOT_TIME = 1.2;     // seconds its shots take to reach where you were
+  var BOSS_VOLLEY_SCALE = 1;    // x on every form's time between volleys
+  var BOSS_SQUARE = 100;        // side of the core, world px
+  var BOSS_TRI_BASE = 100;
+  var BOSS_TRI_H = 92;
+  var BOSS_Y = GROUND_Y - 148;  // its centre: its lowest tip just clear of the road
+  var BOSS_BEFORE_WALL = 34;    // px in front of the wall it hovers
+  var BOSS_KEEP_OFF = 46;       // px: you can come no nearer to it than this
+  var BOSS_ARRIVE_STAGGER = 0.5; // seconds between pieces setting off
+  var BOSS_DOCK_TIME = 1.4;     // seconds for a piece to fly in and dock
+  var BOSS_REFORM_TIME = 1.1;   // seconds to regroup after losing a piece
+  var BOSS_CHARGE = 0.55;       // the glow before every volley
+  var BOSS_TURN_TIME = 0.45;    // seconds to turn away, and to turn back
+  var BOSS_EDGE_IMMUNE = 0.3;   // narrower than this (cos of the turn), shots glance off
+  var BOSS_SHOT_R = 7;
+  var BOSS_PULSE_HITS = 3;      // what an energy grenade takes off each piece
+  var BOSS_PIECES = [           // id, kind, colour, the face it docks on (radians, 0 = up)
+    { id: 'core', kind: 'square', color: 0x8b5cf6 },
+    { id: 'top', kind: 'tri', color: 0xef4444, a: 0 },
+    { id: 'right', kind: 'tri', color: 0xfbbf24, a: Math.PI / 2 },
+    { id: 'bottom', kind: 'tri', color: 0x22d3ee, a: Math.PI },
+    { id: 'left', kind: 'tri', color: 0xf472b6, a: -Math.PI / 2 }
+  ];
+  // Its forms, by what is left: spin, attack, seconds between volleys,
+  // and seconds facing you / edge-on per turn.
+  var BOSS_FORMS = {
+    star:     { name: 'THE STAR', spin: 0.35, volley: 2.3, pattern: 'converge', face: 3.0, edge: 1.3 },
+    pinwheel: { name: 'PINWHEEL', spin: 2.4,  volley: 2.4, pattern: 'sequence', face: 2.4, edge: 1.5 },
+    triad:    { name: 'TRIAD',    spin: 0.9,  volley: 2.0, pattern: 'fan',      face: 2.4, edge: 1.5 },
+    bird:     { name: 'THE BIRD', spin: 0,    volley: 2.1, pattern: 'stream',   face: 2.0, edge: 1.6 },
+    dart:     { name: 'DART',     spin: 0,    volley: 1.5, pattern: 'lead',     face: 1.7, edge: 1.6 },
+    cube:     { name: 'THE CUBE', spin: 2.6,  volley: 1.9, pattern: 'ring',     face: 1.8, edge: 1.5 }
+  };
   var WIN_BONUS = 5000;        // for walking in...
   var LIFE_BONUS = 1000;       // ...and for each life left
 
-  var SCORE = { grunt: 100, dasher: 150, brute: 500, fire: 50 };
+  var SCORE = { grunt: 100, dasher: 150, brute: 500, fire: 50, tri: 1000, square: 2000 };
   var ENEMY_KINDS = {
     grunt: { r: 11, h: 32, hp: 1, speed: 1, colors: [0x38bdf8, 0xf472b6] },
     dasher: { r: 10, h: 28, hp: 1, speed: 1.45, colors: [0xa3e635] },
@@ -665,7 +707,8 @@
     CLIMB_EVERY_START: CLIMB_EVERY_START, CLIMB_EVERY_PEAK: CLIMB_EVERY_PEAK,
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
-    COLLAPSE_SPEED: COLLAPSE_SPEED, DOOR_TIME: DOOR_TIME, WALL_PAST: WALL_PAST
+    COLLAPSE_SPEED: COLLAPSE_SPEED, WALL_PAST: WALL_PAST,
+    BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE
   };
   var TUNING = {};
   function resetTuning() { Object.keys(TUNING_DEFAULTS).forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; }); }
@@ -749,7 +792,9 @@
       fenceUp: function () { blip(120, 900, 0.6, 'sawtooth', 0.04); },
       fenceOn: function () { blip(1400, 200, 0.16, 'square', 0.07); },
       rumble: function () { blip(70, 28, 1.1, 'sawtooth', 0.09); },
-      door: function () { blip(180, 1400, 1.4, 'sine', 0.12); blip(90, 360, 1.4, 'triangle', 0.08); }
+      door: function () { blip(180, 1400, 1.4, 'sine', 0.12); blip(90, 360, 1.4, 'triangle', 0.08); },
+      tick: function () { blip(1400, 900, 0.05, 'square', 0.04); },
+      zap: function () { blip(300, 700, 0.18, 'triangle', 0.07); }
     };
   })();
 
@@ -1070,7 +1115,7 @@
       banner: null, flash: 0, shake: 0,
       // The end of the street: the checkpoint once reached, the falling
       // front once the run starts, the door once you are in the plaza.
-      checkpoint: null, continues: 0, collapse: null, finale: null, bonus: 0,
+      checkpoint: null, continues: 0, collapse: null, finale: null, bonus: 0, boss: null, bossShots: [],
       invincible: prev ? prev.invincible : false,
       spawning: prev ? prev.spawning : true
     };
@@ -1217,7 +1262,7 @@
     var nx = s.px + s.vx * dt, nd = s.pd + s.vd * dt;
     s.px = clamp(nx, -STREET_HALF, STREET_HALF);
     var dMin = s.camD + PLAYER_Z_MIN * DEPTH_PX;
-    s.pd = clamp(nd, dMin, this.wallD() - 26);
+    s.pd = clamp(nd, dMin, s.boss ? this.bossD() - BOSS_KEEP_OFF : this.wallD() - 26);
     if (s.px !== nx) s.vx = 0;
     if (s.pd !== nd) s.vd = 0;
     var sp = Math.hypot(s.vx, s.vd);
@@ -1339,62 +1384,352 @@
     var s = this.state;
     s.camD = this.lockD();
     s.nextFenceM = Infinity;
-    s.finale = { age: 0, charge: 0, open: false, openAge: 0, arena: 2, wallFire: 3, wallClimb: 0.5, fence: rand(2, 4), fences: 0 };
-    s.banner = { text: 'HOLD ON \u2014 THE DOOR IS OPENING', age: 0 };
+    // A fence still on as you come in winds down: the plaza is the
+    // guardian's.
+    s.fences.forEach(function (f) { if (f.down == null) { f.down = 0; f.live = false; } });
+    s.finale = { age: 0, charge: 0, open: false, openAge: 0, arena: 2.5, wallClimb: 1 };
+    this.spawnBoss();
+    s.banner = { text: 'THE GUARDIAN', sub: 'between you and the door', age: 0 };
     Sound.rumble();
   };
 
-  // The arena: while the door charges, they come from every side, the
-  // spire's own wall crawls and throws fire, and fences flick on across
-  // the plaza and off again - faster as the door nears open. Once it is
-  // open nothing new comes: clear a way in.
+  // The arena: while the guardian holds the door they keep coming, from
+  // every side and down the spire's wall - more as it comes apart. With
+  // it down the door opens and nothing new comes: clear a way in.
   MainScene.prototype.stepFinale = function (dt) {
     var s = this.state, f = s.finale;
     if (!f) return;
     f.age += dt;
+    this.stepBoss(dt);
+    this.stepBossShots(dt);
     if (f.open) {
       f.openAge += dt;
       if (s.pd >= this.wallD() - 30 && Math.abs(s.px) < DOOR_HALF) this.win();
       return;
     }
-    f.charge = Math.min(1, f.charge + dt / Math.max(1, TUNING.DOOR_TIME));
-    if (f.charge >= 1) {
-      f.open = true; f.openAge = 0;
-      s.banner = { text: 'THE DOOR IS OPEN \u2014 GO IN', age: 0 };
-      s.shake = 0.6;
-      Sound.door();
-      return;
-    }
+    // How far it is through: the door's frame fills with it.
+    f.charge = this.bossWorn();
     var k = f.charge, wall = this.wallD();
     if (!s.spawning || s.pulse) return;
     f.arena -= dt;
     if (f.arena <= 0) {
-      f.arena = lerp(2.6, 1.3, k) * rand(0.8, 1.2);
+      f.arena = lerp(2.8, 1.5, k) * rand(0.8, 1.2);
       var from = pick(['side', 'side', 'behind', 'ahead']), n = 2 + (Math.random() < k ? 1 : 0);
-      for (var i = 0; i < n && this.alive() < this.maxAlive() + 4; i++) this.spawnEnemy(null, from);
+      for (var i = 0; i < n && this.alive() < this.maxAlive() + 3; i++) this.spawnEnemy(null, from);
     }
     f.wallClimb -= dt;
     if (f.wallClimb <= 0) {
-      f.wallClimb = lerp(1.6, 0.9, k) * rand(0.7, 1.3);
-      if (this.climbers() < 10) {
-        var x = (Math.random() < 0.5 ? -1 : 1) * rand(DOOR_HALF + 20, STREET_HALF + 60);
+      f.wallClimb = lerp(2, 1.1, k) * rand(0.7, 1.3);
+      if (this.climbers() < 8) {
+        var x = (Math.random() < 0.5 ? -1 : 1) * rand(DOOR_HALF + 60, STREET_HALF + 60);
         this.addEnemy(this.pickKind(), x, wall - 20).climb = rand(150, 320);
       }
     }
-    f.wallFire -= dt;
-    if (f.wallFire <= 0) {
-      f.wallFire = lerp(3.4, 2, k) * rand(0.8, 1.2);
-      this.launchFire({ x: (Math.random() < 0.5 ? -1 : 1) * rand(DOOR_HALF + 30, 260), y: rand(-260, 20), d: wall - 6, wall: true });
+  };
+
+  // ---- The guardian -------------------------------------------------------
+  function bossFormOf(nTri, core) {
+    if (nTri === 4) return core ? 'star' : 'pinwheel';
+    if (nTri === 3) return 'triad';
+    if (nTri === 2) return 'bird';
+    if (nTri === 1) return 'dart';
+    return 'cube';
+  }
+  function wrapAngle(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+
+  MainScene.prototype.bossD = function () { return this.wallD() - BOSS_BEFORE_WALL; };
+
+  MainScene.prototype.spawnBoss = function () {
+    var pieces = BOSS_PIECES.map(function (d, i) {
+      var hp = Math.round(d.kind === 'square' ? TUNING.BOSS_CORE_HP : TUNING.BOSS_TRI_HP);
+      return {
+        id: d.id, kind: d.kind, color: d.color, hp: hp, maxHp: hp, alive: true, flash: 0,
+        a: d.a || 0, slotA: d.a || 0, d: 0, slotD: 0,
+        // Where it flies in from: down out of the sky, out along its face.
+        fromX: d.kind === 'square' ? 0 : Math.sin(d.a) * 320,
+        fromY: d.kind === 'square' ? -520 : -360 - Math.cos(d.a) * 200,
+        dockAt: i * BOSS_ARRIVE_STAGGER, docked: false
+      };
+    });
+    this.state.boss = {
+      mode: 'assembling', modeAge: 0, t: 0, x: 0, y: BOSS_Y, rot: 0,
+      form: 'star', volleyTimer: 1.6, queue: [], ringNext: true,
+      flip: 'face', flipAge: 0, flipA: 0, flipCos: 1, glances: 0, hits: 0,
+      pieces: pieces
+    };
+    this.layoutBoss(true);
+  };
+
+  // Share of its hits taken, 0 to 1.
+  MainScene.prototype.bossWorn = function () {
+    var b = this.state.boss;
+    if (!b) return this.state.finale && this.state.finale.open ? 1 : 0;
+    var hp = 0, max = 0;
+    b.pieces.forEach(function (p) { hp += p.alive ? p.hp : 0; max += p.maxHp; });
+    return max ? 1 - hp / max : 1;
+  };
+
+  // Slots for whatever is left: triangles spread evenly round the
+  // centre, except a pair, which become wings either side. With the core
+  // gone they close in on the empty middle.
+  MainScene.prototype.layoutBoss = function (initial) {
+    var b = this.state.boss;
+    var tris = b.pieces.filter(function (p) { return p.kind === 'tri' && p.alive; });
+    var core = b.pieces[0].alive, n = tris.length;
+    var slots = n === 4 ? [0, Math.PI / 2, Math.PI, -Math.PI / 2]
+      : n === 3 ? [0, 2 * Math.PI / 3, -2 * Math.PI / 3]
+      : n === 2 ? [-Math.PI / 2, Math.PI / 2]
+      : n === 1 ? [Math.PI] : [];
+    var d = core ? BOSS_SQUARE / 2 : (n === 1 ? -BOSS_TRI_H / 3 : n === 2 ? 0 : 3);
+    if (!initial && n) {
+      // The slots in the order the pieces already sit round the centre,
+      // turned whichever way moves them least.
+      tris.sort(function (p, q) { return wrapAngle(p.a) - wrapAngle(q.a); });
+      var sorted = slots.slice().sort(function (x, y) { return x - y; });
+      var best = 0, bestCost = Infinity;
+      for (var off = 0; off < n; off++) {
+        var cost = 0;
+        for (var i = 0; i < n; i++) cost += Math.abs(wrapAngle(sorted[(i + off) % n] - tris[i].a));
+        if (cost < bestCost) { bestCost = cost; best = off; }
+      }
+      tris.forEach(function (p, i) { p.slotA = sorted[(i + best) % n]; });
+    } else {
+      tris.forEach(function (p) { p.slotA = p.a; });
     }
-    // A fence across the plaza, somewhere you are not standing; it
-    // stays on a few seconds, then winds down.
-    f.fence -= dt;
-    if (f.fence <= 0 && !s.fences.length) {
-      f.fence = lerp(5, 3, k) * rand(0.8, 1.25);
-      var lo = s.camD + DEPTH_PX * 0.9, hi = wall - 70, d = 0;
-      for (var t = 0; t < 8; t++) { d = rand(lo, hi); if (Math.abs(d - s.pd) > 70) break; }
-      if (hi > lo && Math.abs(d - s.pd) > 70) { this.addFence(d).life = rand(3, 4.5); f.fences++; }
+    tris.forEach(function (p) { p.slotD = d; if (initial) p.d = d; });
+    b.form = bossFormOf(n, core);
+  };
+
+  MainScene.prototype.dockProgress = function (p) { return smooth((this.state.boss.modeAge - p.dockAt) / BOSS_DOCK_TIME); };
+
+  // A piece's outline on the guardian's plane (x across, y up and down),
+  // turned about its vertical axis by the flip, and the point it fires
+  // from.
+  MainScene.prototype.bossPiecePoly = function (p) {
+    var b = this.state.boss, cx = b.x, cy = b.y;
+    if (b.mode === 'assembling' && !p.docked) {
+      var u = this.dockProgress(p);
+      cx += (1 - u) * p.fromX; cy += (1 - u) * p.fromY;
     }
+    var poly;
+    if (p.kind === 'square') {
+      var h = BOSS_SQUARE / 2, c = Math.cos(b.rot), sn = Math.sin(b.rot);
+      poly = { pts: [[-h, -h], [h, -h], [h, h], [-h, h]].map(function (q) { return [cx + q[0] * c - q[1] * sn, cy + q[0] * sn + q[1] * c]; }), cx: cx, cy: cy, tipX: cx, tipY: cy };
+    } else {
+      var A = p.a + b.rot, flapA = A;
+      // The bird's wings flap about their hinge.
+      if (b.form === 'bird') flapA = A + (p.slotA < 0 ? 1 : -1) * Math.sin(b.t * 7) * 0.55;
+      var midX = cx + Math.sin(A) * p.d, midY = cy - Math.cos(A) * p.d;
+      var fx = Math.sin(flapA), fy = -Math.cos(flapA), px = Math.cos(flapA), py = Math.sin(flapA);
+      var hb = BOSS_TRI_BASE / 2, apexX = midX + fx * BOSS_TRI_H, apexY = midY + fy * BOSS_TRI_H;
+      poly = { pts: [[midX - px * hb, midY - py * hb], [apexX, apexY], [midX + px * hb, midY + py * hb]],
+        cx: (midX * 2 + apexX) / 3, cy: (midY * 2 + apexY) / 3, tipX: apexX, tipY: apexY };
+    }
+    var k = b.flipCos;
+    if (k === 1) return poly;
+    function fxk(x) { return b.x + (x - b.x) * k; }
+    return { pts: poly.pts.map(function (q) { return [fxk(q[0]), q[1]]; }), cx: fxk(poly.cx), cy: poly.cy, tipX: fxk(poly.tipX), tipY: poly.tipY };
+  };
+
+  MainScene.prototype.stepBoss = function (dt) {
+    var s = this.state, b = s.boss, self = this;
+    if (!b) return;
+    b.t += dt;
+    b.modeAge += dt;
+    var f = BOSS_FORMS[b.form];
+    b.pieces.forEach(function (p) {
+      p.flash = Math.max(0, p.flash - dt);
+      var k = 1 - Math.exp(-5 * dt);
+      p.a += wrapAngle(p.slotA - p.a) * k;
+      p.d += (p.slotD - p.d) * k;
+    });
+    if (b.mode === 'assembling') {
+      b.pieces.forEach(function (p) {
+        if (!p.docked && self.dockProgress(p) >= 1) { p.docked = true; Sound.thud(); s.shake = Math.max(s.shake, 0.3); }
+      });
+      if (b.pieces.every(function (p) { return p.docked; })) { b.mode = 'fight'; b.modeAge = 0; }
+      return;
+    }
+    // It stays where it is: it only turns.
+    if (f.spin) b.rot += f.spin * dt;
+    else b.rot += wrapAngle(0 - b.rot) * (1 - Math.exp(-4 * dt)); // the bird and the dart hold upright
+    this.stepBossFlip(b, dt);
+    if (b.mode === 'reforming') {
+      if (b.modeAge >= BOSS_REFORM_TIME) { b.mode = 'fight'; b.modeAge = 0; b.volleyTimer = Math.max(b.volleyTimer, 0.9); }
+      return;
+    }
+    if (s.mode !== 'walking') return;
+    for (var i = b.queue.length - 1; i >= 0; i--) {
+      var q = b.queue[i];
+      q.at -= dt;
+      if (q.at <= 0) { this.bossFireFrom(q.piece, q.tx, q.td, q.aim); b.queue.splice(i, 1); }
+    }
+    b.volleyTimer -= dt;
+    if (b.volleyTimer <= 0) {
+      b.volleyTimer = f.volley * TUNING.BOSS_VOLLEY_SCALE * rand(0.85, 1.15);
+      this.bossVolley(b);
+    }
+  };
+
+  // Face -> turn away -> edge-on -> turn back -> face. Regrouping always
+  // faces you, and starts the new form with a full spell facing you.
+  MainScene.prototype.stepBossFlip = function (b, dt) {
+    var f = BOSS_FORMS[b.form];
+    if (b.mode === 'reforming') {
+      b.flipA += (0 - b.flipA) * (1 - Math.exp(-8 * dt));
+      b.flip = 'face'; b.flipAge = 0;
+    } else {
+      b.flipAge += dt;
+      if (b.flip === 'face') {
+        b.flipA = 0;
+        if (b.flipAge >= f.face) { b.flip = 'away'; b.flipAge = 0; }
+      } else if (b.flip === 'away') {
+        b.flipA = (Math.PI / 2) * smooth(b.flipAge / BOSS_TURN_TIME);
+        if (b.flipAge >= BOSS_TURN_TIME) { b.flip = 'edge'; b.flipAge = 0; }
+      } else if (b.flip === 'edge') {
+        b.flipA = Math.PI / 2 + 0.06 * Math.sin(b.t * 9);
+        if (b.flipAge >= f.edge) { b.flip = 'back'; b.flipAge = 0; }
+      } else {
+        b.flipA = (Math.PI / 2) * (1 - smooth(b.flipAge / BOSS_TURN_TIME));
+        if (b.flipAge >= BOSS_TURN_TIME) { b.flip = 'face'; b.flipAge = 0; }
+      }
+    }
+    b.flipCos = Math.cos(b.flipA);
+    if (Math.abs(b.flipCos) < 1e-4) b.flipCos = 1e-4;
+  };
+
+  function bossFacing(b) { return !!b && Math.abs(b.flipCos) >= BOSS_EDGE_IMMUNE; }
+  function bossCharge(b) {
+    if (!b || b.mode !== 'fight' || b.volleyTimer > BOSS_CHARGE) return 0;
+    return 1 - b.volleyTimer / BOSS_CHARGE;
+  }
+
+  MainScene.prototype.bossShooters = function () {
+    var b = this.state.boss;
+    var tris = b.pieces.filter(function (p) { return p.kind === 'tri' && p.alive; });
+    return tris.length ? tris : b.pieces.filter(function (p) { return p.alive; });
+  };
+
+  // One shot from a piece's tip, at a spot on the plaza (chest high),
+  // arriving there in BOSS_SHOT_TIME and carrying on the same way until
+  // it hits the road. If `aim`, at where you are as it leaves.
+  MainScene.prototype.bossFireFrom = function (p, tx, td, aim) {
+    var s = this.state, b = s.boss;
+    if (!b || !p.alive) return;
+    if (aim) { tx = s.px; td = s.pd; }
+    var poly = this.bossPiecePoly(p), d0 = this.bossD(), T = Math.max(0.2, TUNING.BOSS_SHOT_TIME);
+    var ty = GROUND_Y - PLAYER_H * 0.55;
+    s.bossShots.push({ kind: 'bshot', x: poly.tipX, y: poly.tipY, d: d0,
+      vx: (tx - poly.tipX) / T, vy: (ty - poly.tipY) / T, vd: (td - d0) / T, color: p.color, age: 0 });
+    s.bossShotsFired = (s.bossShotsFired || 0) + 1;
+    Sound.zap();
+  };
+
+  MainScene.prototype.bossVolley = function (b) {
+    var s = this.state, self = this, shooters = this.bossShooters(), pattern = BOSS_FORMS[b.form].pattern;
+    if (pattern === 'converge') {
+      // Every tip at once, all at you: move.
+      shooters.forEach(function (p) { self.bossFireFrom(p, 0, 0, true); });
+    } else if (pattern === 'sequence') {
+      // Round the wheel, one tip after another, each aimed as it fires.
+      shooters.forEach(function (p, i) { b.queue.push({ piece: p, at: i * 0.18, aim: true }); });
+    } else if (pattern === 'fan') {
+      // One at you, one either side.
+      var order = shooters.slice().sort(function (p, q) { return self.bossPiecePoly(p).tipX - self.bossPiecePoly(q).tipX; });
+      var offs = [-80, 0, 80];
+      order.forEach(function (p, i) { self.bossFireFrom(p, s.px + offs[Math.min(i, 2)], s.pd, false); });
+    } else if (pattern === 'stream') {
+      // Three in a row from the body, each aimed fresh: keep moving.
+      var body = b.pieces[0].alive ? b.pieces[0] : shooters[0];
+      for (var i = 0; i < 3; i++) b.queue.push({ piece: body, at: i * 0.22, aim: true });
+    } else if (pattern === 'lead') {
+      // One where you are and one where you are heading.
+      this.bossFireFrom(shooters[0], 0, 0, true);
+      b.queue.push({ piece: shooters[0], at: 0.12, tx: s.px + s.vx * 0.8, td: s.pd + s.vd * 0.8, aim: false });
+    } else if (pattern === 'ring') {
+      // A ring of six round you (stand still and they all miss), then a
+      // pair straight at you.
+      var core = b.pieces[0];
+      if (b.ringNext) {
+        for (var k = 0; k < 6; k++) {
+          var ang = k * Math.PI / 3 + rand(0, 0.5);
+          this.bossFireFrom(core, s.px + Math.cos(ang) * 70, s.pd + Math.sin(ang) * 70, false);
+        }
+      } else {
+        this.bossFireFrom(core, 0, 0, true);
+        b.queue.push({ piece: core, at: 0.2, aim: true });
+      }
+      b.ringNext = !b.ringNext;
+    }
+  };
+
+  MainScene.prototype.stepBossShots = function (dt) {
+    var s = this.state, sh = s.bossShots, near = s.camD + DEPTH_PX * Z_NEAR;
+    for (var i = sh.length - 1; i >= 0; i--) {
+      var o = sh[i];
+      o.age += dt;
+      o.x += o.vx * dt; o.y += o.vy * dt; o.d += o.vd * dt;
+      if (s.mode === 'walking' && Math.hypot(o.x - s.px, o.d - s.pd) < PLAYER_R + BOSS_SHOT_R &&
+          o.y > GROUND_Y - s.elev - PLAYER_H - BOSS_SHOT_R && o.y < GROUND_Y - s.elev + BOSS_SHOT_R) {
+        sh.splice(i, 1);
+        this.die('guardian');
+        continue;
+      }
+      if (o.y >= GROUND_Y - 2) { this.burst(o.x, GROUND_Y - 4, o.d, o.color, true); sh.splice(i, 1); continue; }
+      if (o.d < near || o.age > 8) sh.splice(i, 1);
+    }
+  };
+
+  // A shot of yours crossing the guardian's plane: it hits the lowest
+  // live piece over that spot (your shots travel low) - unless the
+  // guardian is turned edge-on, when it glances off.
+  MainScene.prototype.bossHitAt = function (x) {
+    var b = this.state.boss;
+    if (!b || b.mode === 'assembling') return null;
+    var best = null, bestY = -Infinity, self = this;
+    b.pieces.forEach(function (p) {
+      if (!p.alive) return;
+      var pts = self.bossPiecePoly(p).pts, lo = Infinity, hi = -Infinity, low = -Infinity;
+      pts.forEach(function (q) { lo = Math.min(lo, q[0]); hi = Math.max(hi, q[0]); low = Math.max(low, q[1]); });
+      if (x >= lo - 3 && x <= hi + 3 && low > bestY) { best = p; bestY = low; }
+    });
+    return best;
+  };
+
+  MainScene.prototype.damageBossPiece = function (p, n) {
+    var s = this.state, b = s.boss;
+    if (!b || !p.alive) return;
+    p.hp -= n || 1;
+    p.flash = 0.08;
+    b.hits++;
+    if (p.hp > 0) { Sound.tick(); return; }
+    var poly = this.bossPiecePoly(p), d = this.bossD();
+    p.alive = false;
+    b.queue = b.queue.filter(function (q) { return q.piece !== p; });
+    this.burst(poly.cx, poly.cy, d, p.color, false, 70);
+    for (var i = 0; i < poly.pts.length; i++) {
+      var a = poly.pts[i];
+      this.burst((a[0] + poly.cx) / 2, (a[1] + poly.cy) / 2, d, p.color, false, 34);
+    }
+    s.shake = Math.max(s.shake, 0.6);
+    this.addScore(SCORE[p.kind]);
+    Sound.boom();
+    if (!b.pieces.some(function (q) { return q.alive; })) return this.bossDefeated();
+    this.layoutBoss(false);
+    b.mode = 'reforming';
+    b.modeAge = 0;
+    s.banner = { text: BOSS_FORMS[b.form].name, age: 0 };
+  };
+
+  MainScene.prototype.bossDefeated = function () {
+    var s = this.state, f = s.finale;
+    this.burst(0, BOSS_Y, this.bossD(), 0xffffff, false, 180);
+    s.bossShots.length = 0;
+    s.boss = null;
+    s.shake = 1.2;
+    f.charge = 1; f.open = true; f.openAge = 0;
+    s.banner = { text: 'GUARDIAN DOWN', sub: 'the door is open \u2014 go in', age: 0 };
+    Sound.door();
   };
 
   MainScene.prototype.win = function () {
@@ -1476,7 +1811,10 @@
     // Brought down by a pulse: gone once it has wound down.
     s.fences = s.fences.filter(function (o) { return o.down == null || o.down < FENCE_DOWN_TIME; });
     if (m < s.nextFenceM || s.fences.some(function (o) { return o.d > s.pd - PLAYER_R; })) return;
-    this.addFence(s.pd + TUNING.FENCE_AHEAD + rand(-50, 50));
+    var fd = s.pd + TUNING.FENCE_AHEAD + rand(-50, 50);
+    // None in the plaza: the street's last one comes before it.
+    if (fd > this.lockD() + DEPTH_PX * PLAYER_Z_MIN - 40) { s.nextFenceM = Infinity; return; }
+    this.addFence(fd);
     s.nextFenceM = m + lerp(TUNING.FENCE_EVERY_START, TUNING.FENCE_EVERY_PEAK, this.difficulty()) * rand(0.6, 1.4);
     if (!s.fenceBanner) { s.fenceBanner = true; s.banner = { text: 'LIVE FENCE \u2014 JUMP', age: 0 }; }
   };
@@ -1541,6 +1879,11 @@
     s.fences.forEach(function (f) {
       if (f.down == null && Math.abs(f.d - p.d) < R) { f.down = 0; f.live = false; Sound.fenceOn(); }
     });
+    s.bossShots = s.bossShots.filter(function (o) { return !reached(o.x, o.d); });
+    if (s.boss && !p.hitBoss && s.boss.mode !== 'assembling' && reached(0, this.bossD())) {
+      p.hitBoss = true;
+      s.boss.pieces.forEach(function (q) { if (q.alive && self.state.boss) self.damageBossPiece(q, BOSS_PULSE_HITS); });
+    }
     if (R > GRENADE_REACH) s.pulse = null;
   };
 
@@ -1816,6 +2159,17 @@
           if (Math.hypot(e.x - b.x, e.d - b.d) < e.r + BULLET_HIT) { this.hitEnemy(e, b); dead = true; break; }
         }
       }
+      if (!dead && s.boss) {
+        var bd = this.bossD(), wasD = b.d - b.vd * dt;
+        if ((wasD - bd) * (b.d - bd) <= 0) {
+          var bx = b.x - b.vx * dt * (b.d - bd) / (b.vd * dt || 1), piece = this.bossHitAt(bx);
+          if (piece) {
+            dead = true;
+            if (bossFacing(s.boss)) { this.damageBossPiece(piece); this.burst(bx, BULLET_Y, bd, 0xffffff, true); }
+            else { s.boss.glances++; this.burst(bx, BULLET_Y, bd, 0xe0f2fe, true, 4); }
+          }
+        }
+      }
       if (!dead) {
         // Fire coming down can be shot once it is low enough to reach.
         for (var k = 0; k < s.fires.length; k++) {
@@ -2070,6 +2424,8 @@
     s.portals = s.portals.filter(function (p) { return Math.hypot(p.x - s.px, p.d - s.pd) >= RESPAWN_CLEAR; });
     s.fires.length = 0;
     s.bullets.length = 0;
+    s.bossShots.length = 0;
+    if (s.boss) s.boss.volleyTimer = Math.max(s.boss.volleyTimer, 1.5);
     s.craters.forEach(function (c) { if (Math.hypot(c.x - s.px, c.d - s.pd) < RESPAWN_CLEAR) c.burn = 0; });
     s.vx = s.vd = 0;
     s.elev = 0; s.vz = 0; s.airborne = false;
@@ -2132,7 +2488,11 @@
 
     var self = this, items = [];
     function add(list) { for (var i = 0; i < list.length; i++) { var z = self.zOf(list[i].d); if (z >= Z_NEAR && z < Z_FAR) items.push({ o: list[i], z: z }); } }
-    add(s.buildings); add(s.lamps); add(s.fences); add(s.drops); add(s.enemies); add(s.bullets); add(s.fires); add(s.bursts);
+    add(s.buildings); add(s.lamps); add(s.fences); add(s.drops); add(s.enemies); add(s.bullets); add(s.fires); add(s.bursts); add(s.bossShots);
+    if (s.boss) {
+      var zb = this.zOf(this.bossD());
+      s.boss.pieces.forEach(function (p) { if (p.alive) items.push({ o: { kind: 'bosspiece', piece: p }, z: zb }); });
+    }
     items.push({ o: { kind: 'ship' }, z: this.zOf(s.ship.d) });
     var zw = this.zOf(this.wallD());
     if (zw >= Z_NEAR && zw < Z_FAR) items.push({ o: { kind: 'wall' }, z: zw });
@@ -2152,6 +2512,8 @@
       else if (o.kind === 'burst') this.drawBurst(g, o, z);
       else if (o.kind === 'ship') this.drawShip(g, z);
       else if (o.kind === 'wall') this.drawWall(g, z);
+      else if (o.kind === 'bosspiece') this.drawBossPiece(g, o.piece, z);
+      else if (o.kind === 'bshot') this.drawBossShot(g, o, z);
       else if (o.kind === 'player') this.drawPlayer(g, z);
     }
     this.drawFx();
@@ -2332,6 +2694,8 @@
       }
     }
     s.enemies.forEach(function (e) { if (!e.climb) shadow(e.x, e.d, e.r); });
+    if (s.boss) shadow(0, this.bossD(), 80, 40);
+    s.bossShots.forEach(function (o) { shadow(o.x, o.d, 4, GROUND_Y - o.y); });
     if (s.mode === 'walking' || (s.mode === 'intro' && s.emerge >= 1)) shadow(s.px, s.pd, PLAYER_R, s.elev);
     this.drawCollapse(g);
   };
@@ -2407,6 +2771,47 @@
       g.lineStyle(1, COLOR_GLOW_RED, 0.6 * fade);
       g.strokeTriangle(bx - ca, by - sa, bx + sa, by - ca * 0.6, bx + ca, by + sa);
     }
+  };
+
+  // A piece of the guardian, as in the sky: flat fill in its colour, a
+  // lighter edge, white for a frame when hit, darker as it wears down,
+  // darker still turned away (when only a bright hairline of edge is
+  // left). The firing tips burn while a volley charges; the core has
+  // an eye.
+  MainScene.prototype.drawBossPiece = function (g, p, z) {
+    var b = this.state.boss, self = this;
+    var a = b.mode === 'assembling' && !p.docked ? clamp(this.dockProgress(p) * 3, 0, 1) : 1;
+    if (a <= 0 || z < Z_NEAR) return;
+    var poly = this.bossPiecePoly(p);
+    var pts = poly.pts.map(function (q) { return { x: self.sx(q[0], z), y: self.sy(q[1], z) }; });
+    var worn = 1 - p.hp / p.maxHp, side = 1 - Math.abs(b.flipCos);
+    var fill = p.flash > 0 ? 0xffffff : mixColor(mixColor(p.color, 0x0f172a, worn * 0.55), 0x0f172a, side * 0.45);
+    g.fillStyle(p.color, a * 0.12);
+    g.fillCircle((pts[0].x + pts[1].x + pts[2].x) / 3, (pts[0].y + pts[1].y + pts[2].y) / 3, 40 / z);
+    g.fillStyle(fill, a);
+    g.lineStyle(Math.max(1.5, 2.5 / z) * (1 - side * 0.4), mixColor(p.color, 0xffffff, 0.45 + 0.45 * side), a);
+    g.fillPoints(pts, true);
+    g.strokePoints(pts, true);
+    var charge = bossCharge(b), tipX = this.sx(poly.tipX, z), tipY = this.sy(poly.tipY, z);
+    if (p.kind === 'square') {
+      var r = BOSS_SQUARE * 0.18 / z, ec = Math.abs(b.flipCos);
+      g.fillStyle(COLOR_EYE, a);
+      g.fillEllipse(tipX, tipY, r * 2.8 * ec, r * 2.8);
+      g.fillStyle(charge > 0 ? mixColor(0xfde68a, COLOR_FIRE, charge) : 0xe2e8f0, a);
+      var er = r * (charge > 0 ? 0.6 + 0.5 * charge : 0.6);
+      g.fillEllipse(tipX, tipY, er * 2 * ec, er * 2);
+    } else if (charge > 0) {
+      g.fillStyle(0xfde68a, a * charge);
+      g.fillCircle(tipX, tipY, (3 + 6 * charge) / Math.max(1, z * 0.5));
+    }
+  };
+
+  // Its shots: a ball in the colour of the piece that fired it.
+  MainScene.prototype.drawBossShot = function (g, o, z) {
+    var x = this.sx(o.x, z), y = this.sy(o.y, z), r = Math.max(3, BOSS_SHOT_R * 1.2 / z);
+    g.fillStyle(o.color, 0.3); g.fillCircle(x, y, r * 1.8);
+    g.fillStyle(o.color, 1); g.fillCircle(x, y, r);
+    g.fillStyle(COLOR_FLAME_INNER, 1); g.fillCircle(x, y, r * 0.45);
   };
 
   // The spire's foot, across the end of the street: a sheer dark wall
@@ -3040,8 +3445,18 @@
   MainScene.prototype.drawProgress = function (g) {
     var s = this.state, f = s.finale, end = Math.max(1, TUNING.STREET_END_M);
     g.fillStyle(0x1e293b, 0.9); g.fillRect(BAR_X, BAR_Y - 1.5, BAR_W, 3);
-    if (f) {
-      g.fillStyle(f.open ? 0xf5f3ff : 0x67e8f9, 1);
+    if (s.boss) {
+      // The guardian's pieces, each its share of the bar in its colour,
+      // emptying as it is shot.
+      var max = 0, x = BAR_X;
+      s.boss.pieces.forEach(function (p) { max += p.maxHp; });
+      s.boss.pieces.forEach(function (p) {
+        var w = BAR_W * p.maxHp / max;
+        if (p.alive) { g.fillStyle(p.color, 1); g.fillRect(x + 0.5, BAR_Y - 2, (w - 1) * p.hp / p.maxHp, 4); }
+        x += w;
+      });
+    } else if (f) {
+      g.fillStyle(0xf5f3ff, 1);
       g.fillRect(BAR_X, BAR_Y - 1.5, BAR_W * f.charge, 3);
     } else {
       g.fillStyle(s.collapse ? COLOR_GLOW_RED : 0xfb923c, 1);
@@ -3142,8 +3557,13 @@
       ['RUN_START_M', 'The run starts at', 0, 1000, 10, ' m'],
       ['STREET_END_M', 'The plaza at', 50, 1000, 10, ' m'],
       ['COLLAPSE_SPEED', 'Street falls at', 40, 300, 5, ' px/s'],
-      ['DOOR_TIME', 'Door takes', 1, 120, 1, ' s'],
       ['WALL_PAST', 'Spire wall (depth past scroll point)', 0.6, 3, 0.05, '']
+    ] },
+    { title: 'The guardian', rows: [
+      ['BOSS_TRI_HP', 'Hits per triangle', 1, 40, 1, ''],
+      ['BOSS_CORE_HP', 'Hits for the core', 1, 60, 1, ''],
+      ['BOSS_SHOT_TIME', 'Its shots take', 0.4, 3, 0.05, ' s'],
+      ['BOSS_VOLLEY_SCALE', 'Time between volleys', 0.3, 3, 0.05, '\u00d7']
     ] }
   ];
 
@@ -3363,7 +3783,10 @@
         checkpointOffered: document.getElementById('checkpointBtn').style.display !== 'none',
         checkpoint: s.checkpoint ? { score: s.checkpoint.score } : null, continues: s.continues,
         collapseD: s.collapse ? s.collapse.d : null,
-        finale: s.finale ? { charge: s.finale.charge, open: s.finale.open, fences: s.finale.fences } : null,
+        finale: s.finale ? { charge: s.finale.charge, open: s.finale.open } : null,
+        boss: s.boss ? { mode: s.boss.mode, form: s.boss.form, facing: bossFacing(s.boss), hits: s.boss.hits, glances: s.boss.glances,
+          pieces: s.boss.pieces.map(function (p) { return { id: p.id, hp: p.hp, alive: p.alive }; }) } : null,
+        bossD: scene.bossD(), bossShots: s.bossShots.length, bossShotsFired: s.bossShotsFired || 0,
         lockD: scene.lockD(), plazaD: scene.plazaD(), wallD: scene.wallD(), bonus: s.bonus,
         input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y }
       };
@@ -3378,7 +3801,23 @@
     skipIntro: function () { jumpTo(0); var s = scene.state; s.px = EXIT_X; s.pd = EXIT_D; return true; },
     jumpTo: function (m) { jumpTo(m); return true; },
     fromCheckpoint: function () { scene.fromCheckpoint(); return true; },
-    setCharge: function (k) { var f = scene.state.finale; if (!f) return false; f.charge = k; return true; },
+    // Hits on the guardian: n on one piece (by id), or every piece down.
+    damageBoss: function (id, n) {
+      var b = scene.state.boss;
+      if (!b) return false;
+      b.pieces.forEach(function (p) { if (p.id === id && p.alive) scene.damageBossPiece(p, n || 1); });
+      return true;
+    },
+    killBoss: function () {
+      while (scene.state.boss) {
+        var p = scene.state.boss.pieces.filter(function (q) { return q.alive; })[0];
+        scene.damageBossPiece(p, p.hp);
+      }
+      return true;
+    },
+    bossReady: function () { var b = scene.state.boss; if (!b) return false; b.pieces.forEach(function (p) { p.docked = true; }); b.mode = 'fight'; b.modeAge = 0; return true; },
+    setBossVolley: function (t) { var b = scene.state.boss; if (!b) return false; b.volleyTimer = t; return true; },
+    bossHitAt: function (x) { var p = scene.bossHitAt(x); return p && p.id; },
     setCollapse: function (d) { var c = scene.state.collapse; if (!c) return false; c.d = d; c.lead = 0; return true; },
     clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; s.fences.length = 0; s.nextFenceM = Infinity; s.drops.length = 0; },
     setSpawning: function (on) { scene.state.spawning = !!on; },
