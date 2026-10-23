@@ -318,6 +318,7 @@
     <div class="overlay" id="overOverlay">
       <div class="overlay-title" id="overTitle">Overrun</div>
       <div class="overlay-line" id="overLine"></div>
+      <button type="button" class="btn" id="checkpointBtn" style="display:none">Carry on from 200 m</button>
       <button type="button" class="btn" id="againBtn">Walk it again</button>
       <a class="overlay-link" id="fromTopLink" href="head-on.html">Start over from Head-On</a>
     </div>
@@ -353,6 +354,11 @@
           <button type="button" class="lab-btn wide" data-jump="0.25">25%</button>
           <button type="button" class="lab-btn wide" data-jump="0.5">50%</button>
           <button type="button" class="lab-btn wide" data-jump="1">Full</button>
+        </div>
+        <div class="lab-actions">
+          <button type="button" class="lab-btn wide" data-jump-to="checkpoint">Checkpoint</button>
+          <button type="button" class="lab-btn wide" data-jump-to="run">The run</button>
+          <button type="button" class="lab-btn wide" data-jump-to="door">The door</button>
         </div>
         <div class="lab-row" style="margin-top:8px">
           <label for="labNoDeath">No death</label>
@@ -580,6 +586,28 @@
   var CLIMB_MAX_PEAK = 12;
   var CLIMB_SPEED = 45;        // px/s down the wall
 
+  // ---- The end of the street -----------------------------------------
+  // The level is STREET_END_M long. Past the checkpoint, the last
+  // stretch is the run: the street gives way behind you, a front of
+  // falling road chasing you up it faster than the rubble lets you
+  // walk - stop to fight and it comes up the bottom of the picture;
+  // touch it and you go down with it, jumping or not. It stops at the
+  // plaza in front of the spire, where the camera stops too: hold out
+  // there while the door at the spire's foot charges open, then walk
+  // in.
+  var CHECKPOINT_M = 200;      // a game over from here on can carry on from here
+  var RUN_START_M = 350;       // the street starts to fall in behind you
+  var STREET_END_M = 400;      // the plaza: the camera stops here
+  var COLLAPSE_SPEED = 130;    // px/s the falling front comes up the street
+  var COLLAPSE_LEAD = 1.2;     // seconds' rumble before it starts to move
+  var DOOR_TIME = 30;          // seconds of holding the plaza before the door opens
+  var PLAZA_FROM = 1.4;        // the last towers stand this far (z) past where the camera stops
+  var WALL_PAST = 2;           // the spire's wall: this far (z) past the scroll point, once stopped
+  var DOOR_HALF = 44;          // px either side of the centre: the door's half width
+  var DOOR_H = 130;
+  var WIN_BONUS = 5000;        // for walking in...
+  var LIFE_BONUS = 1000;       // ...and for each life left
+
   var SCORE = { grunt: 100, dasher: 150, brute: 500, fire: 50 };
   var ENEMY_KINDS = {
     grunt: { r: 11, h: 32, hp: 1, speed: 1, colors: [0x38bdf8, 0xf472b6] },
@@ -633,7 +661,9 @@
     AHEAD_START_M: AHEAD_START_M, AHEAD_EVERY_START: AHEAD_EVERY_START, AHEAD_EVERY_PEAK: AHEAD_EVERY_PEAK,
     AHEAD_MAX_START: AHEAD_MAX_START, AHEAD_MAX_PEAK: AHEAD_MAX_PEAK, AHEAD_SIZE: AHEAD_SIZE,
     CLIMB_EVERY_START: CLIMB_EVERY_START, CLIMB_EVERY_PEAK: CLIMB_EVERY_PEAK,
-    CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED
+    CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
+    CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
+    COLLAPSE_SPEED: COLLAPSE_SPEED, DOOR_TIME: DOOR_TIME
   };
   var TUNING = {};
   function resetTuning() { Object.keys(TUNING_DEFAULTS).forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; }); }
@@ -715,7 +745,9 @@
       land: function () { blip(140, 90, 0.06, 'triangle', 0.05); },
       pulse: function () { blip(80, 1600, 0.9, 'sawtooth', 0.14); blip(2400, 60, 1.2, 'square', 0.06); },
       fenceUp: function () { blip(120, 900, 0.6, 'sawtooth', 0.04); },
-      fenceOn: function () { blip(1400, 200, 0.16, 'square', 0.07); }
+      fenceOn: function () { blip(1400, 200, 0.16, 'square', 0.07); },
+      rumble: function () { blip(70, 28, 1.1, 'sawtooth', 0.09); },
+      door: function () { blip(180, 1400, 1.4, 'sine', 0.12); blip(90, 360, 1.4, 'triangle', 0.08); }
     };
   })();
 
@@ -1000,11 +1032,13 @@
     this.bannerText = this.add.text(CX, 92, '', { fontFamily: ts.fontFamily, fontSize: '13px', fontStyle: 'bold', color: '#fde68a' })
       .setOrigin(0.5).setDepth(10).setResolution(2);
     this.bannerText.setLetterSpacing && this.bannerText.setLetterSpacing(2);
+    this.bannerSub = this.add.text(CX, 110, '', Object.assign({}, ts, { fontSize: '11px', color: '#cbd5e1' })).setOrigin(0.5).setDepth(10).setResolution(2);
 
     this.best = 0;
     try { this.best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) {}
     var self = this;
     document.getElementById('againBtn').addEventListener('click', function () { self.restart(); });
+    document.getElementById('checkpointBtn').addEventListener('click', function () { self.fromCheckpoint(); });
     this.restart();
     var fade = document.getElementById('arrivalFade');
     if (fade) window.setTimeout(function () { fade.classList.remove('visible'); }, 60);
@@ -1032,6 +1066,9 @@
       grenades: 0, drops: [], pulse: null, grenadesUsed: 0,
       buildings: [], lamps: [], nextBuild: [0, 0], nextLamp: 0, fences: [], nextFenceM: 0, fenceBanner: false,
       banner: null, flash: 0, shake: 0,
+      // The end of the street: the checkpoint once reached, the falling
+      // front once the run starts, the door once you are in the plaza.
+      checkpoint: null, continues: 0, collapse: null, finale: null, bonus: 0,
       invincible: prev ? prev.invincible : false,
       spawning: prev ? prev.spawning : true
     };
@@ -1050,12 +1087,32 @@
     document.getElementById('overOverlay').classList.remove('visible');
   };
 
+  // After a game over past the checkpoint: a fresh set of lives, back
+  // at the checkpoint with the score (and grenades) you had there.
+  MainScene.prototype.fromCheckpoint = function () {
+    var cp = this.state.checkpoint, continues = this.state.continues + 1;
+    if (!cp) return this.restart();
+    this.restart();
+    jumpTo(TUNING.CHECKPOINT_M);
+    var s = this.state;
+    s.checkpoint = cp; s.continues = continues;
+    s.score = cp.score; s.grenades = cp.grenades;
+    while (s.nextLife <= s.score) s.nextLife += EXTRA_LIFE_EVERY;
+    s.invuln = INVULN_TIME;
+    s.banner = { text: 'CHECKPOINT', age: 0 };
+  };
+
   // ---- Projection ----------------------------------------------------
   MainScene.prototype.zOf = function (d) { return (d - this.state.camD) / DEPTH_PX; };
   MainScene.prototype.sx = function (x, z) { return CX + this.shakeX + (x - this.state.camX) / z; };
   MainScene.prototype.sy = function (y, z) { return CY + this.shakeY + (y - CAM_Y) / z; };
 
   MainScene.prototype.progressM = function () { return this.state.camD / PX_PER_M; };
+  // Where the street ends: the camera stops at lockD; the towers stop at
+  // plazaD; the spire's wall, with the door in it, stands at wallD.
+  MainScene.prototype.lockD = function () { return TUNING.STREET_END_M * PX_PER_M; };
+  MainScene.prototype.plazaD = function () { return this.lockD() + PLAZA_FROM * DEPTH_PX; };
+  MainScene.prototype.wallD = function () { return this.lockD() + (TUNING.PLAYER_Z_PUSH + WALL_PAST) * DEPTH_PX; };
   MainScene.prototype.difficulty = function () { return difficultyAt(this.progressM()); };
 
   // ---- Update --------------------------------------------------------
@@ -1093,11 +1150,18 @@
       this.stepFences(dt);
       this.stepDrops(dt);
       this.stepPulse(dt);
+      this.stepCollapse(dt);
+      this.stepFinale(dt);
       this.checkContact();
       if (s.invuln > 0) s.invuln = Math.max(0, s.invuln - dt);
     } else if (s.mode === 'dying') {
       // Everything holds still while you go up - Robotron's freeze.
       if (s.modeAge >= DEATH_TIME) this.afterDeath();
+    } else if (s.mode === 'won') {
+      // Into the light.
+      s.pd += 70 * dt;
+      s.finale.openAge += dt;
+      s.whiteout = Math.max(0, s.whiteout - dt * 1.2);
     }
     this.stepCamX(dt);
     this.buildStreet();
@@ -1128,7 +1192,7 @@
     if (t >= INTRO_TIME) {
       s.elev = 0;
       this.setMode('walking');
-      s.banner = { text: 'MAIN STREET', age: 0 };
+      s.banner = { text: 'MAIN STREET', sub: Math.round(TUNING.STREET_END_M) + ' m to the spire', age: 0 };
       if (s.spawning) this.seedClimbers();
     }
   };
@@ -1151,7 +1215,7 @@
     var nx = s.px + s.vx * dt, nd = s.pd + s.vd * dt;
     s.px = clamp(nx, -STREET_HALF, STREET_HALF);
     var dMin = s.camD + PLAYER_Z_MIN * DEPTH_PX;
-    s.pd = Math.max(nd, dMin);
+    s.pd = clamp(nd, dMin, this.wallD() - 26);
     if (s.px !== nx) s.vx = 0;
     if (s.pd !== nd) s.vd = 0;
     var sp = Math.hypot(s.vx, s.vd);
@@ -1199,7 +1263,7 @@
   // of the ship deeper than a low scroll point) closes in a glide, not
   // a jump.
   MainScene.prototype.stepCamera = function (dt) {
-    var s = this.state, want = s.pd - TUNING.PLAYER_Z_PUSH * DEPTH_PX;
+    var s = this.state, want = Math.min(s.pd - TUNING.PLAYER_Z_PUSH * DEPTH_PX, this.lockD());
     if (want > s.camD) s.camD = Math.min(want, s.camD + CAM_CATCHUP * dt);
     var m = this.progressM();
     if (m > s.bestM) {
@@ -1209,6 +1273,19 @@
     }
     var block = Math.floor(m / BLOCK_M);
     if (block > s.block) { s.block = block; s.banner = { text: 'BLOCK ' + (block + 1), age: 0 }; }
+    if (!s.checkpoint && m >= TUNING.CHECKPOINT_M) {
+      s.checkpoint = { score: s.score, grenades: s.grenades };
+      s.banner = { text: 'CHECKPOINT', age: 0 };
+      Sound.life();
+    }
+    if (!s.collapse && m >= TUNING.RUN_START_M) {
+      s.collapse = { d: Math.min(s.camD, s.pd - 260), lead: COLLAPSE_LEAD, rumble: 0, debris: [], jag: [] };
+      for (var j = 0; j < 48; j++) s.collapse.jag.push(rand(-1, 1));
+      s.banner = { text: 'THE STREET IS FALLING \u2014 RUN', age: 0 };
+      s.shake = Math.max(s.shake, 0.8);
+      Sound.rumble();
+    }
+    if (!s.finale && s.camD >= this.lockD()) this.beginHold();
   };
 
   MainScene.prototype.stepCamX = function (dt) {
@@ -1216,15 +1293,144 @@
     s.camX += (s.px * CAM_X_FOLLOW - s.camX) * (1 - Math.exp(-5 * dt));
   };
 
+  // ---- The run ---------------------------------------------------------
+  // The front of the collapse: everything behind it (nearer the camera)
+  // has fallen in. It comes up the street at a steady pace - faster than
+  // you can cross rubble, slower than you walk - and stops short of the
+  // plaza, just under the bottom of the picture once the camera stops.
+  MainScene.prototype.stepCollapse = function (dt) {
+    var s = this.state, c = s.collapse, self = this;
+    if (!c) return;
+    c.rumble -= dt;
+    if (c.rumble <= 0) { c.rumble = rand(1, 1.6); Sound.rumble(); }
+    if (c.lead > 0) { c.lead -= dt; s.shake = Math.max(s.shake, 0.35); }
+    else c.d = Math.min(c.d + TUNING.COLLAPSE_SPEED * dt, this.lockD() + DEPTH_PX * 0.45);
+    if (c.d < this.lockD() + DEPTH_PX * 0.45) s.shake = Math.max(s.shake, 0.12);
+    // Lumps of road going down into it.
+    if (this.zOf(c.d) > 0.5 && Math.random() < dt * 14) {
+      c.debris.push({ x: rand(-260, 260) + s.camX, d: c.d + rand(-4, 10), y: GROUND_Y, vy: rand(20, 80), w: rand(6, 18), rot: rand(0, 6.3), spin: rand(-4, 4) });
+    }
+    for (var i = c.debris.length - 1; i >= 0; i--) {
+      var b = c.debris[i];
+      b.vy += 420 * dt; b.y += b.vy * dt; b.rot += b.spin * dt;
+      if (b.y > GROUND_Y + 700) c.debris.splice(i, 1);
+    }
+    // Whatever is on the fallen part goes down with it.
+    var edge = c.d;
+    s.enemies.slice().forEach(function (e) {
+      if (e.climb > 0 || e.d >= edge) return;
+      self.burst(e.x, GROUND_Y - e.h / 2, e.d, COLOR_GLOW_RED, false, 16);
+      self.killEnemy(e, false);
+    });
+    s.fences = s.fences.filter(function (o) { return o.d >= edge; });
+    s.craters = s.craters.filter(function (o) { return o.d + o.r >= edge; });
+    s.portals = s.portals.filter(function (o) { return o.d >= edge; });
+    s.drops = s.drops.filter(function (o) { return o.d >= edge; });
+    s.lamps = s.lamps.filter(function (o) { return o.d >= edge; });
+    s.buildings.forEach(function (o) { if (o.d < edge && !o.sink) o.sink = 0.001; });
+    s.buildings.forEach(function (o) { if (o.sink) o.sink += dt * (60 + o.sink * 3); });
+    if (s.pd - PLAYER_R < edge) this.die('collapse');
+  };
+
+  // ---- The plaza and the door ------------------------------------------
+  MainScene.prototype.beginHold = function () {
+    var s = this.state;
+    s.camD = this.lockD();
+    s.nextFenceM = Infinity;
+    s.finale = { age: 0, charge: 0, open: false, openAge: 0, arena: 2, wallFire: 3, wallClimb: 0.5, fence: rand(2, 4), fences: 0 };
+    s.banner = { text: 'HOLD ON \u2014 THE DOOR IS OPENING', age: 0 };
+    Sound.rumble();
+  };
+
+  // The arena: while the door charges, they come from every side, the
+  // spire's own wall crawls and throws fire, and fences flick on across
+  // the plaza and off again - faster as the door nears open. Once it is
+  // open nothing new comes: clear a way in.
+  MainScene.prototype.stepFinale = function (dt) {
+    var s = this.state, f = s.finale;
+    if (!f) return;
+    f.age += dt;
+    if (f.open) {
+      f.openAge += dt;
+      if (s.pd >= this.wallD() - 30 && Math.abs(s.px) < DOOR_HALF) this.win();
+      return;
+    }
+    f.charge = Math.min(1, f.charge + dt / Math.max(1, TUNING.DOOR_TIME));
+    if (f.charge >= 1) {
+      f.open = true; f.openAge = 0;
+      s.banner = { text: 'THE DOOR IS OPEN \u2014 GO IN', age: 0 };
+      s.shake = 0.6;
+      Sound.door();
+      return;
+    }
+    var k = f.charge, wall = this.wallD();
+    if (!s.spawning || s.pulse) return;
+    f.arena -= dt;
+    if (f.arena <= 0) {
+      f.arena = lerp(2.6, 1.3, k) * rand(0.8, 1.2);
+      var from = pick(['side', 'side', 'behind', 'ahead']), n = 2 + (Math.random() < k ? 1 : 0);
+      for (var i = 0; i < n && this.alive() < this.maxAlive() + 4; i++) this.spawnEnemy(null, from);
+    }
+    f.wallClimb -= dt;
+    if (f.wallClimb <= 0) {
+      f.wallClimb = lerp(1.6, 0.9, k) * rand(0.7, 1.3);
+      if (this.climbers() < 10) {
+        var x = (Math.random() < 0.5 ? -1 : 1) * rand(DOOR_HALF + 20, STREET_HALF + 60);
+        this.addEnemy(this.pickKind(), x, wall - 20).climb = rand(150, 320);
+      }
+    }
+    f.wallFire -= dt;
+    if (f.wallFire <= 0) {
+      f.wallFire = lerp(3.4, 2, k) * rand(0.8, 1.2);
+      this.launchFire({ x: (Math.random() < 0.5 ? -1 : 1) * rand(DOOR_HALF + 30, 260), y: rand(-260, 20), d: wall - 6, wall: true });
+    }
+    // A fence across the plaza, somewhere you are not standing; it
+    // stays on a few seconds, then winds down.
+    f.fence -= dt;
+    if (f.fence <= 0 && !s.fences.length) {
+      f.fence = lerp(5, 3, k) * rand(0.8, 1.25);
+      var lo = s.camD + DEPTH_PX * 0.9, hi = wall - 70, d = 0;
+      for (var t = 0; t < 8; t++) { d = rand(lo, hi); if (Math.abs(d - s.pd) > 70) break; }
+      if (hi > lo && Math.abs(d - s.pd) > 70) { this.addFence(d).life = rand(3, 4.5); f.fences++; }
+    }
+  };
+
+  MainScene.prototype.win = function () {
+    var s = this.state;
+    if (s.mode !== 'walking') return;
+    s.bonus = WIN_BONUS + LIFE_BONUS * s.lives;
+    s.score += s.bonus;
+    this.setMode('won');
+    s.whiteout = 1;
+    Sound.life();
+    if (s.score > this.best) {
+      this.best = s.score;
+      try { localStorage.setItem(BEST_KEY, String(s.score)); } catch (e) {}
+    }
+    var secs = Math.round(s.t), time = Math.floor(secs / 60) + ':' + ('0' + secs % 60).slice(-2);
+    document.getElementById('overTitle').textContent = 'The spire';
+    document.getElementById('overLine').innerHTML =
+      'Through the door in ' + time + '.<br>' + s.kills.toLocaleString() + ' aliens &middot; ' +
+      s.grenadesUsed + ' grenade' + (s.grenadesUsed === 1 ? '' : 's') + ' &middot; ' + s.lives + ' li' + (s.lives === 1 ? 'fe' : 'ves') + ' left' +
+      (s.continues ? ' &middot; ' + s.continues + ' continue' + (s.continues === 1 ? '' : 's') : '') +
+      '<br>Bonus ' + s.bonus.toLocaleString() + ' &middot; score ' + s.score.toLocaleString() + ' &middot; best ' + this.best.toLocaleString() +
+      '<br><i>To be continued&hellip;</i>';
+    document.getElementById('checkpointBtn').style.display = 'none';
+    setTimeout(function () {
+      if (scene && scene.state === s && s.mode === 'won') document.getElementById('overOverlay').classList.add('visible');
+    }, 1400);
+  };
+
   // ---- The street ------------------------------------------------------
   // Towers down both sides, built ahead of you as you go and dropped once
   // they are behind the camera. descent.html's towers: flat, dark, a
   // neon edge and a grid of windows.
   MainScene.prototype.buildStreet = function () {
-    var s = this.state, far = s.camD + Z_FAR * DEPTH_PX;
+    var s = this.state, far = s.camD + Z_FAR * DEPTH_PX, plaza = this.plazaD();
     for (var side = 0; side < 2; side++) {
       var sg = side ? 1 : -1;
-      while (s.nextBuild[side] < far) {
+      // None past the mouth of the plaza: open ground up to the spire.
+      while (s.nextBuild[side] < Math.min(far, plaza)) {
         var w = rand(60, 130);
         var top = rand(-430, -110);
         var cols = Math.max(2, Math.round(w / 18)), rows = Math.max(3, Math.round((GROUND_Y - top) / 22));
@@ -1240,7 +1446,7 @@
         s.nextBuild[side] += Math.random() < 0.05 ? rand(320, 420) : rand(100, 190);
       }
     }
-    while (s.nextLamp < far) {
+    while (s.nextLamp < Math.min(far, this.wallD() - 100)) {
       s.lamps.push({ kind: 'lamp', x: -STREET_HALF - 18, d: s.nextLamp });
       s.lamps.push({ kind: 'lamp', x: STREET_HALF + 18, d: s.nextLamp });
       s.nextLamp += 300;
@@ -1261,6 +1467,7 @@
       var f = s.fences[i], was = f.live;
       f.age += dt;
       if (f.down != null) f.down += dt;
+      else if (f.life && f.age > f.life) { f.down = 0; Sound.fenceOn(); }
       f.live = f.down == null && f.age >= TUNING.FENCE_POWERUP;
       if (f.live && !was) Sound.fenceOn();
     }
@@ -1356,7 +1563,7 @@
 
   MainScene.prototype.stepSpawning = function (dt) {
     var s = this.state, D = this.difficulty();
-    if (!s.spawning || s.pulse) return;
+    if (!s.spawning || s.pulse || (s.finale && s.finale.open)) return;
     var every = Math.max(2, this.groupEvery());
     while (s.spawnAcc >= every) {
       s.spawnAcc -= every;
@@ -1475,10 +1682,10 @@
     // Measured from the scroll point, so moving it moves them with it.
     var push = TUNING.PLAYER_Z_PUSH, x, d;
     for (var tries = 0; tries < 6; tries++) {
-      if (from === 'ahead') { x = rand(-140, 140); d = s.camD + DEPTH_PX * (push + rand(1.5, 3.1)); }
+      if (from === 'ahead') { x = rand(-140, 140); d = Math.min(s.camD + DEPTH_PX * (push + rand(1.5, 3.1)), this.wallD() - rand(40, 90)); }
       else if (from === 'side') { x = (Math.random() < 0.5 ? -1 : 1) * (FACADE_X - 8); d = s.camD + DEPTH_PX * rand(1.1, push + 1.7); }
       else { x = rand(-140, 140); d = s.camD + DEPTH_PX * 0.62; }
-      if (Math.hypot(x - s.px, d - s.pd) > 150) break;
+      if (Math.hypot(x - s.px, d - s.pd) > 150 && !(s.collapse && d < s.collapse.d + 20)) break;
       from = 'ahead';
     }
     if (from === 'ahead') return this.addEnemy(kind, x, d);
@@ -1545,6 +1752,7 @@
       // Off a wall and into the street: stepped in, not snapped.
       var cx = clamp(e.x, -FACADE_X + 6, FACADE_X - 6);
       if (cx !== e.x) e.x += (cx - e.x) * Math.min(1, dt * 5);
+      e.d = Math.min(e.d, this.wallD() - 20);
     }
     for (var bi = 0; bi < burnt.length; bi++) this.killEnemy(burnt[bi], false);
     // Into a fence: zapped.
@@ -1672,7 +1880,7 @@
     var s = this.state;
     var lo = s.camD + DEPTH_PX * (TUNING.PLAYER_Z_PUSH + 0.1), hi = s.camD + DEPTH_PX * (TUNING.PLAYER_Z_PUSH + 2.5);
     var towers = s.buildings.filter(function (o) { return o.d > lo && o.d < hi; });
-    var o = opts && opts.tower || (towers.length ? pick(towers) : null);
+    var o = opts && (opts.tower || opts.x != null) ? opts.tower || null : towers.length ? pick(towers) : null;
     if (!o && !(opts && opts.x != null)) return null;
     var F = fireDifficultyAt(this.progressM());
     var wx = opts && opts.x != null ? opts.x : o.x - o.side * o.w * rand(0.1, 0.35);
@@ -1689,6 +1897,7 @@
       charge: opts && opts.charge != null ? opts.charge : FIRE_CHARGE,
       aimAt: opts && opts.target || null,
       spread: !!(opts && opts.spread),
+      wall: !!(opts && opts.wall),
       ahead: !!(opts && opts.ahead),
       size: opts && opts.size || 1
     };
@@ -1865,6 +2074,8 @@
     // Back on your feet a step short of a fence, not in it.
     var fz = this.fenceAt(s.pd, PLAYER_R + 30);
     if (fz) s.pd = Math.max(s.camD + PLAYER_Z_MIN * DEPTH_PX, fz.d - PLAYER_R - 30);
+    // ...and with the falling street pushed back off you.
+    if (s.collapse) s.collapse.d = Math.min(s.collapse.d, s.pd - 240);
     s.invuln = INVULN_TIME;
     this.setMode('walking');
   };
@@ -1878,6 +2089,8 @@
       try { localStorage.setItem(BEST_KEY, String(s.score)); } catch (e) {}
     }
     document.getElementById('overTitle').textContent = 'Overrun';
+    document.getElementById('checkpointBtn').style.display = s.checkpoint ? '' : 'none';
+    document.getElementById('checkpointBtn').textContent = 'Carry on from ' + Math.round(TUNING.CHECKPOINT_M) + ' m';
     document.getElementById('overLine').textContent = m.toLocaleString() + ' m down Main Street · score ' +
       s.score.toLocaleString() + ' · best ' + this.best.toLocaleString() + runLine();
     setTimeout(function () {
@@ -1919,7 +2132,10 @@
     function add(list) { for (var i = 0; i < list.length; i++) { var z = self.zOf(list[i].d); if (z >= Z_NEAR && z < Z_FAR) items.push({ o: list[i], z: z }); } }
     add(s.buildings); add(s.lamps); add(s.fences); add(s.drops); add(s.enemies); add(s.bullets); add(s.fires); add(s.bursts);
     items.push({ o: { kind: 'ship' }, z: this.zOf(s.ship.d) });
-    if (s.mode !== 'over' && !(s.mode === 'dying') && !(s.mode === 'intro' && s.emerge <= 0)) items.push({ o: { kind: 'player' }, z: this.zOf(s.pd) });
+    var zw = this.zOf(this.wallD());
+    if (zw >= Z_NEAR && zw < Z_FAR) items.push({ o: { kind: 'wall' }, z: zw });
+    var shown = s.mode === 'walking' || (s.mode === 'intro' && s.emerge > 0) || (s.mode === 'won' && s.modeAge < 0.5);
+    if (shown) items.push({ o: { kind: 'player' }, z: this.zOf(s.pd) });
     items.sort(function (a, b) { return b.z - a.z; });
     var g = this.gWorld;
     for (var i = 0; i < items.length; i++) {
@@ -1933,6 +2149,7 @@
       else if (o.kind === 'fire') this.drawFire(g, o, z);
       else if (o.kind === 'burst') this.drawBurst(g, o, z);
       else if (o.kind === 'ship') this.drawShip(g, z);
+      else if (o.kind === 'wall') this.drawWall(g, z);
       else if (o.kind === 'player') this.drawPlayer(g, z);
     }
     this.drawFx();
@@ -2032,7 +2249,7 @@
     // The centre line: dashes at fixed depths.
     var dash = 70, gap = 90, period = dash + gap;
     g.lineStyle(2, 0xf0abfc, 0.5);
-    for (var dd = Math.floor(s.camD / period) * period; dd < s.camD + 20 * DEPTH_PX; dd += period) {
+    for (var dd = Math.floor(s.camD / period) * period; dd < Math.min(s.camD + 20 * DEPTH_PX, this.plazaD()); dd += period) {
       var za = Math.max(zl, this.zOf(dd)), zb = this.zOf(dd + dash);
       if (zb <= za) continue;
       g.lineBetween(this.sx(0, za), this.sy(G, za), this.sx(0, zb), this.sy(G, zb));
@@ -2058,6 +2275,7 @@
       g.fillStyle(0xf0abfc, 0.15);
       g.fillEllipse(cx, cy, w * 0.5, h * 0.5);
     }
+    this.drawPlaza(g);
     // Craters: the road broken open, burning or burnt out.
     this.drawCraters(g);
     // Portals: a ring opening on the ground in the alien's colour.
@@ -2113,6 +2331,148 @@
     }
     s.enemies.forEach(function (e) { if (!e.climb) shadow(e.x, e.d, e.r); });
     if (s.mode === 'walking' || (s.mode === 'intro' && s.emerge >= 1)) shadow(s.px, s.pd, PLAYER_R, s.elev);
+    this.drawCollapse(g);
+  };
+
+  // A loop on the ground, flat: the plaza's rings.
+  MainScene.prototype.groundLoop = function (g, cx, cd, rx, rd) {
+    var pts = [];
+    for (var i = 0; i <= 48; i++) {
+      var an = i / 48 * Math.PI * 2, z = this.zOf(cd + Math.sin(an) * rd);
+      if (z < Z_NEAR) return;
+      pts.push({ x: this.sx(cx + Math.cos(an) * rx, z), y: this.sy(GROUND_Y, z) });
+    }
+    g.strokePoints(pts, true);
+  };
+
+  // The plaza at the foot of the spire: rings set in the ground, lit
+  // brighter as the door charges, and the door's light across them
+  // once it is open.
+  MainScene.prototype.drawPlaza = function (g) {
+    var s = this.state, f = s.finale, wall = this.wallD(), plaza = this.plazaD(), G = GROUND_Y;
+    if (this.zOf(plaza) > Z_FAR) return;
+    var mid = (plaza + wall) / 2, R = (wall - plaza) / 2, k = f ? f.charge : 0;
+    for (var i = 0; i < 3; i++) {
+      var r = R * (0.45 + 0.25 * i), pulse = 0.5 + 0.5 * Math.sin(s.t * 2.5 - i);
+      g.lineStyle(1.5, i === 1 ? 0x67e8f9 : 0xf0abfc, 0.18 + 0.4 * k * (0.6 + 0.4 * pulse));
+      this.groundLoop(g, 0, mid, r * 1.6, r);
+    }
+    var open = f && f.open ? smooth(f.openAge / 1.2) : 0;
+    if (open > 0) {
+      var z0 = this.zOf(wall), z1 = Math.max(Z_NEAR + 0.05, this.zOf(wall - 520));
+      g.fillStyle(0xddd6fe, 0.22 * open);
+      g.beginPath();
+      g.moveTo(this.sx(-DOOR_HALF, z0), this.sy(G, z0)); g.lineTo(this.sx(DOOR_HALF, z0), this.sy(G, z0));
+      g.lineTo(this.sx(DOOR_HALF * 3, z1), this.sy(G, z1)); g.lineTo(this.sx(-DOOR_HALF * 3, z1), this.sy(G, z1));
+      g.closePath(); g.fillPath();
+    }
+  };
+
+  // The run: the street gone behind its falling front - black, all the
+  // way down - with the broken lip of the road glowing neon red along a
+  // jagged line, and lumps of it going down.
+  MainScene.prototype.drawCollapse = function (g) {
+    var s = this.state, c = s.collapse, G = GROUND_Y;
+    if (!c) return;
+    var zc = this.zOf(c.d);
+    if (zc <= 0.05 || this.sy(G, zc) > GAME_HEIGHT + 30) return;
+    var W = (CX + 40) * zc + Math.abs(s.camX) + 60, step = 24, pts = [];
+    for (var wx = -Math.ceil(W / step) * step; wx <= W; wx += step) {
+      var j = c.jag[((Math.round(wx / step) % 48) + 48) % 48];
+      var z = Math.max(0.05, this.zOf(c.d + j * 16));
+      pts.push({ x: this.sx(wx, z), y: Math.min(this.sy(G, z), GAME_HEIGHT + 30) });
+    }
+    g.fillStyle(0x030108, 1);
+    g.beginPath();
+    g.moveTo(pts[0].x, pts[0].y);
+    for (var i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+    g.lineTo(pts[pts.length - 1].x, GAME_HEIGHT + 40); g.lineTo(pts[0].x, GAME_HEIGHT + 40);
+    g.closePath(); g.fillPath();
+    // Heat under the lip, then the lip itself.
+    var pulse = 0.75 + 0.25 * Math.sin(s.t * 9);
+    var under = pts.map(function (p) { return { x: p.x, y: p.y + 5 }; });
+    g.lineStyle(8, COLOR_GLOW_RED, 0.12 * pulse); g.strokePoints(under, false);
+    g.lineStyle(7, COLOR_GLOW_RED, 0.16 * pulse); g.strokePoints(pts, false);
+    g.lineStyle(3, COLOR_GLOW_RED, 0.45 * pulse); g.strokePoints(pts, false);
+    g.lineStyle(1.2, 0xffc2cc, 0.9); g.strokePoints(pts, false);
+    for (var b = 0; b < c.debris.length; b++) {
+      var o = c.debris[b], zb = this.zOf(o.d);
+      if (zb < Z_NEAR) continue;
+      var bx = this.sx(o.x, zb), by = this.sy(o.y, zb), r = o.w / zb / 2, ca = Math.cos(o.rot) * r, sa = Math.sin(o.rot) * r;
+      var fade = clamp(1 - (o.y - G) / 600, 0, 1);
+      g.fillStyle(0x1b1233, fade);
+      g.fillTriangle(bx - ca, by - sa, bx + sa, by - ca * 0.6, bx + ca, by + sa);
+      g.lineStyle(1, COLOR_GLOW_RED, 0.6 * fade);
+      g.strokeTriangle(bx - ca, by - sa, bx + sa, by - ca * 0.6, bx + ca, by + sa);
+    }
+  };
+
+  // The spire's foot, across the end of the street: a sheer dark wall
+  // with neon ledges, the needle of the spire going up out of it to its
+  // beacon, and the door in the middle - its frame filling with light
+  // as it charges, its leaves sliding apart onto white light when open.
+  MainScene.prototype.drawWall = function (g, z) {
+    var s = this.state, f = s.finale, a = depthAlpha(z), G = GROUND_Y, t = s.t;
+    if (a <= 0) return;
+    var W = 1600, TOP = -300, lw = Math.max(1, 1.5 / z);
+    var xl = this.sx(-W, z), xr = this.sx(W, z), top = this.sy(TOP, z), base = this.sy(G + 2, z);
+    var cx = this.sx(0, z), hw = 80 / z, tip = this.sy(-2600, z);
+    g.fillStyle(0x0d0620, a);
+    g.fillTriangle(cx - hw, top + 1, cx + hw, top + 1, cx, tip);
+    g.lineStyle(lw, 0xf0abfc, a * 0.8);
+    g.lineBetween(cx - hw, top, cx, tip); g.lineBetween(cx + hw, top, cx, tip);
+    var bp = 0.5 + 0.5 * Math.sin(t * 3);
+    g.fillStyle(0xf0abfc, a * (0.2 + 0.3 * bp)); g.fillCircle(cx, tip, (5 + 6 * bp) / Math.sqrt(z));
+    g.fillStyle(0xffffff, a); g.fillCircle(cx, tip, Math.max(1, 2 / Math.sqrt(z)));
+    g.fillStyle(0x0d0620, a);
+    g.fillRect(xl, top, xr - xl, base - top);
+    g.lineStyle(lw, 0xa78bfa, a * 0.55);
+    [TOP, -190, -70, 30].forEach(function (h) { g.lineBetween(xl, this.sy(h, z), xr, this.sy(h, z)); }, this);
+    g.lineStyle(1, 0xa78bfa, a * 0.22);
+    for (var px = -800; px <= 800; px += 160) if (px) g.lineBetween(this.sx(px, z), top, this.sx(px, z), base);
+    var ws = Math.max(1, 3 / z);
+    for (var wx = -760; wx <= 760; wx += 40) {
+      for (var wy = -280; wy < -90; wy += 40) {
+        var h = Math.sin(wx * 12.9898 + wy * 78.233) * 43758.5453;
+        if (h - Math.floor(h) > 0.22) continue;
+        g.fillStyle(COLOR_WINDOWS[Math.floor((h * 7) % 4 + 4) % 4], a * (0.55 + 0.3 * Math.sin(t * 1.3 + wx)));
+        g.fillRect(this.sx(wx, z), this.sy(wy, z), ws, ws);
+      }
+    }
+    // The door.
+    var dl = this.sx(-DOOR_HALF, z), dr = this.sx(DOOR_HALF, z), dtop = this.sy(G - DOOR_H, z), dh = base - dtop;
+    var k = f ? f.charge : 0, open = f && f.open ? smooth(f.openAge / 1.2) : 0;
+    if (open > 0) {
+      g.fillStyle(0xc4b5fd, a * 0.25 * open); g.fillRect(dl - 14 / z, dtop - 14 / z, dr - dl + 28 / z, dh + 14 / z);
+      g.fillStyle(0xf5f3ff, a); g.fillRect(dl, dtop, dr - dl, dh);
+    }
+    var leaf = (dr - dl) / 2 * (1 - open);
+    if (leaf > 0.5) {
+      g.fillStyle(0x1a0b33, a);
+      g.fillRect(dl, dtop, leaf, dh); g.fillRect(dr - leaf, dtop, leaf, dh);
+      var seam = k * (0.6 + 0.4 * Math.sin(t * (4 + 10 * k)));
+      g.lineStyle(Math.max(1, 3 / z), 0xe0f2fe, a * seam);
+      g.lineBetween(dl + leaf, dtop, dl + leaf, base); g.lineBetween(dr - leaf, dtop, dr - leaf, base);
+    }
+    g.lineStyle(Math.max(1, 2 / z), 0xf0abfc, a * 0.8);
+    g.strokeRect(dl, dtop, dr - dl, dh);
+    // The charge, climbing both sides of the frame.
+    if (k > 0) {
+      var up = base - dh * k;
+      g.lineStyle(Math.max(1.5, 4 / z), 0x67e8f9, a);
+      g.lineBetween(dl, base, dl, up); g.lineBetween(dr, base, dr, up);
+      g.fillStyle(0x67e8f9, a * 0.25); g.fillCircle(dl, up, 6 / z); g.fillCircle(dr, up, 6 / z);
+    }
+    // A window in the wall about to throw.
+    for (var i = 0; i < s.fires.length; i++) {
+      var fi = s.fires[i];
+      if (!fi.wall) continue;
+      var kk = fi.stage === 'charge' ? fi.age / fi.charge : Math.max(0, 1 - fi.age / 0.4);
+      if (kk <= 0) continue;
+      var fx = this.sx(fi.x0, z), fy = this.sy(fi.y0, z);
+      g.fillStyle(COLOR_FIRE, a * 0.25 * kk); g.fillCircle(fx, fy, (6 + 14 * kk) / z);
+      g.fillStyle(COLOR_FLAME_INNER, a * kk); g.fillRect(fx - 4 / z, fy - 5 / z, 8 / z, 10 / z);
+    }
   };
 
   // How strongly a falling fireball's landing spot is marked: 0 until
@@ -2183,9 +2543,12 @@
 
   MainScene.prototype.drawTower = function (g, o, z) {
     var a = depthAlpha(z) * (z < 0.6 ? clamp((z - Z_NEAR) / 0.25, 0, 1) : 1);
+    // Going down with the street.
+    var sink = o.sink || 0;
+    if (sink) a *= clamp(1 - sink / 500, 0, 1);
     if (a <= 0) return;
-    var G = GROUND_Y, x = this.sx(o.x, z), hw = o.w / 2 / z;
-    var top = this.sy(o.top, z), base = this.sy(G + 10, z);
+    var G = GROUND_Y + sink, x = this.sx(o.x, z), hw = o.w / 2 / z;
+    var top = this.sy(o.top + sink, z), base = this.sy(G + 10, z);
     g.fillStyle(0x120a24, a);
     g.fillRect(x - hw, top, hw * 2, base - top);
     if (o.shape === 'stepped') {
@@ -2657,10 +3020,38 @@
       g.fillStyle(0x3a2d24, 1); g.fillCircle(x, y + 1.5, 3);
     }
     if (s.lives > 8) { g.fillStyle(0xe2e8f0, 1); g.fillRect(16 + 8 * 14 - 2, 18, 4, 1); }
+    this.drawProgress(g);
     if (s.banner) {
+      var ba = clamp(Math.min(s.banner.age / 0.2, (2.6 - s.banner.age) / 0.6), 0, 1);
       this.bannerText.setText(s.banner.text);
-      this.bannerText.setAlpha(clamp(Math.min(s.banner.age / 0.2, (2.6 - s.banner.age) / 0.6), 0, 1));
-    } else this.bannerText.setAlpha(0);
+      this.bannerText.setAlpha(ba);
+      this.bannerSub.setText(s.banner.sub || '');
+      this.bannerSub.setAlpha(ba);
+    } else { this.bannerText.setAlpha(0); this.bannerSub.setAlpha(0); }
+  };
+
+  // How far to the spire, top centre: a thin bar filling as you go, a
+  // tick at the checkpoint (lit once reached) and one where the run
+  // starts, the spire at the end. In the plaza it becomes the door's
+  // charge.
+  var BAR_X = 128, BAR_W = 104, BAR_Y = 13;
+  MainScene.prototype.drawProgress = function (g) {
+    var s = this.state, f = s.finale, end = Math.max(1, TUNING.STREET_END_M);
+    g.fillStyle(0x1e293b, 0.9); g.fillRect(BAR_X, BAR_Y - 1.5, BAR_W, 3);
+    if (f) {
+      g.fillStyle(f.open ? 0xf5f3ff : 0x67e8f9, 1);
+      g.fillRect(BAR_X, BAR_Y - 1.5, BAR_W * f.charge, 3);
+    } else {
+      g.fillStyle(s.collapse ? COLOR_GLOW_RED : 0xfb923c, 1);
+      g.fillRect(BAR_X, BAR_Y - 1.5, BAR_W * clamp(s.bestM / end, 0, 1), 3);
+      var cp = BAR_X + BAR_W * clamp(TUNING.CHECKPOINT_M / end, 0, 1), rn = BAR_X + BAR_W * clamp(TUNING.RUN_START_M / end, 0, 1);
+      g.fillStyle(s.checkpoint ? 0xfde68a : 0x94a3b8, 1); g.fillRect(cp - 0.75, BAR_Y - 4, 1.5, 8);
+      g.fillStyle(COLOR_GLOW_RED, 0.9); g.fillRect(rn - 0.75, BAR_Y - 4, 1.5, 8);
+    }
+    // The spire.
+    var sx = BAR_X + BAR_W + 7;
+    g.fillStyle(f && f.open ? 0xf5f3ff : 0xf0abfc, 1);
+    g.fillTriangle(sx - 3, BAR_Y + 4, sx + 3, BAR_Y + 4, sx, BAR_Y - 7);
   };
 
   // ==================================================================
@@ -2743,6 +3134,13 @@
       ['CLIMB_MAX_START', 'Most on walls (start)', 0, 20, 1, ''],
       ['CLIMB_MAX_PEAK', 'Most on walls (full)', 0, 30, 1, ''],
       ['CLIMB_SPEED', 'Climb-down speed', 10, 150, 1, ' px/s']
+    ] },
+    { title: 'The end of the street', rows: [
+      ['CHECKPOINT_M', 'Checkpoint at', 0, 1000, 10, ' m'],
+      ['RUN_START_M', 'The run starts at', 0, 1000, 10, ' m'],
+      ['STREET_END_M', 'The plaza at', 50, 1000, 10, ' m'],
+      ['COLLAPSE_SPEED', 'Street falls at', 40, 300, 5, ' px/s'],
+      ['DOOR_TIME', 'Door takes', 1, 120, 1, ' s']
     ] }
   ];
 
@@ -2881,9 +3279,25 @@
       setLabOpen(false);
     });
   });
+  // ...or to the parts of the end of the street.
+  var JUMP_TO = {
+    checkpoint: function () { return TUNING.CHECKPOINT_M - 3; },
+    run: function () { return TUNING.RUN_START_M - 3; },
+    door: function () { return TUNING.STREET_END_M; }
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-jump-to]'), function (btn) {
+    btn.addEventListener('click', function () {
+      if (!scene) return;
+      scene.restart();
+      scene.state.invincible = document.getElementById('labNoDeath').checked;
+      jumpTo(JUMP_TO[btn.getAttribute('data-jump-to')]());
+      setLabOpen(false);
+    });
+  });
   // Straight out onto the street, already `m` metres down it.
   function jumpTo(m) {
     var s = scene.state;
+    m = clamp(m, 0, TUNING.STREET_END_M);
     s.mode = 'walking'; s.modeAge = 0; s.emerge = 1; s.elev = 0;
     s.camD = m * PX_PER_M;
     s.bestM = m; s.block = Math.floor(m / BLOCK_M);
@@ -2942,6 +3356,12 @@
         fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size, u: f.stage === 'fly' ? f.age / f.flight : 0, marked: scene.fireMarked(f) }; }),
         buildings: s.buildings.length, banner: s.banner && s.banner.text,
         overlay: document.getElementById('overOverlay').classList.contains('visible'),
+        overTitle: document.getElementById('overTitle').textContent,
+        checkpointOffered: document.getElementById('checkpointBtn').style.display !== 'none',
+        checkpoint: s.checkpoint ? { score: s.checkpoint.score } : null, continues: s.continues,
+        collapseD: s.collapse ? s.collapse.d : null,
+        finale: s.finale ? { charge: s.finale.charge, open: s.finale.open, fences: s.finale.fences } : null,
+        lockD: scene.lockD(), plazaD: scene.plazaD(), wallD: scene.wallD(), bonus: s.bonus,
         input: { mx: move.x, my: move.y, ax: aim.x, ay: aim.y }
       };
     },
@@ -2954,6 +3374,9 @@
     restart: function () { scene.restart(); },
     skipIntro: function () { jumpTo(0); var s = scene.state; s.px = EXIT_X; s.pd = EXIT_D; return true; },
     jumpTo: function (m) { jumpTo(m); return true; },
+    fromCheckpoint: function () { scene.fromCheckpoint(); return true; },
+    setCharge: function (k) { var f = scene.state.finale; if (!f) return false; f.charge = k; return true; },
+    setCollapse: function (d) { var c = scene.state.collapse; if (!c) return false; c.d = d; c.lead = 0; return true; },
     clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; s.fences.length = 0; s.nextFenceM = Infinity; s.drops.length = 0; },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },

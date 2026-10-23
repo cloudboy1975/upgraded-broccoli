@@ -636,6 +636,107 @@ harness.run(async (page, check, ctx) => {
     await ctx2.close();
   }
 
+  // ---- The end of the street ----------------------------------------
+  // The checkpoint: reached, it is kept, and a game over after it can
+  // carry on from there with fresh lives and the score you had there.
+  {
+    await quietStreet(page);
+    await D(page, (m) => window.__streetDebug.jumpTo(m), T.CHECKPOINT_M - 1);
+    await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.clear(); d.setScore(1234); });
+    let st = await state(page);
+    await D(page, (pd) => window.__streetDebug.setPlayer(0, pd), st.pd + 60);
+    st = await until(page, (x) => x.checkpoint, 4000);
+    check('passing ' + T.CHECKPOINT_M + ' m makes a checkpoint, with the score then', st.checkpoint && st.checkpoint.score === 1234 && st.banner === 'CHECKPOINT', st.checkpoint);
+    await D(page, () => { const d = window.__streetDebug; d.setLives(1); const s = d.state(); d.spawnEnemy('grunt', s.px, s.pd); });
+    st = await until(page, (x) => x.overlay, 6000);
+    check('...a game over after it offers to carry on from it', st.mode === 'over' && st.overlay && st.checkpointOffered, st);
+    await page.locator('#checkpointBtn').dispatchEvent('click');
+    st = await state(page);
+    check('...which puts you back at the checkpoint, fresh lives, the score you had there',
+      st.mode === 'walking' && Math.abs(st.bestM - T.CHECKPOINT_M) < 1 && st.lives === T.LIVES && st.score === 1234 && st.continues === 1 && !st.overlay, st);
+    await quietStreet(page);
+    await D(page, () => { const d = window.__streetDebug; d.setLives(1); const s = d.state(); d.spawnEnemy('grunt', s.px, s.pd); });
+    st = await until(page, (x) => x.overlay, 6000);
+    check('...and a game over before it does not', st.mode === 'over' && !st.checkpointOffered, st);
+  }
+
+  // The run: past RUN_START_M the street falls in behind you, a front
+  // coming up it at COLLAPSE_SPEED; it takes the aliens behind it, and
+  // you if it reaches you - then, back on your feet, it is pushed back.
+  {
+    await quietStreet(page);
+    await D(page, (m) => window.__streetDebug.jumpTo(m), T.RUN_START_M - 1);
+    await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.clear(); });
+    let st = await state(page);
+    check('no collapse before the run', st.collapseD === null, st.collapseD);
+    await D(page, (pd) => window.__streetDebug.setPlayer(0, pd), st.pd + 60);
+    st = await until(page, (x) => x.collapseD !== null, 4000);
+    check('...past ' + T.RUN_START_M + ' m the street starts to fall, behind you, under a banner', st.collapseD !== null && st.collapseD < st.pd - 200 && /FALLING/.test(st.banner), st);
+    await D(page, () => window.__streetDebug.setInvincible(true));
+    const c0 = await D(page, () => { const s = window.__streetDebug.state(); window.__streetDebug.setCollapse(s.collapseD); return { d: s.collapseD, t: s.t }; });
+    st = await until(page, (x) => x.t > c0.t + 0.5, 6000);
+    const rate = (st.collapseD - c0.d) / (st.t - c0.t);
+    check('...coming up the street at ' + T.COLLAPSE_SPEED + ' px/s', Math.abs(rate - T.COLLAPSE_SPEED) < T.COLLAPSE_SPEED * 0.15, rate);
+    await D(page, () => { const d = window.__streetDebug, s = d.state(); d.spawnEnemy('grunt', 100, s.collapseD + 5); });
+    await D(page, () => { const d = window.__streetDebug, s = d.state(); d.setCollapse(s.collapseD + 30); });
+    st = await until(page, (x) => x.enemies.length === 0, 3000);
+    check('...an alien it reaches goes down with it', st.enemies.length === 0, st.enemies);
+    await D(page, () => { const d = window.__streetDebug; d.setInvincible(false); const s = d.state(); d.setCollapse(s.pd - 5); });
+    st = await until(page, (x) => x.mode !== 'walking', 3000);
+    check('...and it takes you if it reaches you', st.mode === 'dying' && st.lastDeath === 'collapse', st);
+    st = await until(page, (x) => x.mode === 'walking', 6000);
+    check('...pushed back off you when you are back on your feet', st.mode === 'walking' && st.collapseD <= st.pd - 200, st);
+  }
+
+  // The plaza: the camera stops, the spire's wall bounds it, the door
+  // charges over DOOR_TIME while the arena runs, fences flick on and off
+  // across it, and once it is open, walking in wins.
+  {
+    await quietStreet(page);
+    await D(page, () => window.__streetDebug.tune('DOOR_TIME', 4));
+    await D(page, (m) => window.__streetDebug.jumpTo(m), T.STREET_END_M);
+    let st = await until(page, (x) => x.finale, 3000);
+    check('at ' + T.STREET_END_M + ' m the plaza: the hold begins, under a banner', st.finale && !st.finale.open && /DOOR/.test(st.banner), st);
+    await D(page, () => { const d = window.__streetDebug; d.setInvincible(true); const s = d.state(); d.setPlayer(0, s.wallD + 500); });
+    st = await until(page, (x) => x.t > 0, 1000);
+    await page.waitForTimeout(300);
+    st = await state(page);
+    check('...the camera stops there, and the wall stops you', Math.abs(st.camD - st.lockD) < 1e-6 && st.pd <= st.wallD - 20, st);
+    await D(page, () => window.__streetDebug.setSpawning(true));
+    st = await until(page, (x) => x.enemies.length + x.portals > 2, 6000);
+    check('...the arena: they come for you there', st.enemies.length + st.portals > 2, st.enemies.length);
+    await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.clear(); d.setPlayer(0, d.state().lockD + 300); });
+    st = await until(page, (x) => x.finale.open, 12000);
+    check('...the door opens after DOOR_TIME', st.finale.open && st.mode === 'walking', st.finale);
+    await D(page, () => { const d = window.__streetDebug; d.setPlayer(0, d.state().wallD); });
+    st = await until(page, (x) => x.overlay, 6000);
+    check('...and walking in wins: the results', st.mode === 'won' && st.overlay && st.overTitle === 'The spire' && st.bonus > 0 && !st.checkpointOffered, st);
+    await D(page, (v) => window.__streetDebug.tune('DOOR_TIME', v), T.DOOR_TIME);
+  }
+  {
+    // Fences across the plaza, on and off again (sped up).
+    await quietStreet(page);
+    await D(page, (m) => window.__streetDebug.jumpTo(m), T.STREET_END_M);
+    await D(page, () => { const d = window.__streetDebug; d.setInvincible(true); d.setSpawning(true); d.timeScale = 3; });
+    let st = await until(page, (x) => x.finale && x.finale.fences > 0 && x.fences.length > 0, 12000);
+    const first = st.finale && st.finale.fences;
+    check('a fence switches on across the plaza', first > 0, st.finale);
+    st = await until(page, (x) => x.fences.length === 0, 15000);
+    check('...and goes off again a few seconds later', st.fences.length === 0, st.fences);
+    await D(page, () => { window.__streetDebug.timeScale = 1; window.__streetDebug.setSpawning(false); });
+  }
+  {
+    const lab = await D(page, () => ({
+      jumps: Array.from(document.querySelectorAll('[data-jump-to]')).map(b => b.getAttribute('data-jump-to')),
+      rows: ['RUN_START_M', 'STREET_END_M', 'COLLAPSE_SPEED', 'DOOR_TIME', 'CHECKPOINT_M'].every(k => window.__streetDebug.settingsReport().indexOf('(' + k + ')') >= 0)
+    }));
+    check('the lab jumps to the checkpoint, the run and the door, and has the finale settings', lab.jumps.join() === 'checkpoint,run,door' && lab.rows, lab);
+    await page.locator('[data-jump-to="door"]').dispatchEvent('click');
+    const st = await until(page, (x) => x.finale, 3000);
+    check('..."The door" goes straight to the plaza', !!st.finale, st.mode);
+    await quietStreet(page);
+  }
+
   // The settings exporter: every setting, changed ones first, and a line
   // of JSON that round-trips.
   {

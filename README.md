@@ -503,9 +503,46 @@ itself, for practice.
 
   The kinds of alien arrive at fixed distances, whatever the ramp's
   length: side doors from 30 m, dashers from 70 m, brutes from 170 m.
-  Attacks from behind are held back until 400 m, past this stretch.
+  Attacks from behind are held back until 400 m, the plaza.
   Standing still only brings the odd straggler, at the rate your
   distance has already set. A **BLOCK n** banner marks every 100 m.
+- **The end of the street.** The level is 400 m long. It opens on a
+  **MAIN STREET — 400 m to the spire** title, and a thin bar at the top
+  centre fills as you go, with ticks at the checkpoint and the run and
+  the spire at the end. The spire's foot shows at the end of the street
+  from about 260 m: a sheer dark wall with neon ledges, the needle of
+  the spire rising out of it to its beacon, and a door in the middle.
+  - **Checkpoint at 200 m.** A **CHECKPOINT** banner. A game over after
+    it offers **Carry on from 200 m**: fresh lives, back at 200 m with
+    the score and grenades you had there.
+  - **The run, from 350 m.** A **THE STREET IS FALLING — RUN** banner,
+    a rumble and a shake, and the street gives way behind you. The
+    fallen part is black, its broken lip a jagged neon-red line, with
+    lumps of road tumbling down into it. The front comes up the street
+    at 130 px/s: slower than you walk, faster than you cross rubble. Stop
+    to fight and it comes up the bottom of the picture. Touch it and you
+    go down with it (jumping doesn't help). It takes the aliens, fences,
+    craters and lamps behind it, and the towers sink into it. When you
+    come back after any death it's pushed back off you.
+  - **The plaza, at 400 m.** The towers end and the camera stops. The
+    falling street stops too, just under the bottom of the picture. The
+    wall bounds the plaza, which has rings set in the ground. **HOLD ON —
+    THE DOOR IS OPENING**: the door charges for 30 s, its frame filling
+    with light up both sides (the top bar shows the charge). Meanwhile
+    the arena runs. Aliens come from the sides, behind and ahead, the
+    spire's wall crawls with climbers and throws fire, and fences flick
+    on across the plaza (never where you're standing) and wind down a few
+    seconds later. It gets busier as the door nears open. Then **THE DOOR
+    IS OPEN — GO IN**: the leaves slide apart onto white light, which
+    spills across the plaza, and nothing new comes. Walk in for the
+    results, **The spire**: time, aliens, grenades used, lives left (and
+    any continues), a bonus of 5,000 plus 1,000 for each life left, the
+    score and your best. *To be continued…*
+
+  **The end of the street** in the lab sets the checkpoint, where the
+  run starts, where the plaza is, how fast the street falls and how
+  long the door takes. The lab's jumps also go straight to the
+  **Checkpoint**, **The run** or **The door**.
 - **Fits the visible screen.** The page measures the height you can
   actually see, instead of trusting CSS's `100dvh`, which some browsers
   and in-app web views overstate, cutting off the bottom of the
