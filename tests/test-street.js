@@ -705,6 +705,8 @@ harness.run(async (page, check, ctx) => {
     st = await until(page, (x) => x.enemies.length + x.portals > 2, 6000);
     check('...and they keep coming for you there', st.enemies.length + st.portals > 2, st.enemies.length);
     check('...but no fence switches on in the plaza', st.fenceLive.every((l) => !l), st.fences);
+    const kinds = await D(page, () => { const d = window.__streetDebug; d.clear(); const a = d.pickKinds(1000); d.spawnEnemy('brute', 0, d.state().pd + 150); const b = d.pickKinds(300); d.clear(); return { a, b }; });
+    check('...brutes are rare there, and never two at once', (kinds.a.brute || 0) < 1000 * T.PLAZA_BRUTES * 2 && !kinds.b.brute, kinds);
     await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.clear(); d.bossReady(); });
     const lowest = await D(page, () => window.__streetDebug.bossHitAt(0));
     check('...a low shot up the middle meets the lowest piece first', lowest === 'bottom', lowest);

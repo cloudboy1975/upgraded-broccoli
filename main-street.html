@@ -616,8 +616,11 @@
   // up from the bottom. When the last piece goes, the door opens.
   var BOSS_TRI_HP = 8;          // hits per triangle
   var BOSS_CORE_HP = 14;        // hits for the square
-  var BOSS_SHOT_TIME = 1.2;     // seconds its shots take to reach where you were
-  var BOSS_VOLLEY_SCALE = 1;    // x on every form's time between volleys
+  var BOSS_SHOT_TIME = 1.8;     // seconds its shots take to reach where you were
+  var BOSS_VOLLEY_SCALE = 1.35; // x on every form's time between volleys
+  // The aliens that keep coming meanwhile are lighter than the street's
+  // at full difficulty: brutes are rare, and never two at once.
+  var PLAZA_BRUTES = 0.04;      // share of them that are brutes
   var BOSS_SQUARE = 100;        // side of the core, world px
   var BOSS_TRI_BASE = 100;
   var BOSS_TRI_H = 92;
@@ -708,7 +711,8 @@
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
     COLLAPSE_SPEED: COLLAPSE_SPEED, WALL_PAST: WALL_PAST,
-    BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE
+    BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE,
+    PLAZA_BRUTES: PLAZA_BRUTES
   };
   var TUNING = {};
   function resetTuning() { Object.keys(TUNING_DEFAULTS).forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; }); }
@@ -1413,9 +1417,9 @@
     if (!s.spawning || s.pulse) return;
     f.arena -= dt;
     if (f.arena <= 0) {
-      f.arena = lerp(2.8, 1.5, k) * rand(0.8, 1.2);
-      var from = pick(['side', 'side', 'behind', 'ahead']), n = 2 + (Math.random() < k ? 1 : 0);
-      for (var i = 0; i < n && this.alive() < this.maxAlive() + 3; i++) this.spawnEnemy(null, from);
+      f.arena = lerp(3.4, 2.2, k) * rand(0.8, 1.2);
+      var from = pick(['side', 'side', 'behind', 'ahead']), n = 1 + (Math.random() < 0.3 + 0.5 * k ? 1 : 0);
+      for (var i = 0; i < n && this.alive() < this.maxAlive(); i++) this.spawnEnemy(null, from);
     }
     f.wallClimb -= dt;
     if (f.wallClimb <= 0) {
@@ -2010,6 +2014,10 @@
   MainScene.prototype.pickKind = function () {
     var r = Math.random();
     var brute = this.shareFrom(BRUTE_FROM_M, 0.06, 0.14), dasher = this.shareFrom(DASHER_FROM_M, 0.12, 0.32);
+    if (this.state.finale) {
+      var big = this.state.enemies.some(function (e) { return e.type === 'brute'; }) || this.state.portals.some(function (p) { return p.enemy === 'brute'; });
+      brute = big ? 0 : TUNING.PLAZA_BRUTES;
+    }
     return r < brute ? 'brute' : r < brute + dasher ? 'dasher' : 'grunt';
   };
 
@@ -3563,7 +3571,8 @@
       ['BOSS_TRI_HP', 'Hits per triangle', 1, 40, 1, ''],
       ['BOSS_CORE_HP', 'Hits for the core', 1, 60, 1, ''],
       ['BOSS_SHOT_TIME', 'Its shots take', 0.4, 3, 0.05, ' s'],
-      ['BOSS_VOLLEY_SCALE', 'Time between volleys', 0.3, 3, 0.05, '\u00d7']
+      ['BOSS_VOLLEY_SCALE', 'Time between volleys', 0.3, 3, 0.05, '\u00d7'],
+      ['PLAZA_BRUTES', 'Brutes among the rest', 0, 0.5, 0.01, '']
     ] }
   ];
 
@@ -3815,6 +3824,7 @@
       }
       return true;
     },
+    pickKinds: function (n) { var out = {}; for (var i = 0; i < n; i++) { var k = scene.pickKind(); out[k] = (out[k] || 0) + 1; } return out; },
     bossReady: function () { var b = scene.state.boss; if (!b) return false; b.pieces.forEach(function (p) { p.docked = true; }); b.mode = 'fight'; b.modeAge = 0; return true; },
     setBossVolley: function (t) { var b = scene.state.boss; if (!b) return false; b.volleyTimer = t; return true; },
     bossHitAt: function (x) { var p = scene.bossHitAt(x); return p && p.id; },

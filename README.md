@@ -544,7 +544,7 @@ itself, for practice.
       that fires.
 
     Its shots now cross the plaza at chest height toward where you are,
-    taking 1.2 s to get there, with a shadow and a pale ring on the road
+    taking 1.8 s to get there (its volleys a third further apart than in the sky), with a shadow and a pale ring on the road
     under each. Step out of the way, or jump. A hit costs a life. Your
     shots travel low, so a shot hits the **lowest** piece over the spot
     where it crosses the guardian. Up the middle that's the bottom
@@ -553,7 +553,9 @@ itself, for practice.
     energy grenade takes 3 hits off every piece and clears its shots.
     You can't walk into it.
 
-    Meanwhile aliens keep coming, from the sides, behind and ahead, and
+    Meanwhile aliens keep coming, from the sides, behind and ahead (one
+    or two at a time, a little lighter than the street at full
+    difficulty: brutes are rare, 4%, and never two at once), and
     climbers crawl down the spire's wall either side of the door, more as
     the guardian comes apart. The top bar becomes its health, a segment
     per piece in that piece's colour, and the door's frame fills with
@@ -569,7 +571,8 @@ itself, for practice.
   far up the screen the spire's wall stands (**Spire wall**, 1 past the
   scroll point by default, so the fight at the door is up close).
   **The guardian** sets the hits per triangle (8) and for the core (14),
-  how long its shots take, and the time between volleys. The lab's
+  how long its shots take, the time between volleys, and the share of
+  brutes among the aliens at the door. The lab's
   jumps also go straight to the **Checkpoint**, **The run** or **The
   door**.
 - **Fits the visible screen.** The page measures the height you can
