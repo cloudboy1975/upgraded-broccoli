@@ -661,9 +661,13 @@ harness.run(async (page, check, ctx) => {
     await D(page, (o) => window.__streetDebug.setPlayer(o.x, o.d), st.dropList.find((o) => o.keep));
     st = await until(page, (x) => x.grenades > 0, 3000);
     check('...picked up, it says how to use it', st.grenades === 1 && st.banner === 'ENERGY GRENADE' && /set it off/.test(st.bannerSub), st);
+    check('...and its button pulses with a halo, until it is used', st.grenadeBeckon, st.grenadeBeckon);
     await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.launchFire(); d.detonate(); });
     st = await until(page, (x) => !x.pulse, 8000);
     check('...set off, it clears the fire and the walls', st.fires.length === 0 && st.enemies.length === 0, { fires: st.fires.length, enemies: st.enemies.length });
+    await D(page, () => window.__streetDebug.giveGrenade(1));
+    st = await until(page, (x) => x.grenadeShown, 2000);
+    check('...the halo only the once: the next grenade\'s button is plain', st.grenadeShown && !st.grenadeBeckon, st.grenadeBeckon);
   }
 
   // ---- The end of the street ----------------------------------------

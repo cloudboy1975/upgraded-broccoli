@@ -385,7 +385,12 @@ itself, for practice.
   grenade), then closing in. A quarter are dashers. You can reach the
   grenade first, but you won't get far without it.
   A few steps ahead of where you land, an **energy grenade** is waiting,
-  and this one doesn't run out. Once the **MAIN STREET** title fades, a
+  and this one doesn't run out. It wears a **halo**, the once: a soft
+  glow breathing behind it and rings of light swelling out of it and
+  fading, on the road beneath it too. The halo is drawn over everything,
+  so the crowd can't hide it. When you pick it up the halo moves to the
+  grenade button, which pulses with rings of its own until you first set
+  a grenade off. Later grenades are plain. Once the **MAIN STREET** title fades, a
   **GRAB THE ENERGY GRENADE** banner points it out. When you pick it up
   (the first one only) it says how to use it: *tap it (or E) to set it
   off*. Set it off and the pulse takes the lot: the fire in the air and
