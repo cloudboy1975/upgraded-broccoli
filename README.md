@@ -381,8 +381,10 @@ itself, for practice.
   most into the road ahead. All are thrown within a few seconds, the
   walls are crawling with 30 aliens, and **16 more come up out of the
   street** through portals all round you, a beat apart: mostly ahead and
-  to the sides, a few behind, about 170–300 px away (just beyond the
-  grenade), then closing in. A quarter are dashers. You can reach the
+  to the sides, a few behind, about 170–300 px away, then closing in.
+  None come up within 150 px of the grenade, so there's a clear pocket
+  around it and time to see your way in. **Room round the grenade** in
+  the lab sets that distance. A quarter are dashers. You can reach the
   grenade first, but you won't get far without it.
   A few steps ahead of where you land, an **energy grenade** is waiting,
   and this one doesn't run out. It wears a **halo**, the once: a soft

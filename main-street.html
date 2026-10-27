@@ -640,6 +640,7 @@
   // in. You can reach it first; you won't get far without it.
   var OPEN_GROUND = 16;        // aliens in the street as you step out
   var OPEN_RING = [170, 300];  // px from you they come out
+  var OPEN_CLEAR = 150;        // px round the grenade none come out in: room to see the way to it
   // Half of that fire comes from right beside you - the towers at the
   // bottom of the picture, from windows low enough to start near the top
   // of it - big, quick, and coming down round about you: up close, so it
@@ -772,7 +773,7 @@
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
     CRUMBLE_SPEED: CRUMBLE_SPEED, CRUMBLE_LEASH: CRUMBLE_LEASH, WALL_PAST: WALL_PAST,
-    OPEN_FIRES: OPEN_FIRES, OPEN_CLIMBERS: OPEN_CLIMBERS, OPEN_GRENADE: OPEN_GRENADE, OPEN_NEAR: OPEN_NEAR, OPEN_GROUND: OPEN_GROUND,
+    OPEN_FIRES: OPEN_FIRES, OPEN_CLIMBERS: OPEN_CLIMBERS, OPEN_GRENADE: OPEN_GRENADE, OPEN_NEAR: OPEN_NEAR, OPEN_GROUND: OPEN_GROUND, OPEN_CLEAR: OPEN_CLEAR,
     BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE,
     PLAZA_BRUTES: PLAZA_BRUTES
   };
@@ -2174,18 +2175,26 @@
     }
     // The crowd: out of the ground in a ring round you - mostly ahead
     // and to the sides, a few behind - a beat apart.
+    // None too near the grenade, though: room to see your way to it.
     var crowd = Math.round(TUNING.OPEN_GROUND), floor = s.camD + DEPTH_PX * 0.62;
+    var gx = 0, gd = EXIT_D + OPEN_GRENADE_AHEAD, clear = TUNING.OPEN_GRENADE >= 1 ? TUNING.OPEN_CLEAR : 0;
     for (var c2 = 0; c2 < crowd; c2++) {
-      var behind = c2 % 5 === 4, an = behind ? rand(Math.PI * 1.25, Math.PI * 1.75) : rand(-Math.PI * 0.2, Math.PI * 1.2);
-      var r = rand(OPEN_RING[0], OPEN_RING[1]);
-      var ex = clamp(s.px + Math.cos(an) * r, -STREET_HALF + 10, STREET_HALF - 10);
-      var ed = Math.max(floor, s.pd + Math.sin(an) * r);
+      var behind = c2 % 5 === 4, ex = 0, ed = 0;
+      for (var tries = 0; tries < 20; tries++) {
+        var an = behind ? rand(Math.PI * 1.25, Math.PI * 1.75) : rand(-Math.PI * 0.2, Math.PI * 1.2);
+        var r = rand(OPEN_RING[0], OPEN_RING[1]) + tries * 10;
+        ex = clamp(s.px + Math.cos(an) * r, -STREET_HALF + 10, STREET_HALF - 10);
+        ed = Math.max(floor, s.pd + Math.sin(an) * r);
+        if (Math.hypot(ex - gx, ed - gd) >= clear) break;
+      }
+      // Still too near after all that: straight up the street past it.
+      if (Math.hypot(ex - gx, ed - gd) < clear) ed = gd + clear;
       var kind = Math.random() < 0.25 ? 'dasher' : 'grunt';
       s.portals.push({ kind: 'portal', enemy: kind, x: ex, d: ed, age: -c2 * 0.12, color: ENEMY_KINDS[kind].colors[0] });
     }
     if (crowd) Sound.portal();
     if (TUNING.OPEN_GRENADE >= 1) {
-      s.drops.push({ kind: 'drop', x: 0, d: EXIT_D + OPEN_GRENADE_AHEAD, age: 0, keep: true });
+      s.drops.push({ kind: 'drop', x: gx, d: gd, age: 0, keep: true });
       s.bannerQueue.push({ text: 'GRAB THE ENERGY GRENADE', sub: 'just ahead of you', age: 0 });
     }
     s.shake = Math.max(s.shake, 0.5);
@@ -3796,6 +3805,7 @@
       ['OPEN_FIRES', 'Fireballs thrown at once', 0, 16, 1, ''],
       ['OPEN_CLIMBERS', 'Aliens on the walls', 0, 30, 1, ''],
       ['OPEN_GROUND', 'Aliens in the street', 0, 40, 1, ''],
+      ['OPEN_CLEAR', 'Room round the grenade', 0, 300, 5, ' px'],
       ['OPEN_NEAR', 'Share of the fire from close by', 0, 1, 0.05, ''],
       ['OPEN_GRENADE', 'A grenade waiting (1 on, 0 off)', 0, 1, 1, '']
     ] },
@@ -4043,7 +4053,7 @@
         bannerSub: s.banner && s.banner.sub || null, pulse: s.pulse ? s.pulse.r : null, grenadesUsed: s.grenadesUsed,
         pulseKills: s.pulseKills || 0, grenadeShown: document.getElementById('grenadeBtn').classList.contains('ready'), grenadeBeckon: document.getElementById('grenadeBtn').classList.contains('beckon'),
         nextFenceM: s.nextFenceM, zapped: s.zapped || 0,
-        portals: s.portals.length,
+        portals: s.portals.length, portalList: s.portals.map(function (o) { return { x: o.x, d: o.d }; }),
         fires: s.fires.map(function (f) { return { stage: f.stage, x: f.x, y: f.y, d: f.d, tx: f.tx, td: f.td, flight: f.flight, ahead: f.ahead, size: f.size, u: f.stage === 'fly' ? f.age / f.flight : 0, marked: scene.fireMarked(f) }; }),
         buildings: s.buildings.length, banner: s.banner && s.banner.text,
         overlay: document.getElementById('overOverlay').classList.contains('visible'),
