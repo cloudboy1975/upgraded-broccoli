@@ -372,10 +372,10 @@ itself, for practice.
   boarding, run backwards) and hop down onto the street. From there
   the camera only moves forward, and only when you walk past the middle
   of the picture. The street is a long arena that scrolls one way.
-- **An ambush on arrival.** You step out of the ship into it. Eight
+- **An ambush on arrival.** You step out of the ship into it. Sixteen
   fireballs are thrown straight away from the towers around you (a
   third at you and round about you, the rest into the road ahead, all
-  within a second or two), and the walls are crawling with 16 aliens.
+  within a few seconds), and the walls are crawling with 30 aliens.
   A few steps ahead of where you land, an **energy grenade** is waiting,
   and this one doesn't run out. Once the **MAIN STREET** title fades, a
   **GRAB THE ENERGY GRENADE** banner points it out. When you pick it up
