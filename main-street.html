@@ -613,6 +613,11 @@
   var OPEN_FIRES = 16;         // fireballs thrown as you step out
   var OPEN_CLIMBERS = 30;      // aliens on the walls as you step out
   var OPEN_GRENADE = 1;        // 1: a grenade waits just ahead of you
+  // And the street itself fills: aliens coming out of the ground all
+  // round you, just beyond the grenade, one after another, then closing
+  // in. You can reach it first; you won't get far without it.
+  var OPEN_GROUND = 16;        // aliens in the street as you step out
+  var OPEN_RING = [170, 300];  // px from you they come out
   // Half of that fire comes from right beside you - the towers at the
   // bottom of the picture, from windows low enough to start near the top
   // of it - big, quick, and coming down round about you: up close, so it
@@ -745,7 +750,7 @@
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
     CRUMBLE_SPEED: CRUMBLE_SPEED, CRUMBLE_LEASH: CRUMBLE_LEASH, WALL_PAST: WALL_PAST,
-    OPEN_FIRES: OPEN_FIRES, OPEN_CLIMBERS: OPEN_CLIMBERS, OPEN_GRENADE: OPEN_GRENADE, OPEN_NEAR: OPEN_NEAR,
+    OPEN_FIRES: OPEN_FIRES, OPEN_CLIMBERS: OPEN_CLIMBERS, OPEN_GRENADE: OPEN_GRENADE, OPEN_NEAR: OPEN_NEAR, OPEN_GROUND: OPEN_GROUND,
     BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE,
     PLAZA_BRUTES: PLAZA_BRUTES
   };
@@ -2145,6 +2150,18 @@
       if (i % 3 === 0) this.launchFire({ spread: true, charge: 0.6 + i * 0.15 });
       else { var f = this.launchAhead(); if (f) f.charge = 0.6 + i * 0.15; }
     }
+    // The crowd: out of the ground in a ring round you - mostly ahead
+    // and to the sides, a few behind - a beat apart.
+    var crowd = Math.round(TUNING.OPEN_GROUND), floor = s.camD + DEPTH_PX * 0.62;
+    for (var c2 = 0; c2 < crowd; c2++) {
+      var behind = c2 % 5 === 4, an = behind ? rand(Math.PI * 1.25, Math.PI * 1.75) : rand(-Math.PI * 0.2, Math.PI * 1.2);
+      var r = rand(OPEN_RING[0], OPEN_RING[1]);
+      var ex = clamp(s.px + Math.cos(an) * r, -STREET_HALF + 10, STREET_HALF - 10);
+      var ed = Math.max(floor, s.pd + Math.sin(an) * r);
+      var kind = Math.random() < 0.25 ? 'dasher' : 'grunt';
+      s.portals.push({ kind: 'portal', enemy: kind, x: ex, d: ed, age: -c2 * 0.12, color: ENEMY_KINDS[kind].colors[0] });
+    }
+    if (crowd) Sound.portal();
     if (TUNING.OPEN_GRENADE >= 1) {
       s.drops.push({ kind: 'drop', x: 0, d: EXIT_D + OPEN_GRENADE_AHEAD, age: 0, keep: true });
       s.bannerQueue.push({ text: 'GRAB THE ENERGY GRENADE', sub: 'just ahead of you', age: 0 });
@@ -2813,7 +2830,7 @@
     // Portals: a ring opening on the ground in the alien's colour.
     for (var p = 0; p < s.portals.length; p++) {
       var po = s.portals[p], zz = this.zOf(po.d);
-      if (zz < Z_NEAR) continue;
+      if (zz < Z_NEAR || po.age < 0) continue; // not opened yet
       var u = po.age / PORTAL_TIME, r = (8 + 22 * u) / zz;
       g.lineStyle(Math.max(1, 2 / zz), po.color, 0.4 + 0.6 * u);
       g.strokeEllipse(this.sx(po.x, zz), this.sy(G, zz), r * 2, r * 0.6);
@@ -3735,6 +3752,7 @@
     { title: 'The ambush on arrival', rows: [
       ['OPEN_FIRES', 'Fireballs thrown at once', 0, 16, 1, ''],
       ['OPEN_CLIMBERS', 'Aliens on the walls', 0, 30, 1, ''],
+      ['OPEN_GROUND', 'Aliens in the street', 0, 40, 1, ''],
       ['OPEN_NEAR', 'Share of the fire from close by', 0, 1, 0.05, ''],
       ['OPEN_GRENADE', 'A grenade waiting (1 on, 0 off)', 0, 1, 1, '']
     ] },

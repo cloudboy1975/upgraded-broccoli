@@ -646,6 +646,8 @@ harness.run(async (page, check, ctx) => {
     const climbing = st.enemies.filter((e) => e.climb > 0).length;
     check('stepping out: fire already thrown from all round', st.fires.length >= T.OPEN_FIRES - 2, st.fires.length);
     check('...the walls crawling', climbing >= T.OPEN_CLIMBERS - 2, climbing);
+    const ground = st.enemies.filter((e) => !e.climb).length + st.portals;
+    check('...and the street filling with them, all round you', ground >= T.OPEN_GROUND - 2, ground);
     const close = st.fires.filter((f) => f.stage === 'charge' ? (f.d - st.camD) / 240 < 1.7 : (f.d - st.camD) / 240 < 2.2).length;
     check('...half of it from right beside you, not off in the distance', close >= Math.round(T.OPEN_FIRES * T.OPEN_NEAR) - 2, { close, all: st.fires.length });
     const g = st.dropList.find((o) => o.keep);
