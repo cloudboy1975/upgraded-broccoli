@@ -526,13 +526,18 @@ itself, for practice.
     falls behind catches up. A slab about to go cracks first: it glows
     red with a crack across it, shudders, then drops away into the dark,
     with chips of road tumbling after it. The fallen part is black and
-    its broken lip glows neon red. On average it comes on at 55 px/s,
-    well under walking pace (185), so walking keeps you ahead. Stop to
-    fight and it comes up the bottom of the picture. Standing on a slab
+    its broken lip glows neon red. It's never left behind out of sight:
+    it starts just under the bottom of the picture, and however fast you
+    go it keeps up, crumbling along the bottom edge at your heels (to
+    **Keeps up to**, depth 0.7). Catching up, slabs drop a beat apart,
+    faster than you walk, but never within a step of you. Stop to fight
+    and from there it creeps on at its own pace, 55 px/s on average,
+    each slab cracking first, up the picture toward you. Standing on a slab
     as it drops takes you down with it. In the air you're over the gap,
     but you come down into it. It takes the aliens, fences, craters and
     lamps behind it, and the towers sink into it. When you come back
-    after any death it's pushed back off you. The street's last fence
+    after any death you're set down clear of it, it's pushed back out of
+    sight, and it holds for 3 s before it comes on again. The street's last fence
     comes before the plaza: none switches on inside it, and one still on
     as you arrive winds down.
   - **The plaza, at 400 m: the guardian.** The towers end and the camera

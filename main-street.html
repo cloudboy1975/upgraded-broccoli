@@ -610,6 +610,13 @@
   var CRUMBLE_X = 440;         // columns span this far either side of the centre
   var CRUMBLE_CRACK = 0.55;    // seconds a slab cracks before it drops
   var CRUMBLE_RAGGED = 2;      // slabs a column can run ahead of its neighbours
+  // It is never left behind out of sight: however fast you go, it keeps
+  // up with the bottom of the picture - crumbling along it as you walk -
+  // and only creeps further in (at CRUMBLE_SPEED) while you stand.
+  var CRUMBLE_LEASH = 0.7;     // the depth (z) it keeps up to: inside the bottom of the picture
+  var CRUMBLE_UNSEEN = 0.5;    // further behind than this (off the bottom) it just catches up
+  var CRUMBLE_CATCHUP = 0.07;  // seconds a slab takes to crack and drop while it is catching up
+  var CRUMBLE_REST = 3;        // seconds it holds after you come back from a death
   var COLLAPSE_LEAD = 1.2;     // seconds' rumble before it starts
   var PLAZA_FROM = 1;          // the last towers stand this far (z) past where the camera stops
   // The spire's wall: this far (z) past the scroll point once the camera
@@ -721,7 +728,7 @@
     CLIMB_EVERY_START: CLIMB_EVERY_START, CLIMB_EVERY_PEAK: CLIMB_EVERY_PEAK,
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
-    CRUMBLE_SPEED: CRUMBLE_SPEED, WALL_PAST: WALL_PAST,
+    CRUMBLE_SPEED: CRUMBLE_SPEED, CRUMBLE_LEASH: CRUMBLE_LEASH, WALL_PAST: WALL_PAST,
     BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE,
     PLAZA_BRUTES: PLAZA_BRUTES
   };
@@ -1354,9 +1361,9 @@
       Sound.life();
     }
     if (!s.collapse && m >= TUNING.RUN_START_M) {
-      var d0 = Math.min(s.camD, s.pd - 260), cols = [];
+      var d0 = s.camD + DEPTH_PX * CRUMBLE_UNSEEN, cols = [];
       for (var j = 0; j < CRUMBLE_X * 2 / CRUMBLE_COL; j++) cols.push({ edge: d0 + rand(-0.5, 0.5) * CRUMBLE_TILE, wait: rand(0, 1), crack: 0, seed: rand(0, 1) });
-      s.collapse = { d: d0, lead: COLLAPSE_LEAD, rumble: 0, debris: [], slabs: [], cols: cols };
+      s.collapse = { d: d0, lead: COLLAPSE_LEAD, rest: 0, rumble: 0, debris: [], slabs: [], cols: cols };
       s.banner = { text: 'THE STREET IS CRUMBLING', sub: 'keep moving', age: 0 };
       s.shake = Math.max(s.shake, 0.8);
       Sound.rumble();
@@ -1389,6 +1396,15 @@
     c.d = sum / n;
   };
 
+  // A slab goes: it drops away into the dark.
+  MainScene.prototype.dropSlab = function (i, col) {
+    var c = this.state.collapse, x0 = -CRUMBLE_X + i * CRUMBLE_COL;
+    c.slabs.push({ x0: x0, x1: x0 + CRUMBLE_COL, d0: col.edge, d1: col.edge + CRUMBLE_TILE, y: 0, vy: rand(10, 50), tilt: rand(-1, 1) });
+    if (c.slabs.length > 80) c.slabs.shift();
+    if (Math.random() < 0.6) c.debris.push({ x: x0 + rand(0, CRUMBLE_COL), d: col.edge + CRUMBLE_TILE, y: GROUND_Y, vy: rand(20, 80), w: rand(6, 14), rot: rand(0, 6.3), spin: rand(-4, 4) });
+    col.edge += CRUMBLE_TILE;
+  };
+
   MainScene.prototype.stepCollapse = function (dt) {
     var s = this.state, c = s.collapse, self = this;
     if (!c) return;
@@ -1396,19 +1412,34 @@
     if (c.rumble <= 0) { c.rumble = rand(1.4, 2.4); Sound.rumble(); }
     var halt = this.lockD() + DEPTH_PX * 0.45, cols = c.cols;
     if (c.lead > 0) { c.lead -= dt; s.shake = Math.max(s.shake, 0.3); }
+    else if (c.rest > 0) c.rest -= dt;
     else {
       var speed = Math.max(1, TUNING.CRUMBLE_SPEED), cycle = CRUMBLE_TILE / speed;
       var crack = Math.min(CRUMBLE_CRACK, cycle * 0.8);
+      // Hurrying never takes it to within a step of you: a slab only
+      // goes from under you after it has cracked.
+      var unseen = s.camD + DEPTH_PX * CRUMBLE_UNSEEN, leash = Math.min(s.camD + DEPTH_PX * TUNING.CRUMBLE_LEASH, s.pd - 30);
       for (var i = 0; i < cols.length; i++) {
         var col = cols[i];
+        // Left far behind, off the bottom of the picture: it jumps up to
+        // just out of sight...
+        while (col.edge < unseen - CRUMBLE_TILE) { col.edge += CRUMBLE_TILE; col.crack = 0; }
+        // ...and from there short of the leash it hurries, a slab a beat,
+        // faster than you walk - so it is always at your heels.
+        if (col.edge + CRUMBLE_TILE / 2 < leash && col.edge + CRUMBLE_TILE <= halt) {
+          // Hurrying: a slab a beat, carried over within a frame, so it
+          // keeps up however few frames there are.
+          col.crack = 0;
+          col.run = (col.run || 0) + dt / CRUMBLE_CATCHUP;
+          while (col.run >= 1 && col.edge + CRUMBLE_TILE / 2 < leash && col.edge + CRUMBLE_TILE <= halt) { col.run -= 1; this.dropSlab(i, col); }
+          col.wait = 0;
+          continue;
+        }
+        col.run = 0;
         if (col.crack > 0) {
           col.crack += dt / crack;
           if (col.crack < 1) continue;
-          // It goes: the slab drops away into the dark.
-          var x0 = -CRUMBLE_X + i * CRUMBLE_COL;
-          c.slabs.push({ x0: x0, x1: x0 + CRUMBLE_COL, d0: col.edge, d1: col.edge + CRUMBLE_TILE, y: 0, vy: rand(10, 50), tilt: rand(-1, 1) });
-          if (Math.random() < 0.6) c.debris.push({ x: x0 + rand(0, CRUMBLE_COL), d: col.edge + CRUMBLE_TILE, y: GROUND_Y, vy: rand(20, 80), w: rand(6, 14), rot: rand(0, 6.3), spin: rand(-4, 4) });
-          col.edge += CRUMBLE_TILE;
+          this.dropSlab(i, col);
           col.crack = 0;
           col.wait = (cycle - crack) * rand(0.2, 1.8);
           continue;
@@ -2511,7 +2542,13 @@
     var fz = this.fenceAt(s.pd, PLAYER_R + 30);
     if (fz) s.pd = Math.max(s.camD + PLAYER_Z_MIN * DEPTH_PX, fz.d - PLAYER_R - 30);
     // ...and with the falling street pushed back off you.
-    if (s.collapse) { s.collapse.cols.forEach(function (col) { col.edge = Math.min(col.edge, s.pd - 240); col.crack = 0; }); this.crumbleMean(); }
+    if (s.collapse) {
+      // Back on your feet clear of the edge, and it holds a moment.
+      s.pd = Math.max(s.pd, s.camD + DEPTH_PX * 1.0);
+      s.collapse.cols.forEach(function (col) { col.edge = Math.min(col.edge, s.camD + DEPTH_PX * CRUMBLE_UNSEEN); col.crack = 0; });
+      s.collapse.rest = CRUMBLE_REST;
+      this.crumbleMean();
+    }
     s.invuln = INVULN_TIME;
     this.setMode('walking');
   };
@@ -3665,6 +3702,7 @@
       ['RUN_START_M', 'The run starts at', 0, 1000, 10, ' m'],
       ['STREET_END_M', 'The plaza at', 50, 1000, 10, ' m'],
       ['CRUMBLE_SPEED', 'Street crumbles at', 10, 150, 5, ' px/s'],
+      ['CRUMBLE_LEASH', 'Keeps up to (depth)', 0.4, 1, 0.01, ''],
       ['WALL_PAST', 'Spire wall (depth past scroll point)', 0.6, 3, 0.05, '']
     ] },
     { title: 'The guardian', rows: [

@@ -672,14 +672,21 @@ harness.run(async (page, check, ctx) => {
     check('no collapse before the run', st.collapseD === null, st.collapseD);
     await D(page, (pd) => window.__streetDebug.setPlayer(0, pd), st.pd + 60);
     st = await until(page, (x) => x.collapseD !== null, 4000);
-    check('...past ' + T.RUN_START_M + ' m the street starts to fall, behind you, under a banner', st.collapseD !== null && st.collapseD < st.pd - 200 && /CRUMBLING/.test(st.banner), st);
+    check('...past ' + T.RUN_START_M + ' m the street starts to crumble, just under the bottom of the picture, under a banner', st.collapseD !== null && st.collapseD < st.pd - 150 && st.collapseD < st.camD + 0.7 * 240 && /CRUMBLING/.test(st.banner), st);
     await D(page, () => window.__streetDebug.setInvincible(true));
-    const c0 = await D(page, () => { const d = window.__streetDebug, s = d.state(); d.setCollapse(s.pd - 700); d.timeScale = 4; return { d: s.pd - 700, t: s.t }; });
+    // Standing still: from where it keeps up to, it creeps in at its own pace.
+    const c0 = await D(page, () => { const d = window.__streetDebug, s = d.state(), at = s.camD + 0.7 * 240; d.setCollapse(at); d.timeScale = 4; return { d: at, t: s.t }; });
     st = await until(page, (x) => x.t > c0.t + 6, 15000);
     await D(page, () => { window.__streetDebug.timeScale = 1; });
     const rate = (st.collapseD - c0.d) / (st.t - c0.t);
     check('...creeping up the street at about ' + T.CRUMBLE_SPEED + ' px/s, well under walking pace', Math.abs(rate - T.CRUMBLE_SPEED) < T.CRUMBLE_SPEED * 0.35 && rate < T.WALK_SPEED / 2, rate);
     const edges = await D(page, () => { const d = window.__streetDebug; return [-150, -110, -70, -30, 10, 50, 90, 130].map((x) => d.edgeAt(x)); });
+    // Walking away from it: it is never left out of sight - it keeps up
+    // with the bottom of the picture.
+    await D(page, () => { const d = window.__streetDebug, s = d.state(); d.setCollapse(s.camD - 300); d.setPlayer(0, s.pd + 500); });
+    st = await until(page, (x) => x.collapseD > x.camD + 0.5 * 240 && x.camD > c0.d, 8000);
+    check('...and walk away from it and it keeps up, crumbling along the bottom of the picture',
+      st.collapseD > st.camD + 0.5 * 240 && st.collapseD < st.pd, { edge: st.collapseD, camD: st.camD, pd: st.pd });
     check('...a ragged edge, slab by slab, not a straight line', new Set(edges).size > 1 && edges.every((e) => Math.abs(e - edges[0]) % 40 < 1e-6 || Math.abs(Math.abs(e - edges[0]) % 40 - 40) < 1e-6), edges);
     await D(page, () => { const d = window.__streetDebug, s = d.state(); d.spawnEnemy('grunt', 100, s.collapseD + 5); });
     await D(page, () => { const d = window.__streetDebug, s = d.state(); d.setCollapse(s.collapseD + 30); });
@@ -689,7 +696,7 @@ harness.run(async (page, check, ctx) => {
     st = await until(page, (x) => x.mode !== 'walking', 3000);
     check('...and it takes you if it reaches you', st.mode === 'dying' && st.lastDeath === 'collapse', st);
     st = await until(page, (x) => x.mode === 'walking', 6000);
-    check('...pushed back off you when you are back on your feet', st.mode === 'walking' && st.collapseD <= st.pd - 200, st);
+    check('...pushed back off you when you are back on your feet', st.mode === 'walking' && st.collapseD <= st.pd - 120, st);
   }
 
   // The plaza: the camera stops, the spire's wall bounds it, and the
