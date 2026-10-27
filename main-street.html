@@ -605,6 +605,15 @@
   // it drops. On average well under walking pace: a steady encroachment
   // you keep ahead of, not a sprint - but stop to fight and it comes.
   var CRUMBLE_SPEED = 55;      // px/s the edge comes up the street, on average
+  // ---- The ambush: a shock on arrival --------------------------------
+  // You step out of the ship into it: fire already thrown from the towers
+  // round about, the walls crawling - and, a few steps ahead, an energy
+  // grenade, waiting for you (it doesn't run out). Grab it and set it off
+  // and the pulse takes the lot: the way to learn what it does.
+  var OPEN_FIRES = 8;          // fireballs thrown as you step out
+  var OPEN_CLIMBERS = 16;      // aliens on the walls as you step out
+  var OPEN_GRENADE = 1;        // 1: a grenade waits just ahead of you
+  var OPEN_GRENADE_AHEAD = 110; // px up the street from where you land
   var CRUMBLE_TILE = 40;       // px deep, each slab
   var CRUMBLE_COL = 40;        // px wide, each column of slabs
   var CRUMBLE_X = 440;         // columns span this far either side of the centre
@@ -729,6 +738,7 @@
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
     CRUMBLE_SPEED: CRUMBLE_SPEED, CRUMBLE_LEASH: CRUMBLE_LEASH, WALL_PAST: WALL_PAST,
+    OPEN_FIRES: OPEN_FIRES, OPEN_CLIMBERS: OPEN_CLIMBERS, OPEN_GRENADE: OPEN_GRENADE,
     BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE,
     PLAZA_BRUTES: PLAZA_BRUTES
   };
@@ -1216,6 +1226,7 @@
     s.t += dt;
     s.modeAge += dt;
     if (s.banner) { s.banner.age += dt; if (s.banner.age > 2.6) s.banner = null; }
+    if (!s.banner && s.bannerQueue && s.bannerQueue.length) s.banner = s.bannerQueue.shift();
 
     if (s.mode === 'intro') {
       this.stepIntro(dt);
@@ -1275,7 +1286,7 @@
       s.elev = 0;
       this.setMode('walking');
       s.banner = { text: 'MAIN STREET', sub: Math.round(TUNING.STREET_END_M) + ' m to the spire', age: 0 };
-      if (s.spawning) this.seedClimbers();
+      if (s.spawning) { this.seedClimbers(); this.ambush(); }
     }
   };
 
@@ -1940,11 +1951,14 @@
       if (Math.hypot(o.x - s.px, o.d - s.pd) < DROP_CATCH && s.grenades < TUNING.GRENADE_MAX) {
         s.drops.splice(i, 1);
         s.grenades++;
-        s.banner = { text: 'ENERGY GRENADE', age: 0 };
+        // The first one: how to use it.
+        s.banner = s.pickedUp ? { text: 'ENERGY GRENADE', age: 0 } : { text: 'ENERGY GRENADE', sub: 'tap it (or E) to set it off', age: 0 };
+        s.bannerQueue = [];
+        s.pickedUp = true;
         Sound.life();
         continue;
       }
-      if (o.age > DROP_LIFE || o.d < gone) s.drops.splice(i, 1);
+      if ((o.age > DROP_LIFE && !o.keep) || o.d < gone) s.drops.splice(i, 1);
     }
   };
 
@@ -2097,6 +2111,27 @@
       first = first || e;
     }
     return first;
+  };
+
+  // The shock on arrival: fire coming down all round, the walls alive,
+  // and a grenade waiting a few steps ahead.
+  MainScene.prototype.ambush = function () {
+    var s = this.state;
+    s.bannerQueue = [];
+    var crawl = Math.round(TUNING.OPEN_CLIMBERS);
+    for (var c = 0; c < 40 && this.climbers() < crawl; c++) this.spawnClimber(null, Math.min(3, crawl - this.climbers()));
+    var n = Math.round(TUNING.OPEN_FIRES);
+    for (var i = 0; i < n; i++) {
+      // A third of it at you and round about you, the rest into the road
+      // ahead - all thrown within a second or two.
+      if (i % 3 === 0) this.launchFire({ spread: i > 0, charge: 0.3 + i * 0.15 });
+      else { var f = this.launchAhead(); if (f) f.charge = 0.3 + i * 0.15; }
+    }
+    if (TUNING.OPEN_GRENADE >= 1) {
+      s.drops.push({ kind: 'drop', x: 0, d: EXIT_D + OPEN_GRENADE_AHEAD, age: 0, keep: true });
+      s.bannerQueue.push({ text: 'GRAB THE ENERGY GRENADE', sub: 'just ahead of you', age: 0 });
+    }
+    s.shake = Math.max(s.shake, 0.5);
   };
 
   // The walls are already crawling when you step out.
@@ -3220,7 +3255,7 @@
   MainScene.prototype.drawDrop = function (g, o, z) {
     var a = depthAlpha(z);
     if (a <= 0) return;
-    if (o.age > DROP_LIFE - 2 && Math.floor(o.age * 8) % 2 === 0) return;
+    if (!o.keep && o.age > DROP_LIFE - 2 && Math.floor(o.age * 8) % 2 === 0) return;
     var t = this.state.t, x = this.sx(o.x, z), gy = this.sy(GROUND_Y, z);
     var y = this.sy(GROUND_Y - 16 - 4 * Math.sin(o.age * 4), z), r = Math.max(4, 9 / z);
     g.fillStyle(COLOR_PULSE, 0.25 * a); g.fillEllipse(x, gy, r * 3, r * 0.8);
@@ -3679,6 +3714,11 @@
       ['FENCE_AHEAD', 'Switches on this far ahead', 120, 600, 10, ' px'],
       ['FENCE_POWERUP', 'Powering up takes', 0.2, 2, 0.05, ' s']
     ] },
+    { title: 'The ambush on arrival', rows: [
+      ['OPEN_FIRES', 'Fireballs thrown at once', 0, 16, 1, ''],
+      ['OPEN_CLIMBERS', 'Aliens on the walls', 0, 30, 1, ''],
+      ['OPEN_GRENADE', 'A grenade waiting (1 on, 0 off)', 0, 1, 1, '']
+    ] },
     { title: 'Energy grenade', rows: [
       ['GRENADE_DROP', 'Chance a grunt drops one', 0, 1, 0.01, ''],
       ['GRENADE_MAX', 'Most you can carry', 1, 9, 1, ''],
@@ -3919,7 +3959,8 @@
         enemies: s.enemies.map(function (e) { return { type: e.type, x: e.x, d: e.d, hp: e.hp, r: e.r, climb: e.climb || 0 }; }),
         craters: s.craters.map(function (c) { return { x: c.x, d: c.d, r: c.r, burn: c.burn }; }),
         fences: s.fences.map(function (f) { return f.d; }), fenceLive: s.fences.map(function (f) { return f.live; }),
-        grenades: s.grenades, drops: s.drops.length, pulse: s.pulse ? s.pulse.r : null, grenadesUsed: s.grenadesUsed,
+        grenades: s.grenades, drops: s.drops.length, dropList: s.drops.map(function (o) { return { x: o.x, d: o.d, keep: !!o.keep }; }),
+        bannerSub: s.banner && s.banner.sub || null, pulse: s.pulse ? s.pulse.r : null, grenadesUsed: s.grenadesUsed,
         pulseKills: s.pulseKills || 0, grenadeShown: document.getElementById('grenadeBtn').classList.contains('ready'),
         nextFenceM: s.nextFenceM, zapped: s.zapped || 0,
         portals: s.portals.length,
@@ -3989,7 +4030,8 @@
     addCrater: function (x, d, burn, r) { scene.addCrater(x, d, burn, r); return true; },
     spawnFrom: function (type, from) { scene.spawnEnemy(type, from); return true; },
     launchFire: function (opts) { return !!scene.launchFire(opts); },
-    projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z), y: scene.sy(GROUND_Y, z), z: z }; },
+    // Where a point on the ground is drawn, without any shake.
+    projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z) - scene.shakeX, y: scene.sy(GROUND_Y, z) - scene.shakeY, z: z }; },
     difficultyAt: difficultyAt,
     fittedHeight: function () { return fittedH; },
     screenInfo: function () { return screenInfo(); },

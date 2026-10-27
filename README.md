@@ -372,6 +372,18 @@ itself, for practice.
   boarding, run backwards) and hop down onto the street. From there
   the camera only moves forward, and only when you walk past the middle
   of the picture. The street is a long arena that scrolls one way.
+- **An ambush on arrival.** You step out of the ship into it. Eight
+  fireballs are thrown straight away from the towers around you (a
+  third at you and round about you, the rest into the road ahead, all
+  within a second or two), and the walls are crawling with 16 aliens.
+  A few steps ahead of where you land, an **energy grenade** is waiting,
+  and this one doesn't run out. Once the **MAIN STREET** title fades, a
+  **GRAB THE ENERGY GRENADE** banner points it out. When you pick it up
+  (the first one only) it says how to use it: *tap it (or E) to set it
+  off*. Set it off and the pulse takes the lot: the fire in the air and
+  every climber on the walls. It's a shock on arrival that teaches the
+  grenade. **The ambush on arrival** in the lab sets the number of
+  fireballs and climbers, and turns the waiting grenade off.
 - **Twin sticks.** The left stick, the one that flew the ship, now walks
   you. Up is up the street. The fire button is replaced by a copy of the
   stick, tinted green. Push it in any direction and the gun fires

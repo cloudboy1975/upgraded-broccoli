@@ -636,6 +636,32 @@ harness.run(async (page, check, ctx) => {
     await ctx2.close();
   }
 
+  // ---- The ambush on arrival ------------------------------------------
+  // Stepping out: fire thrown from all round, the walls crawling, and a
+  // grenade waiting a few steps ahead that doesn't run out. Picked up,
+  // it says how to use it; set off, it clears the lot.
+  {
+    await D(page, () => { const d = window.__streetDebug; d.restart(); d.setSpawning(true); d.setInvincible(true); });
+    let st = await until(page, (x) => x.mode === 'walking', 15000);
+    const climbing = st.enemies.filter((e) => e.climb > 0).length;
+    check('stepping out: fire already thrown from all round', st.fires.length >= T.OPEN_FIRES - 2, st.fires.length);
+    check('...the walls crawling', climbing >= T.OPEN_CLIMBERS - 2, climbing);
+    const g = st.dropList.find((o) => o.keep);
+    check('...and a grenade waiting a few steps ahead', !!g && g.d > st.pd + 40 && g.d < st.pd + 250, { drops: st.dropList, pd: st.pd });
+    st = await until(page, (x) => x.banner === 'GRAB THE ENERGY GRENADE', 8000);
+    check('...with a banner saying to grab it, once the street\'s title has gone', st.banner === 'GRAB THE ENERGY GRENADE', st.banner);
+    await D(page, (o) => { window.__streetDebug.timeScale = 2; }, null);
+    st = await until(page, (x) => x.t > 12, 20000);
+    await D(page, () => { window.__streetDebug.timeScale = 1; });
+    check('...it waits for you: it doesn\'t run out', st.dropList.some((o) => o.keep), st.dropList);
+    await D(page, (o) => window.__streetDebug.setPlayer(o.x, o.d), st.dropList.find((o) => o.keep));
+    st = await until(page, (x) => x.grenades > 0, 3000);
+    check('...picked up, it says how to use it', st.grenades === 1 && st.banner === 'ENERGY GRENADE' && /set it off/.test(st.bannerSub), st);
+    await D(page, () => { const d = window.__streetDebug; d.setSpawning(false); d.launchFire(); d.detonate(); });
+    st = await until(page, (x) => !x.pulse, 8000);
+    check('...set off, it clears the fire and the walls', st.fires.length === 0 && st.enemies.length === 0, { fires: st.fires.length, enemies: st.enemies.length });
+  }
+
   // ---- The end of the street ----------------------------------------
   // The checkpoint: reached, it is kept, and a game over after it can
   // carry on from there with fresh lives and the score you had there.
