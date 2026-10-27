@@ -613,6 +613,13 @@
   var OPEN_FIRES = 16;         // fireballs thrown as you step out
   var OPEN_CLIMBERS = 30;      // aliens on the walls as you step out
   var OPEN_GRENADE = 1;        // 1: a grenade waits just ahead of you
+  // Half of that fire comes from right beside you - the towers at the
+  // bottom of the picture, from windows low enough to start near the top
+  // of it - big, quick, and coming down round about you: up close, so it
+  // lands as a shock, not a show in the distance.
+  var OPEN_NEAR = 0.5;         // share of the opening fire thrown from close by
+  var OPEN_NEAR_SIZE = 1.5;    // x the size of fire thrown at you
+  var OPEN_NEAR_FLIGHT = [2.6, 3.6]; // seconds it takes to come down
   var OPEN_GRENADE_AHEAD = 110; // px up the street from where you land
   var CRUMBLE_TILE = 40;       // px deep, each slab
   var CRUMBLE_COL = 40;        // px wide, each column of slabs
@@ -738,7 +745,7 @@
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
     CRUMBLE_SPEED: CRUMBLE_SPEED, CRUMBLE_LEASH: CRUMBLE_LEASH, WALL_PAST: WALL_PAST,
-    OPEN_FIRES: OPEN_FIRES, OPEN_CLIMBERS: OPEN_CLIMBERS, OPEN_GRENADE: OPEN_GRENADE,
+    OPEN_FIRES: OPEN_FIRES, OPEN_CLIMBERS: OPEN_CLIMBERS, OPEN_GRENADE: OPEN_GRENADE, OPEN_NEAR: OPEN_NEAR,
     BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE,
     PLAZA_BRUTES: PLAZA_BRUTES
   };
@@ -2120,12 +2127,23 @@
     s.bannerQueue = [];
     var crawl = Math.round(TUNING.OPEN_CLIMBERS);
     for (var c = 0; c < 40 && this.climbers() < crawl; c++) this.spawnClimber(null, Math.min(3, crawl - this.climbers()));
-    var n = Math.round(TUNING.OPEN_FIRES);
-    for (var i = 0; i < n; i++) {
-      // A third of it at you and round about you, the rest into the road
-      // ahead - all thrown within a second or two.
-      if (i % 3 === 0) this.launchFire({ spread: i > 0, charge: 0.3 + i * 0.15 });
-      else { var f = this.launchAhead(); if (f) f.charge = 0.3 + i * 0.15; }
+    var n = Math.round(TUNING.OPEN_FIRES), close = Math.round(n * TUNING.OPEN_NEAR), self = this;
+    // Up close: the towers flanking the bottom of the picture, both sides.
+    var near = s.buildings.filter(function (o) { var z = self.zOf(o.d); return z > 0.5 && z < 1.7; });
+    for (var k = 0; k < close && near.length; k++) {
+      var side = k % 2 ? 1 : -1, mine = near.filter(function (o) { return o.side === side; });
+      var o = pick(mine.length ? mine : near);
+      this.launchFire({
+        tower: o, x: o.x - o.side * o.w * rand(0.15, 0.35), y: rand(-130, -10), d: o.d,
+        // The first straight at you; the rest round about you, close.
+        target: k === 0 ? null : { x: clamp(s.px + rand(-140, 140), -STREET_HALF, STREET_HALF), d: s.pd + rand(-20, 230) },
+        size: OPEN_NEAR_SIZE, flight: rand(OPEN_NEAR_FLIGHT[0], OPEN_NEAR_FLIGHT[1]), charge: 0.15 + k * 0.12
+      });
+    }
+    for (var i = 0; i < n - close; i++) {
+      // The rest from further up: some at you, most into the road ahead.
+      if (i % 3 === 0) this.launchFire({ spread: true, charge: 0.6 + i * 0.15 });
+      else { var f = this.launchAhead(); if (f) f.charge = 0.6 + i * 0.15; }
     }
     if (TUNING.OPEN_GRENADE >= 1) {
       s.drops.push({ kind: 'drop', x: 0, d: EXIT_D + OPEN_GRENADE_AHEAD, age: 0, keep: true });
@@ -3717,6 +3735,7 @@
     { title: 'The ambush on arrival', rows: [
       ['OPEN_FIRES', 'Fireballs thrown at once', 0, 16, 1, ''],
       ['OPEN_CLIMBERS', 'Aliens on the walls', 0, 30, 1, ''],
+      ['OPEN_NEAR', 'Share of the fire from close by', 0, 1, 0.05, ''],
       ['OPEN_GRENADE', 'A grenade waiting (1 on, 0 off)', 0, 1, 1, '']
     ] },
     { title: 'Energy grenade', rows: [
