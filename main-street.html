@@ -598,8 +598,19 @@
   var CHECKPOINT_M = 200;      // a game over from here on can carry on from here
   var RUN_START_M = 300;       // the street starts to fall in behind you
   var STREET_END_M = 400;      // the plaza: the camera stops here
-  var COLLAPSE_SPEED = 130;    // px/s the falling front comes up the street
-  var COLLAPSE_LEAD = 1.2;     // seconds' rumble before it starts to move
+  // The street crumbles rather than falls: it is broken into slabs, a
+  // column of them for each strip across it, and each column gives way
+  // a slab at a time, in its own fits and starts - so the edge is ragged
+  // and creeps, never a line sweeping up. A slab cracks and glows before
+  // it drops. On average well under walking pace: a steady encroachment
+  // you keep ahead of, not a sprint - but stop to fight and it comes.
+  var CRUMBLE_SPEED = 55;      // px/s the edge comes up the street, on average
+  var CRUMBLE_TILE = 40;       // px deep, each slab
+  var CRUMBLE_COL = 40;        // px wide, each column of slabs
+  var CRUMBLE_X = 440;         // columns span this far either side of the centre
+  var CRUMBLE_CRACK = 0.55;    // seconds a slab cracks before it drops
+  var CRUMBLE_RAGGED = 2;      // slabs a column can run ahead of its neighbours
+  var COLLAPSE_LEAD = 1.2;     // seconds' rumble before it starts
   var PLAZA_FROM = 1;          // the last towers stand this far (z) past where the camera stops
   // The spire's wall: this far (z) past the scroll point once the camera
   // has stopped. Close, so the fight at the door is fought up close.
@@ -710,20 +721,33 @@
     CLIMB_EVERY_START: CLIMB_EVERY_START, CLIMB_EVERY_PEAK: CLIMB_EVERY_PEAK,
     CLIMB_MAX_START: CLIMB_MAX_START, CLIMB_MAX_PEAK: CLIMB_MAX_PEAK, CLIMB_SPEED: CLIMB_SPEED,
     CHECKPOINT_M: CHECKPOINT_M, RUN_START_M: RUN_START_M, STREET_END_M: STREET_END_M,
-    COLLAPSE_SPEED: COLLAPSE_SPEED, WALL_PAST: WALL_PAST,
+    CRUMBLE_SPEED: CRUMBLE_SPEED, WALL_PAST: WALL_PAST,
     BOSS_TRI_HP: BOSS_TRI_HP, BOSS_CORE_HP: BOSS_CORE_HP, BOSS_SHOT_TIME: BOSS_SHOT_TIME, BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE,
     PLAZA_BRUTES: PLAZA_BRUTES
   };
+  var OLD_DEFAULTS = { RUN_START_M: 350, BOSS_SHOT_TIME: 1.2, BOSS_VOLLEY_SCALE: 1 };
   var TUNING = {};
   function resetTuning() { Object.keys(TUNING_DEFAULTS).forEach(function (k) { TUNING[k] = TUNING_DEFAULTS[k]; }); }
   function loadTuning() {
     resetTuning();
     try {
       var saved = JSON.parse(localStorage.getItem(TUNING_KEY) || 'null');
+      if (saved && !saved.__changedOnly) {
+        // An older save holds every setting, moved or not; a few defaults
+        // have changed since, and a save still holding the old default
+        // never moved it - so it takes the new one.
+        Object.keys(OLD_DEFAULTS).forEach(function (k) { if (saved[k] === OLD_DEFAULTS[k]) delete saved[k]; });
+      }
       if (saved) Object.keys(TUNING_DEFAULTS).forEach(function (k) { if (typeof saved[k] === 'number') TUNING[k] = saved[k]; });
     } catch (e) {}
   }
-  function saveTuning() { try { localStorage.setItem(TUNING_KEY, JSON.stringify(TUNING)); } catch (e) {} }
+  // Only what has been moved off its default is saved, so a new default
+  // reaches everyone who never touched that setting.
+  function saveTuning() {
+    var out = { __changedOnly: 1 };
+    Object.keys(TUNING_DEFAULTS).forEach(function (k) { if (TUNING[k] !== TUNING_DEFAULTS[k]) out[k] = TUNING[k]; });
+    try { localStorage.setItem(TUNING_KEY, JSON.stringify(out)); } catch (e) {}
+  }
   loadTuning();
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -1330,9 +1354,10 @@
       Sound.life();
     }
     if (!s.collapse && m >= TUNING.RUN_START_M) {
-      s.collapse = { d: Math.min(s.camD, s.pd - 260), lead: COLLAPSE_LEAD, rumble: 0, debris: [], jag: [] };
-      for (var j = 0; j < 48; j++) s.collapse.jag.push(rand(-1, 1));
-      s.banner = { text: 'THE STREET IS FALLING \u2014 RUN', age: 0 };
+      var d0 = Math.min(s.camD, s.pd - 260), cols = [];
+      for (var j = 0; j < CRUMBLE_X * 2 / CRUMBLE_COL; j++) cols.push({ edge: d0 + rand(-0.5, 0.5) * CRUMBLE_TILE, wait: rand(0, 1), crack: 0, seed: rand(0, 1) });
+      s.collapse = { d: d0, lead: COLLAPSE_LEAD, rumble: 0, debris: [], slabs: [], cols: cols };
+      s.banner = { text: 'THE STREET IS CRUMBLING', sub: 'keep moving', age: 0 };
       s.shake = Math.max(s.shake, 0.8);
       Sound.rumble();
     }
@@ -1345,42 +1370,87 @@
   };
 
   // ---- The run ---------------------------------------------------------
-  // The front of the collapse: everything behind it (nearer the camera)
-  // has fallen in. It comes up the street at a steady pace - faster than
-  // you can cross rubble, slower than you walk - and stops short of the
-  // plaza, just under the bottom of the picture once the camera stops.
+  // The crumbling edge: everything behind it (nearer the camera) has
+  // fallen in. Each column of slabs waits, cracks a slab, drops it, and
+  // waits again - at random, around the time CRUMBLE_SPEED gives, a
+  // column too far ahead holding back and one fallen behind catching
+  // up. It stops short of the plaza, just under the bottom of the
+  // picture once the camera stops.
+  MainScene.prototype.crumbleCol = function (x) {
+    var cols = this.state.collapse.cols;
+    return cols[clamp(Math.floor((x + CRUMBLE_X) / CRUMBLE_COL), 0, cols.length - 1)];
+  };
+  MainScene.prototype.edgeAt = function (x) { return this.state.collapse ? this.crumbleCol(x).edge : -Infinity; };
+
+  // The edge's average depth across the street.
+  MainScene.prototype.crumbleMean = function () {
+    var c = this.state.collapse, sum = 0, n = 0;
+    c.cols.forEach(function (col, k) { var x = -CRUMBLE_X + (k + 0.5) * CRUMBLE_COL; if (Math.abs(x) < STREET_HALF) { sum += col.edge; n++; } });
+    c.d = sum / n;
+  };
+
   MainScene.prototype.stepCollapse = function (dt) {
     var s = this.state, c = s.collapse, self = this;
     if (!c) return;
     c.rumble -= dt;
-    if (c.rumble <= 0) { c.rumble = rand(1, 1.6); Sound.rumble(); }
-    if (c.lead > 0) { c.lead -= dt; s.shake = Math.max(s.shake, 0.35); }
-    else c.d = Math.min(c.d + TUNING.COLLAPSE_SPEED * dt, this.lockD() + DEPTH_PX * 0.45);
-    if (c.d < this.lockD() + DEPTH_PX * 0.45) s.shake = Math.max(s.shake, 0.12);
-    // Lumps of road going down into it.
-    if (this.zOf(c.d) > 0.5 && Math.random() < dt * 14) {
-      c.debris.push({ x: rand(-260, 260) + s.camX, d: c.d + rand(-4, 10), y: GROUND_Y, vy: rand(20, 80), w: rand(6, 18), rot: rand(0, 6.3), spin: rand(-4, 4) });
+    if (c.rumble <= 0) { c.rumble = rand(1.4, 2.4); Sound.rumble(); }
+    var halt = this.lockD() + DEPTH_PX * 0.45, cols = c.cols;
+    if (c.lead > 0) { c.lead -= dt; s.shake = Math.max(s.shake, 0.3); }
+    else {
+      var speed = Math.max(1, TUNING.CRUMBLE_SPEED), cycle = CRUMBLE_TILE / speed;
+      var crack = Math.min(CRUMBLE_CRACK, cycle * 0.8);
+      for (var i = 0; i < cols.length; i++) {
+        var col = cols[i];
+        if (col.crack > 0) {
+          col.crack += dt / crack;
+          if (col.crack < 1) continue;
+          // It goes: the slab drops away into the dark.
+          var x0 = -CRUMBLE_X + i * CRUMBLE_COL;
+          c.slabs.push({ x0: x0, x1: x0 + CRUMBLE_COL, d0: col.edge, d1: col.edge + CRUMBLE_TILE, y: 0, vy: rand(10, 50), tilt: rand(-1, 1) });
+          if (Math.random() < 0.6) c.debris.push({ x: x0 + rand(0, CRUMBLE_COL), d: col.edge + CRUMBLE_TILE, y: GROUND_Y, vy: rand(20, 80), w: rand(6, 14), rot: rand(0, 6.3), spin: rand(-4, 4) });
+          col.edge += CRUMBLE_TILE;
+          col.crack = 0;
+          col.wait = (cycle - crack) * rand(0.2, 1.8);
+          continue;
+        }
+        col.wait -= dt;
+        var lo = Math.min(cols[Math.max(0, i - 1)].edge, cols[Math.min(cols.length - 1, i + 1)].edge);
+        // Fallen behind its neighbours: it doesn't wait.
+        if (col.edge < lo - CRUMBLE_TILE) col.wait = Math.min(col.wait, 0);
+        if (col.wait > 0 || col.edge - lo >= CRUMBLE_RAGGED * CRUMBLE_TILE || col.edge + CRUMBLE_TILE > halt) continue;
+        col.crack = 1e-3;
+      }
     }
-    for (var i = c.debris.length - 1; i >= 0; i--) {
-      var b = c.debris[i];
-      b.vy += 420 * dt; b.y += b.vy * dt; b.rot += b.spin * dt;
-      if (b.y > GROUND_Y + 700) c.debris.splice(i, 1);
+    if (cols.some(function (col) { return col.edge + CRUMBLE_TILE <= halt; })) s.shake = Math.max(s.shake, 0.06);
+    this.crumbleMean();
+    for (var b = c.slabs.length - 1; b >= 0; b--) {
+      var sl = c.slabs[b];
+      sl.vy += 380 * dt; sl.y += sl.vy * dt;
+      if (sl.y > 500) c.slabs.splice(b, 1);
+    }
+    for (var j = c.debris.length - 1; j >= 0; j--) {
+      var o = c.debris[j];
+      o.vy += 420 * dt; o.y += o.vy * dt; o.rot += o.spin * dt;
+      if (o.y > GROUND_Y + 700) c.debris.splice(j, 1);
     }
     // Whatever is on the fallen part goes down with it.
-    var edge = c.d;
     s.enemies.slice().forEach(function (e) {
-      if (e.climb > 0 || e.d >= edge) return;
+      if (e.climb > 0 || e.d >= self.edgeAt(e.x)) return;
       self.burst(e.x, GROUND_Y - e.h / 2, e.d, COLOR_GLOW_RED, false, 16);
       self.killEnemy(e, false);
     });
-    s.fences = s.fences.filter(function (o) { return o.d >= edge; });
-    s.craters = s.craters.filter(function (o) { return o.d + o.r >= edge; });
-    s.portals = s.portals.filter(function (o) { return o.d >= edge; });
-    s.drops = s.drops.filter(function (o) { return o.d >= edge; });
-    s.lamps = s.lamps.filter(function (o) { return o.d >= edge; });
-    s.buildings.forEach(function (o) { if (o.d < edge && !o.sink) o.sink = 0.001; });
+    var top = -Infinity;
+    cols.forEach(function (col, k) { var x = -CRUMBLE_X + (k + 0.5) * CRUMBLE_COL; if (Math.abs(x) < STREET_HALF) top = Math.max(top, col.edge); });
+    s.fences = s.fences.filter(function (o) { return o.d >= top; });
+    s.craters = s.craters.filter(function (o) { return o.d + o.r >= self.edgeAt(o.x); });
+    s.portals = s.portals.filter(function (o) { return o.d >= self.edgeAt(o.x); });
+    s.drops = s.drops.filter(function (o) { return o.d >= self.edgeAt(o.x); });
+    s.lamps = s.lamps.filter(function (o) { return o.d >= self.edgeAt(o.x); });
+    s.buildings.forEach(function (o) { if (!o.sink && o.d < self.edgeAt(o.x)) o.sink = 0.001; });
     s.buildings.forEach(function (o) { if (o.sink) o.sink += dt * (60 + o.sink * 3); });
-    if (s.pd - PLAYER_R < edge) this.die('collapse');
+    // Off the edge, on your feet - in the air you are over it, but you
+    // come down into it.
+    if (s.elev < AIR_SAFE && s.pd - PLAYER_R * 0.5 < this.edgeAt(s.px)) this.die('collapse');
   };
 
   // ---- The plaza and the door ------------------------------------------
@@ -2038,7 +2108,7 @@
       if (from === 'ahead') { x = rand(-140, 140); d = Math.min(s.camD + DEPTH_PX * (push + rand(1.5, 3.1)), this.wallD() - rand(40, 90)); }
       else if (from === 'side') { x = (Math.random() < 0.5 ? -1 : 1) * (FACADE_X - 8); d = Math.min(s.camD + DEPTH_PX * rand(1.1, push + 1.7), this.wallD() - rand(30, 80)); }
       else { x = rand(-140, 140); d = s.camD + DEPTH_PX * 0.62; }
-      if (Math.hypot(x - s.px, d - s.pd) > 150 && !(s.collapse && d < s.collapse.d + 20)) break;
+      if (Math.hypot(x - s.px, d - s.pd) > 150 && !(d < this.edgeAt(x) + 20)) break;
       from = 'ahead';
     }
     if (from === 'ahead') return this.addEnemy(kind, x, d);
@@ -2441,7 +2511,7 @@
     var fz = this.fenceAt(s.pd, PLAYER_R + 30);
     if (fz) s.pd = Math.max(s.camD + PLAYER_Z_MIN * DEPTH_PX, fz.d - PLAYER_R - 30);
     // ...and with the falling street pushed back off you.
-    if (s.collapse) s.collapse.d = Math.min(s.collapse.d, s.pd - 240);
+    if (s.collapse) { s.collapse.cols.forEach(function (col) { col.edge = Math.min(col.edge, s.pd - 240); col.crack = 0; }); this.crumbleMean(); }
     s.invuln = INVULN_TIME;
     this.setMode('walking');
   };
@@ -2742,43 +2812,73 @@
     }
   };
 
-  // The run: the street gone behind its falling front - black, all the
-  // way down - with the broken lip of the road glowing neon red along a
-  // jagged line, and lumps of it going down.
+  // The run: the street gone behind its crumbling edge - black, all the
+  // way down - the broken lip of the road glowing neon red along the
+  // ragged line the slabs leave; the next slabs to go cracking and
+  // glowing, shuddering at the end; the ones that went dropping away.
   MainScene.prototype.drawCollapse = function (g) {
-    var s = this.state, c = s.collapse, G = GROUND_Y;
+    var s = this.state, c = s.collapse, G = GROUND_Y, self = this;
     if (!c) return;
-    var zc = this.zOf(c.d);
-    if (zc <= 0.05 || this.sy(G, zc) > GAME_HEIGHT + 30) return;
-    var W = (CX + 40) * zc + Math.abs(s.camX) + 60, step = 24, pts = [];
-    for (var wx = -Math.ceil(W / step) * step; wx <= W; wx += step) {
-      var j = c.jag[((Math.round(wx / step) % 48) + 48) % 48];
-      var z = Math.max(0.05, this.zOf(c.d + j * 16));
-      pts.push({ x: this.sx(wx, z), y: Math.min(this.sy(G, z), GAME_HEIGHT + 30) });
+    function P(x, d, y) {
+      var z = Math.max(0.05, self.zOf(d));
+      return { x: self.sx(x, z), y: Math.min(self.sy(y == null ? G : y, z), GAME_HEIGHT + 40) };
     }
-    g.fillStyle(0x030108, 1);
-    g.beginPath();
-    g.moveTo(pts[0].x, pts[0].y);
-    for (var i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-    g.lineTo(pts[pts.length - 1].x, GAME_HEIGHT + 40); g.lineTo(pts[0].x, GAME_HEIGHT + 40);
-    g.closePath(); g.fillPath();
-    // Heat under the lip, then the lip itself.
+    var cols = c.cols, pts = [], low = Infinity;
+    for (var i = 0; i < cols.length; i++) {
+      var x0 = -CRUMBLE_X + i * CRUMBLE_COL, e = cols[i].edge, j = (cols[i].seed - 0.5) * 8;
+      pts.push(P(x0, e + j)); pts.push(P(x0 + CRUMBLE_COL, e - j));
+      low = Math.min(low, pts[pts.length - 1].y, pts[pts.length - 2].y);
+    }
+    // Wider than the columns: the pavements beyond go with the ends.
+    pts.unshift(P(-CRUMBLE_X * 3, cols[0].edge));
+    pts.push(P(CRUMBLE_X * 3, cols[cols.length - 1].edge));
+    var drawn = low < GAME_HEIGHT + 30;
+    if (drawn) {
+      g.fillStyle(0x030108, 1);
+      g.beginPath();
+      g.moveTo(pts[0].x, pts[0].y);
+      for (var k = 1; k < pts.length; k++) g.lineTo(pts[k].x, pts[k].y);
+      g.lineTo(pts[pts.length - 1].x, GAME_HEIGHT + 40); g.lineTo(pts[0].x, GAME_HEIGHT + 40);
+      g.closePath(); g.fillPath();
+    }
+    // Slabs dropping away, under the lip.
+    for (var b = 0; b < c.slabs.length; b++) {
+      var sl = c.slabs[b], fade = clamp(1 - sl.y / 420, 0, 1), yn = G + sl.y, yf = G + sl.y * (1 + 0.3 * sl.tilt);
+      var q = [P(sl.x0, sl.d0, yn), P(sl.x1, sl.d0, yn), P(sl.x1, sl.d1, yf), P(sl.x0, sl.d1, yf)];
+      g.fillStyle(COLOR_FLOOR_BAND, fade); g.fillPoints(q, true);
+      g.lineStyle(1, COLOR_GLOW_RED, 0.7 * fade); g.strokePoints(q, true);
+    }
+    for (var di = 0; di < c.debris.length; di++) {
+      var o = c.debris[di], zb = this.zOf(o.d);
+      if (zb < Z_NEAR) continue;
+      var bx = this.sx(o.x, zb), by = this.sy(o.y, zb), r = o.w / zb / 2, ca = Math.cos(o.rot) * r, sa = Math.sin(o.rot) * r;
+      var fa = clamp(1 - (o.y - G) / 600, 0, 1);
+      g.fillStyle(0x1b1233, fa);
+      g.fillTriangle(bx - ca, by - sa, bx + sa, by - ca * 0.6, bx + ca, by + sa);
+      g.lineStyle(1, COLOR_GLOW_RED, 0.6 * fa);
+      g.strokeTriangle(bx - ca, by - sa, bx + sa, by - ca * 0.6, bx + ca, by + sa);
+    }
+    if (!drawn) return;
+    // The next slabs to go: cracking, glowing, shuddering before they drop.
+    for (var ci = 0; ci < cols.length; ci++) {
+      var col = cols[ci], u = col.crack;
+      if (u <= 0) continue;
+      var cx0 = -CRUMBLE_X + ci * CRUMBLE_COL, e0 = col.edge, e1 = e0 + CRUMBLE_TILE, w = CRUMBLE_COL;
+      if (this.zOf(e1) < Z_NEAR) continue;
+      var sh = u > 0.7 ? (Math.random() - 0.5) * 3 * u : 0;
+      var tile = [P(cx0, e0), P(cx0 + w, e0), P(cx0 + w, e1), P(cx0, e1)].map(function (p) { return { x: p.x + sh, y: p.y }; });
+      g.fillStyle(COLOR_GLOW_RED, 0.08 + 0.22 * u); g.fillPoints(tile, true);
+      g.lineStyle(1.2, COLOR_GLOW_RED, 0.25 + 0.6 * u); g.strokePoints(tile, true);
+      var a = col.seed, crackPts = [P(cx0 + w * (0.2 + 0.5 * a), e1), P(cx0 + w * (0.7 - 0.3 * a), e0 + CRUMBLE_TILE * 0.55), P(cx0 + w * (0.35 + 0.3 * a), e0)];
+      g.lineStyle(1, 0xffc2cc, u); g.strokePoints(crackPts.map(function (p) { return { x: p.x + sh, y: p.y }; }), false);
+    }
+    // The lip.
     var pulse = 0.75 + 0.25 * Math.sin(s.t * 9);
     var under = pts.map(function (p) { return { x: p.x, y: p.y + 5 }; });
     g.lineStyle(8, COLOR_GLOW_RED, 0.12 * pulse); g.strokePoints(under, false);
     g.lineStyle(7, COLOR_GLOW_RED, 0.16 * pulse); g.strokePoints(pts, false);
     g.lineStyle(3, COLOR_GLOW_RED, 0.45 * pulse); g.strokePoints(pts, false);
     g.lineStyle(1.2, 0xffc2cc, 0.9); g.strokePoints(pts, false);
-    for (var b = 0; b < c.debris.length; b++) {
-      var o = c.debris[b], zb = this.zOf(o.d);
-      if (zb < Z_NEAR) continue;
-      var bx = this.sx(o.x, zb), by = this.sy(o.y, zb), r = o.w / zb / 2, ca = Math.cos(o.rot) * r, sa = Math.sin(o.rot) * r;
-      var fade = clamp(1 - (o.y - G) / 600, 0, 1);
-      g.fillStyle(0x1b1233, fade);
-      g.fillTriangle(bx - ca, by - sa, bx + sa, by - ca * 0.6, bx + ca, by + sa);
-      g.lineStyle(1, COLOR_GLOW_RED, 0.6 * fade);
-      g.strokeTriangle(bx - ca, by - sa, bx + sa, by - ca * 0.6, bx + ca, by + sa);
-    }
   };
 
   // A piece of the guardian, as in the sky: flat fill in its colour, a
@@ -3564,7 +3664,7 @@
       ['CHECKPOINT_M', 'Checkpoint at', 0, 1000, 10, ' m'],
       ['RUN_START_M', 'The run starts at', 0, 1000, 10, ' m'],
       ['STREET_END_M', 'The plaza at', 50, 1000, 10, ' m'],
-      ['COLLAPSE_SPEED', 'Street falls at', 40, 300, 5, ' px/s'],
+      ['CRUMBLE_SPEED', 'Street crumbles at', 10, 150, 5, ' px/s'],
       ['WALL_PAST', 'Spire wall (depth past scroll point)', 0.6, 3, 0.05, '']
     ] },
     { title: 'The guardian', rows: [
@@ -3828,7 +3928,8 @@
     bossReady: function () { var b = scene.state.boss; if (!b) return false; b.pieces.forEach(function (p) { p.docked = true; }); b.mode = 'fight'; b.modeAge = 0; return true; },
     setBossVolley: function (t) { var b = scene.state.boss; if (!b) return false; b.volleyTimer = t; return true; },
     bossHitAt: function (x) { var p = scene.bossHitAt(x); return p && p.id; },
-    setCollapse: function (d) { var c = scene.state.collapse; if (!c) return false; c.d = d; c.lead = 0; return true; },
+    setCollapse: function (d) { var c = scene.state.collapse; if (!c) return false; c.d = d; c.lead = 0; c.cols.forEach(function (col) { col.edge = d; col.crack = 0; col.wait = rand(0, 0.5); }); return true; },
+    edgeAt: function (x) { return scene.edgeAt(x); },
     clear: function () { var s = scene.state; s.enemies.length = 0; s.bullets.length = 0; s.fires.length = 0; s.portals.length = 0; s.craters.length = 0; s.fences.length = 0; s.nextFenceM = Infinity; s.drops.length = 0; },
     setSpawning: function (on) { scene.state.spawning = !!on; },
     setInvincible: function (on) { scene.state.invincible = !!on; },

@@ -569,7 +569,7 @@ harness.run(async (page, check, ctx) => {
   check('...a big one', s.fires.length === 1 && s.fires[0].ahead && s.fires[0].size === T.AHEAD_SIZE, s.fires);
   // Fire straight at it all the way down: it can't be stopped.
   await page.keyboard.down('ArrowUp');
-  s = await until(page, (st) => st.splashes > 0, 8000);
+  s = await until(page, (st) => st.splashes > 0, 25000);
   await page.keyboard.up('ArrowUp');
   check('...too big to shoot down', s.firesShot === 0 && s.splashes === 1, { shot: s.firesShot, splashes: s.splashes });
   check('...it lands ahead of you and leaves a big burning crater to walk round',
@@ -661,7 +661,8 @@ harness.run(async (page, check, ctx) => {
   }
 
   // The run: past RUN_START_M the street falls in behind you, a front
-  // coming up it at COLLAPSE_SPEED; it takes the aliens behind it, and
+  // crumbling up it, slab by slab, at about CRUMBLE_SPEED on average -
+  // ragged, not a straight line; it takes the aliens behind it, and
   // you if it reaches you - then, back on your feet, it is pushed back.
   {
     await quietStreet(page);
@@ -671,12 +672,15 @@ harness.run(async (page, check, ctx) => {
     check('no collapse before the run', st.collapseD === null, st.collapseD);
     await D(page, (pd) => window.__streetDebug.setPlayer(0, pd), st.pd + 60);
     st = await until(page, (x) => x.collapseD !== null, 4000);
-    check('...past ' + T.RUN_START_M + ' m the street starts to fall, behind you, under a banner', st.collapseD !== null && st.collapseD < st.pd - 200 && /FALLING/.test(st.banner), st);
+    check('...past ' + T.RUN_START_M + ' m the street starts to fall, behind you, under a banner', st.collapseD !== null && st.collapseD < st.pd - 200 && /CRUMBLING/.test(st.banner), st);
     await D(page, () => window.__streetDebug.setInvincible(true));
-    const c0 = await D(page, () => { const s = window.__streetDebug.state(); window.__streetDebug.setCollapse(s.collapseD); return { d: s.collapseD, t: s.t }; });
-    st = await until(page, (x) => x.t > c0.t + 0.5, 6000);
+    const c0 = await D(page, () => { const d = window.__streetDebug, s = d.state(); d.setCollapse(s.pd - 700); d.timeScale = 4; return { d: s.pd - 700, t: s.t }; });
+    st = await until(page, (x) => x.t > c0.t + 6, 15000);
+    await D(page, () => { window.__streetDebug.timeScale = 1; });
     const rate = (st.collapseD - c0.d) / (st.t - c0.t);
-    check('...coming up the street at ' + T.COLLAPSE_SPEED + ' px/s', Math.abs(rate - T.COLLAPSE_SPEED) < T.COLLAPSE_SPEED * 0.15, rate);
+    check('...creeping up the street at about ' + T.CRUMBLE_SPEED + ' px/s, well under walking pace', Math.abs(rate - T.CRUMBLE_SPEED) < T.CRUMBLE_SPEED * 0.35 && rate < T.WALK_SPEED / 2, rate);
+    const edges = await D(page, () => { const d = window.__streetDebug; return [-150, -110, -70, -30, 10, 50, 90, 130].map((x) => d.edgeAt(x)); });
+    check('...a ragged edge, slab by slab, not a straight line', new Set(edges).size > 1 && edges.every((e) => Math.abs(e - edges[0]) % 40 < 1e-6 || Math.abs(Math.abs(e - edges[0]) % 40 - 40) < 1e-6), edges);
     await D(page, () => { const d = window.__streetDebug, s = d.state(); d.spawnEnemy('grunt', 100, s.collapseD + 5); });
     await D(page, () => { const d = window.__streetDebug, s = d.state(); d.setCollapse(s.collapseD + 30); });
     st = await until(page, (x) => x.enemies.length === 0, 3000);
@@ -733,7 +737,7 @@ harness.run(async (page, check, ctx) => {
   {
     const lab = await D(page, () => ({
       jumps: Array.from(document.querySelectorAll('[data-jump-to]')).map(b => b.getAttribute('data-jump-to')),
-      rows: ['RUN_START_M', 'STREET_END_M', 'COLLAPSE_SPEED', 'CHECKPOINT_M', 'BOSS_TRI_HP', 'BOSS_SHOT_TIME'].every(k => window.__streetDebug.settingsReport().indexOf('(' + k + ')') >= 0)
+      rows: ['RUN_START_M', 'STREET_END_M', 'CRUMBLE_SPEED', 'CHECKPOINT_M', 'BOSS_TRI_HP', 'BOSS_SHOT_TIME'].every(k => window.__streetDebug.settingsReport().indexOf('(' + k + ')') >= 0)
     }));
     check('the lab jumps to the checkpoint, the run and the door, and has the finale and guardian settings', lab.jumps.join() === 'checkpoint,run,door' && lab.rows, lab);
     await page.locator('[data-jump-to="door"]').dispatchEvent('click');

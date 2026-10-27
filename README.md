@@ -515,18 +515,26 @@ itself, for practice.
   - **Checkpoint at 200 m.** A **CHECKPOINT** banner. A game over after
     it offers **Carry on from 200 m**: fresh lives, back at 200 m with
     the score and grenades you had there.
-  - **The run, from 300 m.** A **THE STREET IS FALLING — RUN** banner,
-    a rumble and a shake, and the street gives way behind you for the
-    last 100 m. The
-    fallen part is black, its broken lip a jagged neon-red line, with
-    lumps of road tumbling down into it. The front comes up the street
-    at 130 px/s: slower than you walk, faster than you cross rubble. Stop
-    to fight and it comes up the bottom of the picture. Touch it and you
-    go down with it (jumping doesn't help). It takes the aliens, fences,
-    craters and lamps behind it, and the towers sink into it. When you
-    come back after any death it's pushed back off you. The street's last
-    fence comes before the plaza: none switches on inside it, and one
-    still on as you arrive winds down.
+  - **The crumbling street, from 300 m.** A **THE STREET IS
+    CRUMBLING — keep moving** banner, a rumble and a shake, and for the
+    last 100 m the street gives way behind you. It doesn't fall as one
+    line sweeping up the street. It **crumbles**: the road is broken
+    into slabs (40 px square), a column of them for each strip across
+    it, and each column gives way one slab at a time, in its own fits
+    and starts. So the edge is ragged and creeps rather than chases. No
+    column runs more than two slabs ahead of its neighbours, and one that
+    falls behind catches up. A slab about to go cracks first: it glows
+    red with a crack across it, shudders, then drops away into the dark,
+    with chips of road tumbling after it. The fallen part is black and
+    its broken lip glows neon red. On average it comes on at 55 px/s,
+    well under walking pace (185), so walking keeps you ahead. Stop to
+    fight and it comes up the bottom of the picture. Standing on a slab
+    as it drops takes you down with it. In the air you're over the gap,
+    but you come down into it. It takes the aliens, fences, craters and
+    lamps behind it, and the towers sink into it. When you come back
+    after any death it's pushed back off you. The street's last fence
+    comes before the plaza: none switches on inside it, and one still on
+    as you arrive winds down.
   - **The plaza, at 400 m: the guardian.** The towers end and the camera
     stops. The falling street stops too, just under the bottom of the
     picture. The wall bounds the plaza, which has rings set in the
@@ -567,7 +575,7 @@ itself, for practice.
     and your best. *To be continued…*
 
   **The end of the street** in the lab sets the checkpoint, where the
-  run starts, where the plaza is, how fast the street falls, and how
+  run starts, where the plaza is, how fast the street crumbles, and how
   far up the screen the spire's wall stands (**Spire wall**, 1 past the
   scroll point by default, so the fight at the door is up close).
   **The guardian** sets the hits per triangle (8) and for the core (14),
@@ -593,6 +601,12 @@ itself, for practice.
   never comes forward faster than a quick glide, so a scroll point
   below where you step out of the ship closes in smoothly rather than
   jumping.
+- **Settings are saved as changes.** The lab only stores the settings
+  you've moved off their defaults, so a new default reaches you unless
+  you've set that one yourself. Saves made before this held every
+  setting, so a few defaults changed since (where the run starts, the
+  guardian's shot time and volley spacing) are taken fresh where the old
+  save still held the old default.
 - **Settings exporter.** In the lab, **Copy to clipboard** copies every
   setting by its lab name and code name, with your value and the
   default. Changed ones are marked and listed first, followed by one
