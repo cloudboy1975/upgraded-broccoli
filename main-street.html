@@ -405,6 +405,7 @@
   </div>
 
 <script src="phaser.min.js"></script>
+<script src="chapter1.js"></script>
 <script>
 (function () {
   "use strict";
@@ -823,15 +824,32 @@
 
   // ---- The run so far ------------------------------------------------
   // Played straight on from descent.html (and, before it, head-on.html),
-  // this is the same run: the Head-On score comes along for the end
-  // screen. Lives do not - they start fresh here.
+  // this is the same run - chapter 1 (chapter1.js): the score carried in
+  // is the chapter's total so far, and the score made here adds to it
+  // (shown as one number at the top). Lives do not come along - they
+  // start fresh here.
   var FROM_DESCENT = /(?:^|[?&])from=descent(?:&|$)/.test(location.search || '');
   var CARRIED_SCORE = (function () {
     var m = /(?:^|[?&])score=(\d+)/.exec(location.search || '');
     return m ? parseInt(m[1], 10) : null;
   })();
+  if (FROM_DESCENT && window.Chapter1) window.Chapter1.enter('street', CARRIED_SCORE || 0);
   function runLine() {
-    return CARRIED_SCORE != null ? ' · Head-On score ' + CARRIED_SCORE.toLocaleString() : '';
+    return CARRIED_SCORE != null ? ' · chapter total so far ' + CARRIED_SCORE.toLocaleString() : '';
+  }
+  // The chapter's own score lines for the end of it: each stage's
+  // score, then the lot added up.
+  function chapterLines(streetScore) {
+    var rows = [], total = 0;
+    if (FROM_DESCENT && window.Chapter1) {
+      var b = window.Chapter1.breakdown();
+      rows = b.rows.map(function (r) { return r.name + ' ' + r.score.toLocaleString(); });
+      total = b.total;
+    } else if (CARRIED_SCORE != null) {
+      rows = ['Before ' + CARRIED_SCORE.toLocaleString(), 'Main Street ' + streetScore.toLocaleString()];
+      total = CARRIED_SCORE + streetScore;
+    } else return '';
+    return '<br>' + rows.join(' &middot; ') + '<br><b>Chapter 1: ' + total.toLocaleString() + '</b>';
   }
 
   // ---- Sound ---------------------------------------------------------
@@ -1461,7 +1479,9 @@
     else if (c.rest > 0) c.rest -= dt;
     else {
       var speed = Math.max(1, TUNING.CRUMBLE_SPEED), cycle = CRUMBLE_TILE / speed;
-      var crack = Math.min(CRUMBLE_CRACK, cycle * 0.8);
+      // The crack takes at most half a slab's time; the rest is a wait
+      // of its own for each column, so they never fall in step.
+      var crack = Math.min(CRUMBLE_CRACK, cycle * 0.5);
       // Hurrying never takes it to within a step of you: a slab only
       // goes from under you after it has cracked.
       var unseen = s.camD + DEPTH_PX * CRUMBLE_UNSEEN, leash = Math.min(s.camD + DEPTH_PX * TUNING.CRUMBLE_LEASH, s.pd - 30);
@@ -1478,7 +1498,8 @@
           col.crack = 0;
           col.run = (col.run || 0) + dt / CRUMBLE_CATCHUP;
           while (col.run >= 1 && col.edge + CRUMBLE_TILE / 2 < leash && col.edge + CRUMBLE_TILE <= halt) { col.run -= 1; this.dropSlab(i, col); }
-          col.wait = 0;
+          // Out of the hurry at its own moment, not with the rest.
+          col.wait = rand(0, cycle * 1.5);
           continue;
         }
         col.run = 0;
@@ -1487,7 +1508,7 @@
           if (col.crack < 1) continue;
           this.dropSlab(i, col);
           col.crack = 0;
-          col.wait = (cycle - crack) * rand(0.2, 1.8);
+          col.wait = (cycle - crack) * rand(0, 2);
           continue;
         }
         col.wait -= dt;
@@ -1895,6 +1916,7 @@
       this.best = s.score;
       try { localStorage.setItem(BEST_KEY, String(s.score)); } catch (e) {}
     }
+    if (FROM_DESCENT && window.Chapter1) window.Chapter1.finish('street', s.score);
     var secs = Math.round(s.t), time = Math.floor(secs / 60) + ':' + ('0' + secs % 60).slice(-2);
     document.getElementById('overTitle').textContent = 'The spire';
     document.getElementById('overLine').innerHTML =
@@ -1902,6 +1924,7 @@
       s.grenadesUsed + ' grenade' + (s.grenadesUsed === 1 ? '' : 's') + ' &middot; ' + s.lives + ' li' + (s.lives === 1 ? 'fe' : 'ves') + ' left' +
       (s.continues ? ' &middot; ' + s.continues + ' continue' + (s.continues === 1 ? '' : 's') : '') +
       '<br>Bonus ' + s.bonus.toLocaleString() + ' &middot; score ' + s.score.toLocaleString() + ' &middot; best ' + this.best.toLocaleString() +
+      chapterLines(s.score) +
       '<br><i>To be continued&hellip;</i>';
     document.getElementById('checkpointBtn').style.display = 'none';
     setTimeout(function () {
@@ -3684,7 +3707,7 @@
       var box = document.getElementById('gameRoot').getBoundingClientRect(), cv = this.game.canvas.getBoundingClientRect();
       grenadeBtn.style.bottom = Math.round(box.bottom - cv.bottom + 10) + 'px';
     }
-    this.scoreText.setText(s.score.toLocaleString());
+    this.scoreText.setText(((CARRIED_SCORE || 0) + s.score).toLocaleString());
     this.distText.setText(Math.floor(s.bestM).toLocaleString() + ' m');
     // Lives: a little figure each, top left.
     for (var i = 0; i < Math.min(s.lives, 8); i++) {

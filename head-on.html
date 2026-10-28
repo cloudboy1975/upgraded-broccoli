@@ -839,6 +839,7 @@
   </div>
 
 <script src="phaser.min.js"></script>
+<script src="chapter1.js"></script>
 <script>
 (function () {
   "use strict";
@@ -4868,8 +4869,19 @@
     }
     if (u >= 1 && !d.navigated) {
       d.navigated = true;
-      this.goToDescent(DESCENT_PAGE + '?from=head-on&score=' + state.score);
+      this.goToDescent(DESCENT_PAGE + '?from=head-on&score=' + this.finishForChapter(state.score));
     }
+  };
+
+  // Chapter 1 (chapter1.js): with the guardian down, Head-On is through
+  // and the run goes on down to the planet with its score as the
+  // chapter's total so far. Off the yard the chapter's run was begun
+  // there; an ordinary run that gets this far starts one now. A shared
+  // boss link or the lesson is practice, and leaves the chapter alone.
+  MainScene.prototype.finishForChapter = function (score) {
+    if (!window.Chapter1 || launchRequest) return score;
+    if (!/(?:^|[?&])from=yard(?:&|$)/.test(window.location.search || '')) window.Chapter1.begin();
+    return window.Chapter1.finish('head-on', score);
   };
 
   // One place leaves for the descent, so a test can stand in for it.

@@ -395,6 +395,7 @@
   </div>
 
 <script src="phaser.min.js"></script>
+<script src="chapter1.js"></script>
 <script>
 (function () {
   "use strict";
@@ -1180,6 +1181,9 @@
     this.altText = this.add.text(10, 8, '', textStyle).setDepth(10).setResolution(2);
     this.distText = this.add.text(GAME_WIDTH - 10, 8, '', textStyle).setOrigin(1, 0).setDepth(10).setResolution(2);
     this.downText = this.add.text(GAME_WIDTH - 10, 24, '', Object.assign({}, textStyle, { fontSize: '11px', color: '#94a3b8' })).setOrigin(1, 0).setDepth(10).setResolution(2);
+    // The chapter's running total, when there is one: what came in,
+    // plus the metres flown here.
+    this.totalText = this.add.text(GAME_WIDTH - 10, 38, '', Object.assign({}, textStyle, { fontSize: '11px', color: '#fde68a' })).setOrigin(1, 0).setDepth(10).setResolution(2);
     this.shieldGfx = this.add.graphics().setDepth(10);
     this.phaseText = this.add.text(CX, 92, '', {
       fontFamily: textStyle.fontFamily, fontSize: '13px', fontStyle: 'bold', color: '#fde68a'
@@ -1301,9 +1305,19 @@
     var m = /(?:^|[?&])score=(\d+)/.exec(location.search || '');
     return m ? parseInt(m[1], 10) : null;
   })();
-  function runLine() {
-    return CARRIED_SCORE != null ? ' \u00b7 Head-On score ' + CARRIED_SCORE.toLocaleString() : '';
+  // Chapter 1 (chapter1.js): the score carried in is the chapter's
+  // total so far, and the metres flown here are added to it. Come down
+  // the chapter's way, the descent is a stage of it: counted in now,
+  // and through it once you land.
+  if (FROM_HEAD_ON && window.Chapter1) window.Chapter1.enter('descent', CARRIED_SCORE || 0);
+  function chapterTotal(dist) { return (CARRIED_SCORE || 0) + Math.floor(dist); }
+  function runLine(dist) {
+    return CARRIED_SCORE != null ? ' \u00b7 chapter total ' + chapterTotal(dist || 0).toLocaleString() : '';
   }
+  // Landed, the chapter's way: no end screen - a moment on the pad, the
+  // black comes down, and you step out onto Main Street.
+  var STEP_OUT_DELAY = 2600;   // ms from touchdown to the black
+  var STEP_OUT_FADE = 500;     // ms of fade before the page changes
 
   // ---- Performance monitor --------------------------------------------
   // Frame rate, the worst frame, JS memory (where the browser reports it -
@@ -2689,17 +2703,30 @@
       try { localStorage.setItem(BEST_KEY, String(dist)); } catch (e) {}
     }
     document.getElementById('overlayTitle').textContent = 'The city';
-    document.getElementById('crashLine').textContent = 'Landed at the centre \u00b7 ' + dist.toLocaleString() + ' m flown \u00b7 best ' + this.best.toLocaleString() + ' m' + runLine();
+    document.getElementById('crashLine').textContent = 'Landed at the centre \u00b7 ' + dist.toLocaleString() + ' m flown \u00b7 best ' + this.best.toLocaleString() + ' m' + runLine(dist);
     // On from here: out of the ship and down Main Street on foot, with
-    // the Head-On score carried along as it was carried here.
-    var out = document.getElementById('outBtn');
-    out.href = 'main-street.html?from=descent' + (CARRIED_SCORE != null ? '&score=' + CARRIED_SCORE : '');
+    // the chapter's total carried along.
+    var total = FROM_HEAD_ON && window.Chapter1 ? window.Chapter1.finish('descent', dist) : chapterTotal(dist);
+    var out = document.getElementById('outBtn'), next = 'main-street.html?from=descent' + (CARRIED_SCORE != null ? '&score=' + total : '');
+    out.href = next;
     out.style.display = '';
     var self = this;
+    if (FROM_HEAD_ON) {
+      this.steppingOut = true;
+      setTimeout(function () {
+        var fade = document.getElementById('arrivalFade');
+        if (fade) fade.classList.add('visible');
+        setTimeout(function () { self.goTo(next); }, STEP_OUT_FADE);
+      }, STEP_OUT_DELAY);
+      return;
+    }
     setTimeout(function () {
       if (self.state.mode === 'won') document.getElementById('crashOverlay').classList.add('visible');
     }, 1800);
   };
+
+  // One place leaves the page, so a test can stand in for it.
+  MainScene.prototype.goTo = function (url) { window.location.href = url; };
 
   // Draw list entries: one per live piece, each at its own depth.
   MainScene.prototype.bossDrawItems = function () {
@@ -3776,6 +3803,7 @@
     this.altText.setText('ALT ' + altitudeAt(s.t).toFixed(1) + ' km');
     this.distText.setText(Math.floor(s.distance).toLocaleString() + ' m');
     this.downText.setText(s.enemiesDowned ? s.enemiesDowned + ' downed' : '');
+    this.totalText.setText(CARRIED_SCORE != null ? 'total ' + chapterTotal(s.distance).toLocaleString() : '');
     // Shield bar: green, amber under half, red under a quarter. What a
     // hit just took shows white and drains away after it.
     var g = this.shieldGfx;
@@ -4065,7 +4093,11 @@
     runtimeErrors: { count: 0, last: null },
     lastProblem: function () { return CrashLog.last(); },
     perf: function () { return { log: Perf.log(), prev: Perf.prevLog() }; },
-    run: function () { return { fromHeadOn: FROM_HEAD_ON, score: CARRIED_SCORE }; },
+    run: function () { return { fromHeadOn: FROM_HEAD_ON, score: CARRIED_SCORE, total: chapterTotal(scene.state.distance), totalShown: scene.totalText.text }; },
+    // Leaving the page (stepping out after the landing): kept here instead
+    // of followed, for a test.
+    holdLeave: function () { scene.goTo = function (url) { debug.leftFor = url; }; return true; },
+    leftFor: null,
     timeScale: 1,              // slow motion, for looking at effects frame by frame
     state: function () {
       var s = scene.state;

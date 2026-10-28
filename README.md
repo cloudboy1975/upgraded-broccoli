@@ -95,7 +95,10 @@ chapter of a longer game about two-dimensional aliens.
   bed at the other. Walk up past the
   right-hand side of the house instead and you come out on the drive;
   walk left off the lawn and you are in the woods.
-  The bottom-right button skips straight to the game.
+  The bottom-right button skips straight to the game. If a run through
+  chapter 1 was left part way, a **Continue** link in the header carries
+  on from the stage you'd got to (see
+  [Chapter 1, played through](#chapter-1-played-through)).
 - **Dive waves, colour-matched missiles and meteor runs** — enemies come
   in red, green and blue families; banked orbs become slow homing
   missiles that only hurt their own colour, and falling strips build the
@@ -122,16 +125,60 @@ chapter of a longer game about two-dimensional aliens.
   (on by default) turns this off and flies on toward the next world
   instead, as it used to.
 
+#### Chapter 1, played through
+
+The yard, Head-On, the descent and Main Street are one chapter, played
+straight through. Each is still its own page with its own way of
+staying alive (a shield in the sky, lives on the street) and its own
+retry, like a run of mini-games. [`chapter1.js`](chapter1.js), shared
+by all four, joins them up:
+
+- **One way through.** Fly off the yard (walk into the ship, or the
+  **Fly** button, which now fades out in a beat rather than cutting) and
+  you're in Head-On as the chapter. Kill its boss and you dive down to
+  the planet. Land in the city and you step out onto Main Street on your
+  own. Through the door in the spire, the chapter is done (*to be
+  continued…*).
+- **One running score.** Each stage's score is added to the total
+  carried into the next: Head-On's points, the descent's metres flown,
+  Main Street's points. The descent and Main Street show the running
+  total at the top right. At the spire, the results list every stage's
+  score and the chapter's total.
+- **Carry on where you got to.** Where you've got to is saved (in
+  `localStorage`, so it survives closing the tab). Got past Head-On and
+  not through the spire? The yard's header shows **Continue: The
+  descent ›** (or Main Street). It takes you to the start of that stage
+  with the total you had when you first reached it. A game over in a
+  stage retries just that stage, starting its own score again. Flying
+  off the yard starts a new run through the chapter.
+- **An inventory, to come.** The save also keeps an inventory: things
+  picked up along the way, starting (soon) at the house, kept through
+  the chapter for the stages to use later. It survives new runs off the
+  yard; starting the chapter over clears it. There's no way to pick
+  anything up yet.
+
+A stage counts toward the chapter only when it's reached the chapter's
+way (the pages pass `?from=` along). Opened on its own from the index,
+any page still plays by itself, for practice. A Head-On run started
+from the index joins the chapter if it gets through the boss (not a
+shared boss link or the flight tutorial). Tests: `tests/test-chapter.js`.
+
 #### Descent
 
 [`descent.html`](descent.html) is what comes after the boss: flying down
 to the planet, through its sky to the aliens' city.
 [Try it](https://cloudboy1975.github.io/upgraded-broccoli/descent.html).
 Killing the boss in Head-On leads straight into it
-(`descent.html?from=head-on&score=N`). It opens out of the black Head-On
-faded to, and its end screens show the Head-On score, with a **Start
-over from Head-On** link. Opened on its own (from the index), it's the
-descent by itself, for practice.
+(`descent.html?from=head-on&score=N`, N being chapter 1's total so far).
+It opens out of the black Head-On faded to. Under the distance flown, a
+gold **total** shows the chapter's running score: what came in plus the
+metres flown. Its end screens show that total, with a **Start over from
+Head-On** link. Come down that way, the landing has no end screen: a
+moment on the pad, then the black comes down and you **step outside**
+onto Main Street by yourself (see
+[Chapter 1, played through](#chapter-1-played-through)). Opened on its
+own (from the index), it's the descent by itself, for practice, and the
+landing ends on an end screen with a **Step outside** button.
 
 - **A behind-the-ship view with no 3D engine.** Every object is a flat
   shape at some depth, drawn at `centre + (world - camera) / depth`. The
@@ -321,7 +368,8 @@ descent by itself, for practice.
     straight onto the pad with fire pointing at the ground. The fire
     splashes light across the pad and blows rings of dust outward,
     and it feathers off at the end. Then **LANDED**, the jets cut to
-    a flicker, and an end screen.
+    a flicker, and (flown on its own) an end screen, or (in the
+    chapter) out onto Main Street.
 
   The streets get busier as you go: density builds from 1.5x at the
   start of the city to 1.75x two-thirds of the way in, then holds.
@@ -361,10 +409,11 @@ descent by itself, for practice.
 out of the ship and down the aliens' main street on foot, a
 Robotron-style twin-stick fight.
 [Try it](https://cloudboy1975.github.io/upgraded-broccoli/main-street.html).
-The descent's landed screen now has a **Step outside** button that
-leads straight into it (`main-street.html?from=descent&score=N`,
-carrying the Head-On score along). Opened on its own, it's the street by
-itself, for practice.
+Landing in the descent leads straight into it
+(`main-street.html?from=descent&score=N`, carrying chapter 1's total
+along). The score at the top right is that running total: what came in
+plus what you score here. At the spire, the results add up every stage.
+Opened on its own, it's the street by itself, for practice.
 
 - **The same view.** The camera stays exactly where the landing left
   it, behind and above the ship on the pad, with the same projection.

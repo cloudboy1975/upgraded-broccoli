@@ -1323,6 +1323,6 @@ harness.run(async (page, check, ctx) => {
   await page.waitForFunction(() => document.getElementById('crashOverlay').classList.contains('visible'), null, { timeout: 20000 }).catch(() => {});
   const end = await D(page, () => ({ line: document.getElementById('crashLine').textContent,
     link: document.getElementById('fromTopLink').getAttribute('href') }));
-  check('...the end screen shows the Head-On score', /Head-On score 12,345/.test(end.line), end);
+  check('...the end screen shows the chapter\'s total so far', /chapter total 12,345/.test(end.line), end);
   check('...and offers the whole run again from the top', end.link === 'head-on.html', end);
 }, { page: 'descent.html' });

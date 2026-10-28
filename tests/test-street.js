@@ -804,19 +804,26 @@ harness.run(async (page, check, ctx) => {
   }
 
   // ---- On from the descent ---------------------------------------------
-  await page.goto(ctx.url('descent.html?from=head-on&score=4321'));
+  // Flown on its own, the landing offers the way out...
+  await page.goto(ctx.url('descent.html'));
   await page.waitForTimeout(400);
   await D(page, () => { const d = window.__descentDebug; d.setInvincible(true); d.startCity('landing'); });
-  await page.waitForFunction(() => window.__descentDebug.state().overlay, null, { timeout: 20000 }).catch(() => {});
+  await page.waitForFunction(() => window.__descentDebug.state().overlay, null, { timeout: 30000 }).catch(() => {});
   const out = await D(page, () => {
     const b = document.getElementById('outBtn');
     return { shown: getComputedStyle(b).display !== 'none', href: b.getAttribute('href') };
   });
-  check('the descent\'s landing offers the way out', out.shown && out.href === 'main-street.html?from=descent&score=4321', out);
-  await page.click('#outBtn');
+  check('the descent\'s landing, flown on its own, offers the way out', out.shown && out.href === 'main-street.html?from=descent', out);
+  // ...and come down from Head-On (the chapter), it steps outside by
+  // itself, with the chapter's total - Head-On's score plus the metres
+  // flown - carried along.
+  await page.goto(ctx.url('descent.html?from=head-on&score=4321'));
+  await page.waitForTimeout(400);
+  await D(page, () => { const d = window.__descentDebug; d.setInvincible(true); d.startCity('landing'); });
+  await page.waitForURL('**/main-street.html*', { timeout: 60000 }).catch(() => {});
   await page.waitForFunction(() => !!window.__streetDebug, null, { timeout: 5000 }).catch(() => {});
   const run = await D(page, () => window.__streetDebug && window.__streetDebug.run());
-  check('...into Main Street, with the Head-On score carried along', run && run.fromDescent && run.score === 4321, run);
+  check('come down the chapter\'s way, it steps out into Main Street by itself, the total carried along', run && run.fromDescent && run.score > 4321, run);
 
   const re = await D(page, () => window.__streetDebug ? window.__streetDebug.runtimeErrors.count : -1);
   check('no runtime errors', re === 0, re);

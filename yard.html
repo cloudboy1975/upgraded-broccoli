@@ -71,6 +71,19 @@
     border-radius: 999px;
     padding: 3px 9px;
   }
+  /* Carry on with chapter 1 where you left off: shown only when a run
+     through it got past Head-On and isn't finished. */
+  .continue-chip {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #1a0d03;
+    background: var(--accent, #fb923c);
+    border-radius: 999px;
+    padding: 4px 11px;
+    text-decoration: none;
+    margin-left: auto;
+    margin-right: 8px;
+  }
 
   /* One line of guidance, top-centre, that fades once you start walking.
      Same element does double duty as the proximity prompt - see
@@ -233,6 +246,7 @@
 
   <div class="hud-bar">
     <a class="back-link" href="index.html">&larr; All</a>
+    <a class="continue-chip" id="continueChip" href="#" style="display:none"></a>
     <div class="chapter-tag">Chapter 1</div>
   </div>
 
@@ -251,6 +265,7 @@
   </div>
 
 <script src="phaser.min.js"></script>
+<script src="chapter1.js"></script>
 <script>
 (function () {
   "use strict";
@@ -277,7 +292,8 @@
   // fire button lives in the game it leads to.
   // ==================================================================
 
-  var NEXT_PAGE = 'head-on.html';
+  // ?from=yard: Head-On knows this is the chapter, played through.
+  var NEXT_PAGE = 'head-on.html?from=yard';
   var HOUSE_PAGE = 'house.html';
   // Round the side of the house: the front, the drive and the garage.
   //
@@ -558,11 +574,31 @@
 
   // One door out, called from the takeoff's end and from the Fly button
   // alike, and guarded so a double tap cannot fire two navigations.
+  // Off into the sky is a new run through the chapter's stages (the
+  // scores start again; anything picked up stays). The Fly button
+  // skips the takeoff, not the fade: a beat of black, the same one the
+  // takeoff ends on, so it cuts into Head-On's fade-in rather than
+  // jumping.
+  var SKIP_FADE_MS = 350;
   function goToGame() {
     if (navigated) return;
     navigated = true;
-    window.location.href = NEXT_PAGE;
+    if (window.Chapter1) window.Chapter1.begin();
+    var fade = document.getElementById('blackout');
+    if (fade) fade.classList.add('visible');
+    window.setTimeout(function () { window.location.href = NEXT_PAGE; }, SKIP_FADE_MS);
   }
+
+  // A run through the chapter left part way (a closed tab, a game
+  // over): carry on from the start of the stage you had got to.
+  (function offerContinue() {
+    var r = window.Chapter1 && window.Chapter1.resume();
+    if (!r || r.stage === 'head-on') return;
+    var chip = document.getElementById('continueChip');
+    chip.textContent = 'Continue: ' + r.name + ' \u203a';
+    chip.href = r.url;
+    chip.style.display = '';
+  })();
 
   function goInside() {
     if (navigated) return;
