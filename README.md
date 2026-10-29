@@ -384,7 +384,25 @@ landing ends on an end screen with a **Step outside** button.
   a 100 ms frame. The last minute is kept in localStorage, so a page
   the browser kills still leaves its log behind. The lab's
   **Diagnostics** section turns it off, and its **Monitor log** button
-  shows the last samples.
+  shows the last samples. The readout starts with **GL** or **CV** for
+  the renderer in use.
+- **Hunting the mid-run reloads on phones.** In Chrome, a two-minute run
+  shows no leak: the JS heap stays flat (about 11 MB), and so do the
+  GPU textures and buffers Phaser holds. On iPhone, Safari doesn't
+  report memory, so the reloads have to be narrowed down by changing
+  things:
+  - The HUD's ever-changing numbers (altitude, distance, the chapter
+    total) are redrawn five times a second instead of every frame. In
+    WebGL each change re-renders a text and uploads it to the GPU again,
+    and iOS Safari copes with that far less well than Chrome.
+  - **Draw without WebGL** in the lab's **Diagnostics** reloads the page
+    on Phaser's canvas renderer. If the reloads stop with it on, they
+    were GPU memory.
+  - The reload note now says whether the page was **on screen** (the
+    browser running short while you played) or **in the background**
+    (another app or the screen locked: the phone reclaiming a tab it
+    wasn't showing, which looks the same on the next load). It also says
+    which renderer was in use.
 - **Crash recorder.** If the game hits a code error, or the browser
   reloads the page in the middle of a run (a phone running short of
   memory does this), a red note says so and where in the run it

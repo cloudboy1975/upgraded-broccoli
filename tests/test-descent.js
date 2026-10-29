@@ -1306,6 +1306,42 @@ harness.run(async (page, check, ctx) => {
   check('an error is shown on screen with where it happened', note.on && /test boom/.test(note.text) && /t \d/.test(note.text), note);
   check('...and recorded', note.last && note.last.kind === 'error' && note.last.message === 'test boom', note.last);
 
+  // Died while in the background (another app, the screen locked): the
+  // phone reclaiming a tab it wasn't showing, and the note says so.
+  await page.reload();
+  await page.waitForFunction(() => window.__descentDebug && window.__descentDebug.state().t > 0.5, null, { timeout: 15000 });
+  await D(page, () => {
+    window.addEventListener('pagehide', () => localStorage.setItem('descent-heartbeat',
+      JSON.stringify({ mode: 'flying', where: 'clouds (t 44.0s, flying)', at: Date.now(), hidden: true,
+        sample: { fps: 60, worst: 30, heap: null, draw: 3800, obs: 10, where: 'clouds', t: 44, gl: true } })));
+  });
+  await page.reload();
+  await page.waitForTimeout(800);
+  note = await D(page, () => ({ on: document.getElementById('diagNote').classList.contains('visible'), text: document.getElementById('diagNote').textContent, last: window.__descentDebug.lastProblem() }));
+  check('a page that died in the background says so: not the game running out on screen', note.on && /in the background/.test(note.text) && /WebGL/.test(note.text) && note.last.hidden === true, note);
+  await page.click('#diagNote');
+
+  // The HUD's ever-changing numbers are redrawn a few times a second,
+  // not every frame (each redraw is a texture upload in WebGL).
+  const hud = await D(page, async () => {
+    const d = window.__descentDebug, seen = new Set();
+    const t0 = performance.now();
+    while (performance.now() - t0 < 1500) { seen.add(d.hudText()); await new Promise((r) => requestAnimationFrame(r)); }
+    return seen.size;
+  });
+  check('the HUD\'s changing numbers are redrawn a few times a second, not every frame', hud >= 3 && hud <= 12, hud);
+
+  // Drawn without WebGL: the lab switch, for telling GPU memory apart.
+  await D(page, () => localStorage.setItem('descent-tuning-v1', JSON.stringify({ CANVAS_RENDER: 1 })));
+  await page.reload();
+  await page.waitForFunction(() => window.__descentDebug && window.__descentDebug.state().t > 1, null, { timeout: 15000 }).catch(() => {});
+  const cv = await D(page, () => ({ ri: window.__descentDebug.renderInfo(), t: window.__descentDebug.state().t, errors: window.__descentDebug.runtimeErrors ? window.__descentDebug.runtimeErrors.count : 0 }));
+  check('the lab can draw it without WebGL, and it runs', cv.ri.webgl === false && cv.t > 1 && !cv.errors, cv);
+  await D(page, () => localStorage.removeItem('descent-tuning-v1'));
+  await page.reload();
+  await page.waitForFunction(() => window.__descentDebug && window.__descentDebug.state().t > 0.5, null, { timeout: 15000 });
+  check('...and back with WebGL', (await D(page, () => window.__descentDebug.renderInfo())).webgl === true);
+
   // ---- On from head-on.html ----------------------------------------------
   // Killing the boss there dives at the planet and lands here, mid-run,
   // with the score; this page picks up out of the black it faded to.

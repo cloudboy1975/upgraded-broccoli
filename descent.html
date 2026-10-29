@@ -529,6 +529,15 @@
   var STAR_NEBULA = 1;         // x on the haze band (0 = none)
   var SHOOTING_STARS = 1;      // 1 = on
   var PERF_MONITOR = 1;        // 1 = the frame-rate / memory readout in the corner
+  // Drawn without WebGL: Phaser's canvas renderer instead. For finding
+  // out whether a phone's mid-run reloads are GPU memory - the one kind
+  // the JS heap figure can't show. Takes effect on a reload.
+  var CANVAS_RENDER = 0;
+  // The HUD's changing numbers (altitude, distance, the chapter total)
+  // are redrawn this often, not every frame: in WebGL each change is a
+  // text re-rendered and uploaded to the GPU again, which iOS Safari
+  // copes with far less well than Chrome does.
+  var HUD_TEXT_EVERY = 0.2;    // seconds
   var STAR_COLORS = [0xf8fafc, 0xdbeafe, 0xe9d5ff, 0xfce7f3, 0xfef3c7];
 
   // Spawning. Intervals are in seconds at SPEED_START and shrink as the
@@ -754,7 +763,7 @@
   // The three per-kind tables (DAMAGE, ROCK_INTERVAL, WALL_INTERVAL) are
   // shared by reference, so editing them edits what the game reads.
   var TUNING_KEY = 'descent-tuning-v1';
-  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'LAKE_TIME', 'CITY_TIME', 'CITY_DENSITY_MIN', 'CITY_DENSITY_MAX', 'CITY_DENSITY_PEAK', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS', 'PERF_MONITOR'];
+  var TUNING_SCALARS = ['SHIP_MAX_SPEED', 'SHIP_RESPONSE', 'FLICK_START', 'FLICK_FULL', 'FLICK_SPEED_BOOST', 'FLICK_RESPONSE_BOOST', 'FLICK_DECAY', 'SPEED_START', 'SPEED_RAMP', 'SPEED_MAX', 'INVULN_TIME', 'GLOW_HEAL', 'GLOW_CATCH_SLOP', 'GLOW_HANG', 'GLOW_SPEED', 'AIMED_SHARE', 'ROCKS_WITH_ENEMY', 'WALL_JITTER_MIN', 'WALL_JITTER_MAX', 'WALL_DOUBLE_CHANCE', 'GAP_W', 'GAP_H', 'SPIRE_INTERVAL', 'SPIRE_MIN_GAP', 'SPIRE_AIMED_SHARE', 'SPIRE_AIM_SPREAD', 'SPIRE_BLAST', 'ENEMY_HP', 'ENEMY_STAY', 'ENEMY_FIRST', 'ENEMY_GAP_MIN', 'ENEMY_GAP_MAX', 'ENEMY_PAIR_CHANCE', 'ENEMY_FIRE_INTERVAL', 'ENEMY_CHARGE', 'ENEMY_SHOT_SPEED', 'ENEMY_WEAVE_X', 'ENEMY_WEAVE_Y', 'FIRE_INTERVAL', 'BULLET_RADIUS', 'SUNSET_DELAY', 'SUNSET_TIME', 'SUN_RADIUS', 'SUN_OFFSET_X', 'CALM_TIME', 'BOSS_TRI_HP', 'BOSS_CORE_HP', 'BOSS_SHOT_TIME', 'BOSS_VOLLEY_SCALE', 'BOSS_SIZE', 'BOSS_GLOWS', 'BOSS_FLIP', 'BOSS_FACE_SCALE', 'BOSS_EDGE_SCALE', 'CITY_SPEED', 'LAKE_TIME', 'CITY_TIME', 'CITY_DENSITY_MIN', 'CITY_DENSITY_MAX', 'CITY_DENSITY_PEAK', 'STAR_BRIGHTNESS', 'STAR_SIZE', 'STAR_SPARKLE', 'STAR_NEBULA', 'SHOOTING_STARS', 'PERF_MONITOR', 'CANVAS_RENDER'];
   var TUNING_TABLES = { DAMAGE: DAMAGE, ROCK_INTERVAL: ROCK_INTERVAL, WALL_INTERVAL: WALL_INTERVAL };
   var TUNING_DEFAULTS = (function () {
     var d = {
@@ -776,7 +785,7 @@
       BOSS_VOLLEY_SCALE: BOSS_VOLLEY_SCALE, BOSS_SIZE: BOSS_SIZE, BOSS_GLOWS: BOSS_GLOWS,
       BOSS_FLIP: BOSS_FLIP, BOSS_FACE_SCALE: BOSS_FACE_SCALE, BOSS_EDGE_SCALE: BOSS_EDGE_SCALE,
       CITY_SPEED: CITY_SPEED, LAKE_TIME: LAKE_TIME, CITY_TIME: CITY_TIME, CITY_DENSITY_MIN: CITY_DENSITY_MIN, CITY_DENSITY_MAX: CITY_DENSITY_MAX, CITY_DENSITY_PEAK: CITY_DENSITY_PEAK,
-      STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS, PERF_MONITOR: PERF_MONITOR
+      STAR_BRIGHTNESS: STAR_BRIGHTNESS, STAR_SIZE: STAR_SIZE, STAR_SPARKLE: STAR_SPARKLE, STAR_NEBULA: STAR_NEBULA, SHOOTING_STARS: SHOOTING_STARS, PERF_MONITOR: PERF_MONITOR, CANVAS_RENDER: CANVAS_RENDER
     };
     Object.keys(TUNING_TABLES).forEach(function (t) { d[t] = JSON.parse(JSON.stringify(TUNING_TABLES[t])); });
     return d;
@@ -1341,7 +1350,7 @@
     }
     function describe(x) {
       if (!x) return 'no data';
-      return x.fps + ' fps, worst frame ' + x.worst + ' ms, heap ' + (x.heap == null ? 'n/a' : x.heap + ' MB') +
+      return (x.gl == null ? '' : x.gl ? 'WebGL, ' : 'canvas, ') + x.fps + ' fps, worst frame ' + x.worst + ' ms, heap ' + (x.heap == null ? 'n/a' : x.heap + ' MB') +
         ', draw ' + (x.draw / 1000).toFixed(1) + 'k, things ' + x.obs + (x.where ? ' @ ' + x.where : '');
     }
     function peakOf(list) {
@@ -1367,7 +1376,7 @@
         var s = sc.state;
         var x = { fps: frames, worst: Math.round(worst), heap: heapMb(), draw: drawCount(sc),
           obs: s.obstacles.length + s.bullets.length + s.bursts.length + s.enemies.length + s.enemyShots.length + s.chunks.length,
-          where: CrashLog.where(sc).replace(/ \(.*$/, ''), t: Math.round(s.t) };
+          where: CrashLog.where(sc).replace(/ \(.*$/, ''), t: Math.round(s.t), gl: !!sc.game.renderer.gl };
         frames = 0; worst = 0;
         log.push(x);
         if (log.length > KEEP) log.shift();
@@ -1376,7 +1385,7 @@
         if (el) {
           el.classList.toggle('visible', !!TUNING.PERF_MONITOR);
           el.classList.toggle('warn', x.fps < 40 || x.worst > 100);
-          el.textContent = x.fps + 'fps  max ' + x.worst + 'ms  ' + (x.heap == null ? '' : x.heap + 'MB  ') + 'draw ' + (x.draw / 1000).toFixed(1) + 'k  obj ' + x.obs;
+          el.textContent = (sc.game.renderer.gl ? 'GL ' : 'CV ') + x.fps + 'fps  max ' + x.worst + 'ms  ' + (x.heap == null ? '' : x.heap + 'MB  ') + 'draw ' + (x.draw / 1000).toFixed(1) + 'k  obj ' + x.obs;
         }
         return x;
       },
@@ -1426,7 +1435,7 @@
       // page for memory may not keep the tab's session store either.
       beat: function (scene, sample) {
         try {
-          localStorage.setItem(HEART, JSON.stringify({ mode: scene.state.mode, where: where(scene), at: Date.now(), sample: sample }));
+          localStorage.setItem(HEART, JSON.stringify({ mode: scene.state.mode, where: where(scene), at: Date.now(), sample: sample, hidden: !!document.hidden }));
         } catch (e) {}
       },
       clean: function () { try { localStorage.removeItem(HEART); } catch (e) {} },
@@ -1437,9 +1446,14 @@
           localStorage.removeItem(HEART);
           try { sessionStorage.removeItem(HEART); } catch (e) {} // an older build's
           if (hb && hb.mode === 'flying' && Date.now() - hb.at < 30 * 60000) {
-            var rec = { kind: 'reload', where: hb.where, at: new Date().toISOString(), sample: hb.sample, peak: Perf.peak() };
+            var rec = { kind: 'reload', where: hb.where, at: new Date().toISOString(), sample: hb.sample, peak: Perf.peak(), hidden: !!hb.hidden };
             keep(rec);
-            show('The page reloaded itself mid-run, at ' + rec.where + '. The browser most likely ran short of memory.\n' +
+            // Gone while in the background (another app, the screen
+            // locked) is the phone reclaiming a tab it wasn't showing -
+            // not the game running out while you played.
+            show('The page reloaded itself mid-run, at ' + rec.where + '. ' + (rec.hidden
+              ? 'It was in the background at the time, so the phone most likely reclaimed the tab.\n'
+              : 'It was on screen, so the browser most likely ran short of memory.\n') +
               'Last second: ' + Perf.describe(hb.sample) + '\nWorst of the run: ' + Perf.describe(rec.peak) +
               '\n(The lab\'s Monitor log button has the last minute.)');
           }
@@ -1450,7 +1464,11 @@
       }
     };
   })();
-  window.addEventListener('pagehide', function () { CrashLog.clean(); });
+  // Leaving cleanly: the heartbeat goes, and nothing writes it again
+  // (some browsers report the page hidden after this, as it unloads).
+  var leaving = false;
+  window.addEventListener('pagehide', function () { leaving = true; CrashLog.clean(); });
+  window.addEventListener('pageshow', function () { leaving = false; });
   window.__showDiag = function (text) {
     var el = document.getElementById('diagNote');
     if (!el) return;
@@ -1462,11 +1480,17 @@
     var el = document.getElementById('diagNote');
     if (el) el.addEventListener('click', function () { el.classList.remove('visible'); });
     CrashLog.check();
+    var lastSample = null;
     setInterval(function () {
-      if (!scene || !scene.state) return;
-      var sample = Perf.second(scene);
-      CrashLog.beat(scene, sample);
+      if (leaving || !scene || !scene.state) return;
+      lastSample = Perf.second(scene);
+      CrashLog.beat(scene, lastSample);
     }, 1000);
+    // Out of sight, the timer above may never run again before the tab
+    // is reclaimed: note it the moment it goes.
+    document.addEventListener('visibilitychange', function () {
+      if (!leaving && scene && scene.state) CrashLog.beat(scene, lastSample);
+    });
   })();
 
   MainScene.prototype.step = function (dt) {
@@ -3800,10 +3824,16 @@
 
   MainScene.prototype.drawHud = function () {
     var s = this.state;
-    this.altText.setText('ALT ' + altitudeAt(s.t).toFixed(1) + ' km');
-    this.distText.setText(Math.floor(s.distance).toLocaleString() + ' m');
+    // The numbers that change all the time, a few times a second (see
+    // HUD_TEXT_EVERY) - and straight away once the run has stopped.
+    var now = this.time.now / 1000;
+    if (!this.hudTextAt || now - this.hudTextAt >= HUD_TEXT_EVERY || s.mode !== 'flying') {
+      this.hudTextAt = now;
+      this.altText.setText('ALT ' + altitudeAt(s.t).toFixed(1) + ' km');
+      this.distText.setText(Math.floor(s.distance).toLocaleString() + ' m');
+      this.totalText.setText(CARRIED_SCORE != null ? 'total ' + chapterTotal(s.distance).toLocaleString() : '');
+    }
     this.downText.setText(s.enemiesDowned ? s.enemiesDowned + ' downed' : '');
-    this.totalText.setText(CARRIED_SCORE != null ? 'total ' + chapterTotal(s.distance).toLocaleString() : '');
     // Shield bar: green, amber under half, red under a quarter. What a
     // hit just took shows white and drains away after it.
     var g = this.shieldGfx;
@@ -3945,7 +3975,8 @@
       ['SHOOTING_STARS', 'Shooting stars', 'toggle']
     ] },
     { title: 'Diagnostics', rows: [
-      ['PERF_MONITOR', 'Performance monitor', 'toggle']
+      ['PERF_MONITOR', 'Performance monitor', 'toggle'],
+      ['CANVAS_RENDER', 'Draw without WebGL (reloads)', 'toggle']
     ] },
     { title: 'Guns', rows: [
       ['FIRE_INTERVAL', 'Fire every', 0.05, 0.6, 0.01, ' s'],
@@ -3995,7 +4026,11 @@
           box2.type = 'checkbox';
           box2.dataset.key = key;
           var showT = function () { row.classList.toggle('changed', !!labGet(key) !== !!labDefault(key)); };
-          box2.addEventListener('change', function () { labSet(key, box2.checked ? 1 : 0); showT(); saveTuning(); });
+          box2.addEventListener('change', function () {
+            labSet(key, box2.checked ? 1 : 0); showT(); saveTuning();
+            // The renderer is chosen as the page starts: switching it is a reload.
+            if (key === 'CANVAS_RENDER') window.location.reload();
+          });
           row.appendChild(label); row.appendChild(box2);
           box.appendChild(row);
           labSyncers.push(function () { box2.checked = !!labGet(key); showT(); });
@@ -4096,6 +4131,16 @@
     run: function () { return { fromHeadOn: FROM_HEAD_ON, score: CARRIED_SCORE, total: chapterTotal(scene.state.distance), totalShown: scene.totalText.text }; },
     // Leaving the page (stepping out after the landing): kept here instead
     // of followed, for a test.
+    // What the renderer holds: whether it is WebGL or canvas, and how
+    // many GPU textures and buffers are alive - memory the browser's JS
+    // heap figure does not include.
+    hudText: function () { return scene.distText.text + '|' + scene.altText.text; },
+    renderInfo: function () {
+      var r = scene.game.renderer, gl = !!r.gl;
+      return { webgl: gl, glTextures: gl && r.glTextureWrappers ? r.glTextureWrappers.length : null,
+        glBuffers: gl && r.glBufferWrappers ? r.glBufferWrappers.length : null,
+        textures: Object.keys(scene.textures.list).length };
+    },
     holdLeave: function () { scene.goTo = function (url) { debug.leftFor = url; }; return true; },
     leftFor: null,
     timeScale: 1,              // slow motion, for looking at effects frame by frame
@@ -4252,7 +4297,7 @@
   };
 
   new Phaser.Game({
-    type: Phaser.AUTO,
+    type: TUNING.CANVAS_RENDER ? Phaser.CANVAS : Phaser.AUTO,
     parent: 'gameRoot',
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
