@@ -691,7 +691,14 @@ Opened on its own, it's the street by itself, for practice.
   rotation) and refits the canvas each time. Phaser alone re-centres
   the canvas without resizing it, so after the screen shrank it hung
   over the controls. A pinch-zoom guard, the same as the other games',
-  stops a stray zoom pushing the controls off the bottom.
+  stops a stray zoom pushing the controls off the bottom. It doesn't
+  rely on being told about changes, either. Arriving mid-navigation (out
+  of the descent's landing), iOS can report a provisional height, much
+  shorter than the screen, then settle on the real one without firing a
+  resize, which left the whole page laid out small until a full reload.
+  So the height is also re-checked twice a second, and whenever the page
+  is shown again, regains focus or is touched, and a real difference
+  refits it.
 - **Settings lab.** Backquote, or triple-tap the "Main Street" tag.
   Every ramp has a start and a full value, plus jumps to 25%, 50% and
   full difficulty, and **No death**. **Scroll point (depth)** sets how

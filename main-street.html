@@ -1097,6 +1097,22 @@
     refitTimer = setTimeout(function () { game.scale.refresh(); }, 300);
   }
   fitToScreen();
+  // Don't rely on being told. Arriving mid-navigation (out of the
+  // descent's landing, say), iOS can report a provisional height -
+  // much shorter than the screen - then settle on the real one without
+  // ever firing a resize, which left the whole page laid out small until
+  // a full reload. So the height is also checked twice a second, and
+  // whenever the page is shown again, regains focus, or is touched;
+  // only a real difference refits.
+  function refitIfMoved() {
+    var v = visibleArea();
+    if (v.height && (v.height !== fittedH || v.top !== fittedTop)) fitToScreen();
+  }
+  setInterval(refitIfMoved, 500);
+  window.addEventListener('pageshow', fitToScreen);
+  window.addEventListener('focus', refitIfMoved);
+  document.addEventListener('visibilitychange', refitIfMoved);
+  document.addEventListener('touchstart', refitIfMoved, { passive: true, capture: true });
   window.addEventListener('resize', fitToScreen);
   window.addEventListener('orientationchange', function () { setTimeout(fitToScreen, 250); });
   if (window.visualViewport) {
@@ -4147,6 +4163,9 @@
     projectGround: function (x, d) { var z = scene.zOf(d); return { x: scene.sx(x, z) - scene.shakeX, y: scene.sy(GROUND_Y, z) - scene.shakeY, z: z }; },
     difficultyAt: difficultyAt,
     fittedHeight: function () { return fittedH; },
+    // The page laid out for the wrong height, as if a measurement had gone
+    // wrong with no resize to follow: for testing that it recovers.
+    misfit: function (h) { fittedH = h; document.body.style.height = h + 'px'; return true; },
     screenInfo: function () { return screenInfo(); },
     settingsReport: function () { return settingsReport(); },
     // The mix of kinds and of where they come from, where you are now.

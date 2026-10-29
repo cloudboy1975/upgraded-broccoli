@@ -619,6 +619,16 @@ harness.run(async (page, check, ctx) => {
       fit.hudTop === 0 && fit.canvasTop >= fit.rootTop - 1, fit);
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  // Laid out for the wrong height with no resize to say otherwise (as
+  // iOS can leave a page it navigated into): it puts itself right.
+  await D(page, () => window.__streetDebug.misfit(500));
+  const small = await D(page, () => Math.round(document.querySelector('.control-bar').getBoundingClientRect().bottom));
+  await page.waitForTimeout(1200);
+  const fixed = await D(page, () => ({ fitted: window.__streetDebug.fittedHeight(), barBottom: Math.round(document.querySelector('.control-bar').getBoundingClientRect().bottom),
+    canvasBottom: Math.round(document.querySelector('canvas').getBoundingClientRect().bottom), barTop: Math.round(document.querySelector('.control-bar').getBoundingClientRect().top) }));
+  check('laid out too small with nothing to say so, it notices and fits the screen again by itself',
+    small === 500 && fixed.fitted === 844 && fixed.barBottom === 844 && fixed.canvasBottom <= fixed.barTop + 1, { small, fixed });
 
   // The lab's way in on a phone - three taps on the tag - with real
   // touches. The tag takes its own taps (so iOS never reads them as a
